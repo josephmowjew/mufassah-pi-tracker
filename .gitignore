@@ -1,0 +1,83 @@
+# Operating System Files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDE and Editor Files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+
+# Laravel API
+api/vendor/
+api/node_modules/
+api/public/hot
+api/public/storage
+api/storage/*.key
+api/.env
+api/.env.backup
+api/.env.production
+api/.phpunit.result.cache
+api/Homestead.json
+api/Homestead.yaml
+api/npm-debug.log
+api/yarn-error.log
+api/database/database.sqlite
+api/database/database.sqlite-shm
+api/database/database.sqlite-wal
+
+# Laravel API - Cache
+api/bootstrap/cache/*.php
+api/config/config.php
+api/storage/framework/cache/*
+api/storage/framework/sessions/*
+api/storage/framework/views/*
+api/storage/logs/*
+
+# React Web Frontend
+web/node_modules/
+web/dist/
+web/build/
+web/.env.local
+web/.env.development.local
+web/.env.test.local
+web/.env.production.local
+web/npm-debug.log*
+web/yarn-debug.log*
+web/yarn-error.log*
+web/pnpm-debug.log*
+
+# Python Tracker
+mufassah-tracker/__pycache__/
+mufassah-tracker/*.py[cod]
+mufassah-tracker/$py.class/
+mufassah-tracker/*.so
+mufassah-tracker/.Python
+mufassah-tracker/buffer.db
+mufassah-tracker/buffer.db-shm
+mufassah-tracker/buffer.db-wal
+mufassah-tracker/venv/
+mufassah-tracker/env/
+mufassah-tracker/.venv/
+mufassah-tracker/env.bak/
+mufassah-tracker/venv.bak/
+mufassah-tracker/logs/*.log
+mufassah-tracker/.env
+
+# Logs
+*.log
+logs/
+
+# Temporary Files
+*.tmp
+*.temp
+.cache/
