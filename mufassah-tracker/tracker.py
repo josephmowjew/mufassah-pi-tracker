@@ -224,7 +224,11 @@ class ConnectivityChecker:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.settimeout(3)
             parsed = urlparse(self.api_base_url)
-            port = 443 if parsed.scheme == 'https' else 80
+            
+            if parsed.port:
+                port = parsed.port
+            else:
+                port = 443 if parsed.scheme == 'https' else 80
 
             result = sock.connect_ex((self.hostname, port))
             sock.close()
