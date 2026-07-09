@@ -1,0 +1,362 @@
+name: 'IoT Location Updates'
+description: |-
+
+  APIs for IoT devices to send location updates and heartbeats.
+  Authentication uses module_id:api_token instead of user Bearer tokens.
+endpoints:
+  -
+    custom: []
+    httpMethods:
+      - POST
+    uri: api/v1/iot/location
+    metadata:
+      custom: []
+      groupName: 'IoT Location Updates'
+      groupDescription: |-
+
+        APIs for IoT devices to send location updates and heartbeats.
+        Authentication uses module_id:api_token instead of user Bearer tokens.
+      subgroup: ''
+      subgroupDescription: ''
+      title: 'Store a location update from an IoT module.'
+      description: ''
+      authenticated: true
+      deprecated: false
+    headers:
+      Authorization: 'Bearer {YOUR_AUTH_TOKEN}'
+      Content-Type: application/json
+      Accept: application/json
+    urlParameters: []
+    cleanUrlParameters: []
+    queryParameters: []
+    cleanQueryParameters: []
+    bodyParameters:
+      latitude:
+        custom: []
+        name: latitude
+        description: 'Must be between -90 and 90.'
+        required: true
+        example: -89
+        type: number
+        enumValues: []
+        exampleWasSpecified: false
+        nullable: false
+        deprecated: false
+      longitude:
+        custom: []
+        name: longitude
+        description: 'Must be between -180 and 180.'
+        required: true
+        example: -179
+        type: number
+        enumValues: []
+        exampleWasSpecified: false
+        nullable: false
+        deprecated: false
+      altitude:
+        custom: []
+        name: altitude
+        description: ''
+        required: false
+        example: 4326.41688
+        type: number
+        enumValues: []
+        exampleWasSpecified: false
+        nullable: true
+        deprecated: false
+      accuracy:
+        custom: []
+        name: accuracy
+        description: 'Must be at least 0.'
+        required: false
+        example: 77
+        type: number
+        enumValues: []
+        exampleWasSpecified: false
+        nullable: true
+        deprecated: false
+      speed:
+        custom: []
+        name: speed
+        description: 'Must be at least 0.'
+        required: false
+        example: 8
+        type: number
+        enumValues: []
+        exampleWasSpecified: false
+        nullable: true
+        deprecated: false
+      heading:
+        custom: []
+        name: heading
+        description: 'Must be between 0 and 360.'
+        required: false
+        example: 0
+        type: number
+        enumValues: []
+        exampleWasSpecified: false
+        nullable: true
+        deprecated: false
+      battery_level:
+        custom: []
+        name: battery_level
+        description: 'Must be between 0 and 100.'
+        required: false
+        example: 1
+        type: integer
+        enumValues: []
+        exampleWasSpecified: false
+        nullable: true
+        deprecated: false
+      signal_strength:
+        custom: []
+        name: signal_strength
+        description: 'Must be between 0 and 100.'
+        required: false
+        example: 1
+        type: integer
+        enumValues: []
+        exampleWasSpecified: false
+        nullable: true
+        deprecated: false
+      recorded_at:
+        custom: []
+        name: recorded_at
+        description: 'Must be a valid date.'
+        required: false
+        example: '2025-11-23T17:28:02'
+        type: string
+        enumValues: []
+        exampleWasSpecified: false
+        nullable: true
+        deprecated: false
+    cleanBodyParameters:
+      latitude: -89
+      longitude: -179
+      altitude: 4326.41688
+      accuracy: 77
+      speed: 8
+      heading: 0
+      battery_level: 1
+      signal_strength: 1
+      recorded_at: '2025-11-23T17:28:02'
+    fileParameters: []
+    responses: []
+    responseFields: []
+    auth:
+      - headers
+      - Authorization
+      - 'Bearer 6g43cv8PD1aE5beadkZfhV6'
+    controller: null
+    method: null
+    route: null
+  -
+    custom: []
+    httpMethods:
+      - POST
+    uri: api/v1/iot/locations/batch
+    metadata:
+      custom: []
+      groupName: 'IoT Location Updates'
+      groupDescription: |-
+
+        APIs for IoT devices to send location updates and heartbeats.
+        Authentication uses module_id:api_token instead of user Bearer tokens.
+      subgroup: ''
+      subgroupDescription: ''
+      title: 'Store multiple location updates (batch upload for offline sync).'
+      description: ''
+      authenticated: true
+      deprecated: false
+    headers:
+      Authorization: 'Bearer {YOUR_AUTH_TOKEN}'
+      Content-Type: application/json
+      Accept: application/json
+    urlParameters: []
+    cleanUrlParameters: []
+    queryParameters: []
+    cleanQueryParameters: []
+    bodyParameters:
+      locations:
+        custom: []
+        name: locations
+        description: 'Must not have more than 100 items.'
+        required: true
+        example:
+          - []
+        type: 'object[]'
+        enumValues: []
+        exampleWasSpecified: false
+        nullable: false
+        deprecated: false
+      'locations[].latitude':
+        custom: []
+        name: 'locations[].latitude'
+        description: 'Must be between -90 and 90.'
+        required: true
+        example: -89
+        type: number
+        enumValues: []
+        exampleWasSpecified: false
+        nullable: false
+        deprecated: false
+      'locations[].longitude':
+        custom: []
+        name: 'locations[].longitude'
+        description: 'Must be between -180 and 180.'
+        required: true
+        example: -179
+        type: number
+        enumValues: []
+        exampleWasSpecified: false
+        nullable: false
+        deprecated: false
+      'locations[].altitude':
+        custom: []
+        name: 'locations[].altitude'
+        description: ''
+        required: false
+        example: 4326.41688
+        type: number
+        enumValues: []
+        exampleWasSpecified: false
+        nullable: true
+        deprecated: false
+      'locations[].accuracy':
+        custom: []
+        name: 'locations[].accuracy'
+        description: 'Must be at least 0.'
+        required: false
+        example: 77
+        type: number
+        enumValues: []
+        exampleWasSpecified: false
+        nullable: true
+        deprecated: false
+      'locations[].speed':
+        custom: []
+        name: 'locations[].speed'
+        description: 'Must be at least 0.'
+        required: false
+        example: 8
+        type: number
+        enumValues: []
+        exampleWasSpecified: false
+        nullable: true
+        deprecated: false
+      'locations[].heading':
+        custom: []
+        name: 'locations[].heading'
+        description: 'Must be between 0 and 360.'
+        required: false
+        example: 0
+        type: number
+        enumValues: []
+        exampleWasSpecified: false
+        nullable: true
+        deprecated: false
+      'locations[].recorded_at':
+        custom: []
+        name: 'locations[].recorded_at'
+        description: 'Must be a valid date.'
+        required: true
+        example: '2025-11-23T17:28:02'
+        type: string
+        enumValues: []
+        exampleWasSpecified: false
+        nullable: false
+        deprecated: false
+    cleanBodyParameters:
+      locations:
+        -
+          latitude: -89
+          longitude: -179
+          altitude: 4326.41688
+          accuracy: 77
+          speed: 8
+          heading: 0
+          recorded_at: '2025-11-23T17:28:02'
+    fileParameters: []
+    responses: []
+    responseFields: []
+    auth:
+      - headers
+      - Authorization
+      - 'Bearer 6g43cv8PD1aE5beadkZfhV6'
+    controller: null
+    method: null
+    route: null
+  -
+    custom: []
+    httpMethods:
+      - POST
+    uri: api/v1/iot/heartbeat
+    metadata:
+      custom: []
+      groupName: 'IoT Location Updates'
+      groupDescription: |-
+
+        APIs for IoT devices to send location updates and heartbeats.
+        Authentication uses module_id:api_token instead of user Bearer tokens.
+      subgroup: ''
+      subgroupDescription: ''
+      title: 'Send a heartbeat/ping from the IoT module.'
+      description: ''
+      authenticated: true
+      deprecated: false
+    headers:
+      Authorization: 'Bearer {YOUR_AUTH_TOKEN}'
+      Content-Type: application/json
+      Accept: application/json
+    urlParameters: []
+    cleanUrlParameters: []
+    queryParameters: []
+    cleanQueryParameters: []
+    bodyParameters:
+      battery_level:
+        custom: []
+        name: battery_level
+        description: 'Must be between 0 and 100.'
+        required: false
+        example: 1
+        type: integer
+        enumValues: []
+        exampleWasSpecified: false
+        nullable: true
+        deprecated: false
+      signal_strength:
+        custom: []
+        name: signal_strength
+        description: 'Must be between 0 and 100.'
+        required: false
+        example: 1
+        type: integer
+        enumValues: []
+        exampleWasSpecified: false
+        nullable: true
+        deprecated: false
+      firmware_version:
+        custom: []
+        name: firmware_version
+        description: 'Must not be greater than 50 characters.'
+        required: false
+        example: g
+        type: string
+        enumValues: []
+        exampleWasSpecified: false
+        nullable: true
+        deprecated: false
+    cleanBodyParameters:
+      battery_level: 1
+      signal_strength: 1
+      firmware_version: g
+    fileParameters: []
+    responses: []
+    responseFields: []
+    auth:
+      - headers
+      - Authorization
+      - 'Bearer 6g43cv8PD1aE5beadkZfhV6'
+    controller: null
+    method: null
+    route: null

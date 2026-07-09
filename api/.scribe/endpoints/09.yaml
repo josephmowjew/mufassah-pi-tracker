@@ -1,0 +1,856 @@
+name: 'Theft Reports'
+description: |-
+
+  APIs for theft reporting - report stolen devices, track recovery, and manage status.
+endpoints:
+  -
+    custom: []
+    httpMethods:
+      - GET
+    uri: api/v1/theft-reports
+    metadata:
+      custom: []
+      groupName: 'Theft Reports'
+      groupDescription: |-
+
+        APIs for theft reporting - report stolen devices, track recovery, and manage status.
+      subgroup: ''
+      subgroupDescription: ''
+      title: ''
+      description: ''
+      authenticated: true
+      deprecated: false
+    headers:
+      Authorization: 'Bearer {YOUR_AUTH_TOKEN}'
+      Content-Type: application/json
+      Accept: application/json
+    urlParameters: []
+    cleanUrlParameters: []
+    queryParameters: []
+    cleanQueryParameters: []
+    bodyParameters: []
+    cleanBodyParameters: []
+    fileParameters: []
+    responses:
+      -
+        custom: []
+        status: 401
+        content: '{"success":false,"message":"Unauthenticated. Please login to continue."}'
+        headers:
+          cache-control: 'no-cache, private'
+          content-type: application/json
+          vary: Origin
+        description: null
+    responseFields: []
+    auth:
+      - headers
+      - Authorization
+      - 'Bearer 6g43cv8PD1aE5beadkZfhV6'
+    controller: null
+    method: null
+    route: null
+  -
+    custom: []
+    httpMethods:
+      - POST
+    uri: api/v1/theft-reports
+    metadata:
+      custom: []
+      groupName: 'Theft Reports'
+      groupDescription: |-
+
+        APIs for theft reporting - report stolen devices, track recovery, and manage status.
+      subgroup: ''
+      subgroupDescription: ''
+      title: ''
+      description: ''
+      authenticated: true
+      deprecated: false
+    headers:
+      Authorization: 'Bearer {YOUR_AUTH_TOKEN}'
+      Content-Type: multipart/form-data
+      Accept: application/json
+    urlParameters: []
+    cleanUrlParameters: []
+    queryParameters: []
+    cleanQueryParameters: []
+    bodyParameters:
+      device_id:
+        custom: []
+        name: device_id
+        description: 'The <code>id</code> of an existing record in the devices table.'
+        required: true
+        example: 16
+        type: integer
+        enumValues: []
+        exampleWasSpecified: false
+        nullable: false
+        deprecated: false
+      theft_date:
+        custom: []
+        name: theft_date
+        description: 'Must be a valid date. Must be a date before or equal to <code>now</code>.'
+        required: true
+        example: '2021-12-17'
+        type: string
+        enumValues: []
+        exampleWasSpecified: false
+        nullable: false
+        deprecated: false
+      theft_location:
+        custom: []
+        name: theft_location
+        description: 'Must not be greater than 255 characters.'
+        required: true
+        example: 'n'
+        type: string
+        enumValues: []
+        exampleWasSpecified: false
+        nullable: false
+        deprecated: false
+      theft_latitude:
+        custom: []
+        name: theft_latitude
+        description: 'Must be between -90 and 90.'
+        required: false
+        example: -90
+        type: number
+        enumValues: []
+        exampleWasSpecified: false
+        nullable: true
+        deprecated: false
+      theft_longitude:
+        custom: []
+        name: theft_longitude
+        description: 'Must be between -180 and 180.'
+        required: false
+        example: -179
+        type: number
+        enumValues: []
+        exampleWasSpecified: false
+        nullable: true
+        deprecated: false
+      description:
+        custom: []
+        name: description
+        description: 'Must not be greater than 2000 characters.'
+        required: true
+        example: 'Velit et fugiat sunt nihil accusantium.'
+        type: string
+        enumValues: []
+        exampleWasSpecified: false
+        nullable: false
+        deprecated: false
+      police_report_number:
+        custom: []
+        name: police_report_number
+        description: 'Must not be greater than 50 characters.'
+        required: false
+        example: 'n'
+        type: string
+        enumValues: []
+        exampleWasSpecified: false
+        nullable: true
+        deprecated: false
+      police_station:
+        custom: []
+        name: police_station
+        description: 'Must not be greater than 100 characters.'
+        required: false
+        example: i
+        type: string
+        enumValues: []
+        exampleWasSpecified: false
+        nullable: true
+        deprecated: false
+      officer_name:
+        custom: []
+        name: officer_name
+        description: 'Must not be greater than 100 characters.'
+        required: false
+        example: k
+        type: string
+        enumValues: []
+        exampleWasSpecified: false
+        nullable: true
+        deprecated: false
+      officer_contact:
+        custom: []
+        name: officer_contact
+        description: 'Must not be greater than 20 characters.'
+        required: false
+        example: hwaykcmyuwpwlvqw
+        type: string
+        enumValues: []
+        exampleWasSpecified: false
+        nullable: true
+        deprecated: false
+      evidence_photos:
+        custom: []
+        name: evidence_photos
+        description: 'Must be an image. Must not be greater than 5120 kilobytes.'
+        required: false
+        example:
+          - null
+        type: 'file[]'
+        enumValues: []
+        exampleWasSpecified: false
+        nullable: false
+        deprecated: false
+    cleanBodyParameters:
+      device_id: 16
+      theft_date: '2021-12-17'
+      theft_location: 'n'
+      theft_latitude: -90
+      theft_longitude: -179
+      description: 'Velit et fugiat sunt nihil accusantium.'
+      police_report_number: 'n'
+      police_station: i
+      officer_name: k
+      officer_contact: hwaykcmyuwpwlvqw
+    fileParameters:
+      evidence_photos:
+        - null
+    responses: []
+    responseFields: []
+    auth:
+      - headers
+      - Authorization
+      - 'Bearer 6g43cv8PD1aE5beadkZfhV6'
+    controller: null
+    method: null
+    route: null
+  -
+    custom: []
+    httpMethods:
+      - GET
+    uri: 'api/v1/theft-reports/{id}'
+    metadata:
+      custom: []
+      groupName: 'Theft Reports'
+      groupDescription: |-
+
+        APIs for theft reporting - report stolen devices, track recovery, and manage status.
+      subgroup: ''
+      subgroupDescription: ''
+      title: ''
+      description: ''
+      authenticated: true
+      deprecated: false
+    headers:
+      Authorization: 'Bearer {YOUR_AUTH_TOKEN}'
+      Content-Type: application/json
+      Accept: application/json
+    urlParameters:
+      id:
+        custom: []
+        name: id
+        description: 'The ID of the theft report.'
+        required: true
+        example: 16
+        type: integer
+        enumValues: []
+        exampleWasSpecified: false
+        nullable: false
+        deprecated: false
+    cleanUrlParameters:
+      id: 16
+    queryParameters: []
+    cleanQueryParameters: []
+    bodyParameters: []
+    cleanBodyParameters: []
+    fileParameters: []
+    responses:
+      -
+        custom: []
+        status: 401
+        content: '{"success":false,"message":"Unauthenticated. Please login to continue."}'
+        headers:
+          cache-control: 'no-cache, private'
+          content-type: application/json
+          vary: Origin
+        description: null
+    responseFields: []
+    auth:
+      - headers
+      - Authorization
+      - 'Bearer 6g43cv8PD1aE5beadkZfhV6'
+    controller: null
+    method: null
+    route: null
+  -
+    custom: []
+    httpMethods:
+      - PUT
+      - PATCH
+    uri: 'api/v1/theft-reports/{id}'
+    metadata:
+      custom: []
+      groupName: 'Theft Reports'
+      groupDescription: |-
+
+        APIs for theft reporting - report stolen devices, track recovery, and manage status.
+      subgroup: ''
+      subgroupDescription: ''
+      title: ''
+      description: ''
+      authenticated: true
+      deprecated: false
+    headers:
+      Authorization: 'Bearer {YOUR_AUTH_TOKEN}'
+      Content-Type: application/json
+      Accept: application/json
+    urlParameters:
+      id:
+        custom: []
+        name: id
+        description: 'The ID of the theft report.'
+        required: true
+        example: 16
+        type: integer
+        enumValues: []
+        exampleWasSpecified: false
+        nullable: false
+        deprecated: false
+    cleanUrlParameters:
+      id: 16
+    queryParameters: []
+    cleanQueryParameters: []
+    bodyParameters:
+      theft_date:
+        custom: []
+        name: theft_date
+        description: 'Must be a valid date. Must be a date before or equal to <code>now</code>.'
+        required: false
+        example: '2021-12-17'
+        type: string
+        enumValues: []
+        exampleWasSpecified: false
+        nullable: false
+        deprecated: false
+      theft_location:
+        custom: []
+        name: theft_location
+        description: 'Must not be greater than 255 characters.'
+        required: false
+        example: 'n'
+        type: string
+        enumValues: []
+        exampleWasSpecified: false
+        nullable: false
+        deprecated: false
+      theft_latitude:
+        custom: []
+        name: theft_latitude
+        description: 'Must be between -90 and 90.'
+        required: false
+        example: -90
+        type: number
+        enumValues: []
+        exampleWasSpecified: false
+        nullable: true
+        deprecated: false
+      theft_longitude:
+        custom: []
+        name: theft_longitude
+        description: 'Must be between -180 and 180.'
+        required: false
+        example: -179
+        type: number
+        enumValues: []
+        exampleWasSpecified: false
+        nullable: true
+        deprecated: false
+      description:
+        custom: []
+        name: description
+        description: 'Must not be greater than 2000 characters.'
+        required: false
+        example: 'Velit et fugiat sunt nihil accusantium.'
+        type: string
+        enumValues: []
+        exampleWasSpecified: false
+        nullable: false
+        deprecated: false
+      police_report_number:
+        custom: []
+        name: police_report_number
+        description: 'Must not be greater than 50 characters.'
+        required: false
+        example: 'n'
+        type: string
+        enumValues: []
+        exampleWasSpecified: false
+        nullable: true
+        deprecated: false
+      police_station:
+        custom: []
+        name: police_station
+        description: 'Must not be greater than 100 characters.'
+        required: false
+        example: i
+        type: string
+        enumValues: []
+        exampleWasSpecified: false
+        nullable: true
+        deprecated: false
+      officer_name:
+        custom: []
+        name: officer_name
+        description: 'Must not be greater than 100 characters.'
+        required: false
+        example: k
+        type: string
+        enumValues: []
+        exampleWasSpecified: false
+        nullable: true
+        deprecated: false
+      officer_contact:
+        custom: []
+        name: officer_contact
+        description: 'Must not be greater than 20 characters.'
+        required: false
+        example: hwaykcmyuwpwlvqw
+        type: string
+        enumValues: []
+        exampleWasSpecified: false
+        nullable: true
+        deprecated: false
+    cleanBodyParameters:
+      theft_date: '2021-12-17'
+      theft_location: 'n'
+      theft_latitude: -90
+      theft_longitude: -179
+      description: 'Velit et fugiat sunt nihil accusantium.'
+      police_report_number: 'n'
+      police_station: i
+      officer_name: k
+      officer_contact: hwaykcmyuwpwlvqw
+    fileParameters: []
+    responses: []
+    responseFields: []
+    auth:
+      - headers
+      - Authorization
+      - 'Bearer 6g43cv8PD1aE5beadkZfhV6'
+    controller: null
+    method: null
+    route: null
+  -
+    custom: []
+    httpMethods:
+      - DELETE
+    uri: 'api/v1/theft-reports/{id}'
+    metadata:
+      custom: []
+      groupName: 'Theft Reports'
+      groupDescription: |-
+
+        APIs for theft reporting - report stolen devices, track recovery, and manage status.
+      subgroup: ''
+      subgroupDescription: ''
+      title: ''
+      description: ''
+      authenticated: true
+      deprecated: false
+    headers:
+      Authorization: 'Bearer {YOUR_AUTH_TOKEN}'
+      Content-Type: application/json
+      Accept: application/json
+    urlParameters:
+      id:
+        custom: []
+        name: id
+        description: 'The ID of the theft report.'
+        required: true
+        example: 16
+        type: integer
+        enumValues: []
+        exampleWasSpecified: false
+        nullable: false
+        deprecated: false
+    cleanUrlParameters:
+      id: 16
+    queryParameters: []
+    cleanQueryParameters: []
+    bodyParameters: []
+    cleanBodyParameters: []
+    fileParameters: []
+    responses: []
+    responseFields: []
+    auth:
+      - headers
+      - Authorization
+      - 'Bearer 6g43cv8PD1aE5beadkZfhV6'
+    controller: null
+    method: null
+    route: null
+  -
+    custom: []
+    httpMethods:
+      - POST
+    uri: 'api/v1/theft-reports/{theft_report_id}/status'
+    metadata:
+      custom: []
+      groupName: 'Theft Reports'
+      groupDescription: |-
+
+        APIs for theft reporting - report stolen devices, track recovery, and manage status.
+      subgroup: ''
+      subgroupDescription: ''
+      title: ''
+      description: ''
+      authenticated: true
+      deprecated: false
+    headers:
+      Authorization: 'Bearer {YOUR_AUTH_TOKEN}'
+      Content-Type: application/json
+      Accept: application/json
+    urlParameters:
+      theft_report_id:
+        custom: []
+        name: theft_report_id
+        description: 'The ID of the theft report.'
+        required: true
+        example: 16
+        type: integer
+        enumValues: []
+        exampleWasSpecified: false
+        nullable: false
+        deprecated: false
+    cleanUrlParameters:
+      theft_report_id: 16
+    queryParameters: []
+    cleanQueryParameters: []
+    bodyParameters:
+      status:
+        custom: []
+        name: status
+        description: ''
+        required: true
+        example: closed
+        type: string
+        enumValues:
+          - reported
+          - investigating
+          - recovered
+          - closed
+          - false_alarm
+        exampleWasSpecified: false
+        nullable: false
+        deprecated: false
+      notes:
+        custom: []
+        name: notes
+        description: 'Must not be greater than 1000 characters.'
+        required: true
+        example: b
+        type: string
+        enumValues: []
+        exampleWasSpecified: false
+        nullable: false
+        deprecated: false
+      is_public:
+        custom: []
+        name: is_public
+        description: ''
+        required: false
+        example: true
+        type: boolean
+        enumValues: []
+        exampleWasSpecified: false
+        nullable: false
+        deprecated: false
+      recovery_location:
+        custom: []
+        name: recovery_location
+        description: 'This field is required when <code>status</code> is <code>recovered</code>. Must not be greater than 255 characters.'
+        required: false
+        example: 'n'
+        type: string
+        enumValues: []
+        exampleWasSpecified: false
+        nullable: true
+        deprecated: false
+      recovery_notes:
+        custom: []
+        name: recovery_notes
+        description: 'Must not be greater than 1000 characters.'
+        required: false
+        example: g
+        type: string
+        enumValues: []
+        exampleWasSpecified: false
+        nullable: true
+        deprecated: false
+    cleanBodyParameters:
+      status: closed
+      notes: b
+      is_public: true
+      recovery_location: 'n'
+      recovery_notes: g
+    fileParameters: []
+    responses: []
+    responseFields: []
+    auth:
+      - headers
+      - Authorization
+      - 'Bearer 6g43cv8PD1aE5beadkZfhV6'
+    controller: null
+    method: null
+    route: null
+  -
+    custom: []
+    httpMethods:
+      - POST
+    uri: 'api/v1/theft-reports/{theft_report_id}/assign'
+    metadata:
+      custom: []
+      groupName: 'Theft Reports'
+      groupDescription: |-
+
+        APIs for theft reporting - report stolen devices, track recovery, and manage status.
+      subgroup: ''
+      subgroupDescription: ''
+      title: ''
+      description: ''
+      authenticated: true
+      deprecated: false
+    headers:
+      Authorization: 'Bearer {YOUR_AUTH_TOKEN}'
+      Content-Type: application/json
+      Accept: application/json
+    urlParameters:
+      theft_report_id:
+        custom: []
+        name: theft_report_id
+        description: 'The ID of the theft report.'
+        required: true
+        example: 16
+        type: integer
+        enumValues: []
+        exampleWasSpecified: false
+        nullable: false
+        deprecated: false
+    cleanUrlParameters:
+      theft_report_id: 16
+    queryParameters: []
+    cleanQueryParameters: []
+    bodyParameters:
+      assigned_to:
+        custom: []
+        name: assigned_to
+        description: 'The <code>id</code> of an existing record in the users table.'
+        required: true
+        example: 16
+        type: integer
+        enumValues: []
+        exampleWasSpecified: false
+        nullable: false
+        deprecated: false
+      notes:
+        custom: []
+        name: notes
+        description: 'Must not be greater than 500 characters.'
+        required: false
+        example: 'n'
+        type: string
+        enumValues: []
+        exampleWasSpecified: false
+        nullable: true
+        deprecated: false
+    cleanBodyParameters:
+      assigned_to: 16
+      notes: 'n'
+    fileParameters: []
+    responses: []
+    responseFields: []
+    auth:
+      - headers
+      - Authorization
+      - 'Bearer 6g43cv8PD1aE5beadkZfhV6'
+    controller: null
+    method: null
+    route: null
+  -
+    custom: []
+    httpMethods:
+      - POST
+    uri: 'api/v1/theft-reports/{theft_report_id}/evidence'
+    metadata:
+      custom: []
+      groupName: 'Theft Reports'
+      groupDescription: |-
+
+        APIs for theft reporting - report stolen devices, track recovery, and manage status.
+      subgroup: ''
+      subgroupDescription: ''
+      title: ''
+      description: ''
+      authenticated: true
+      deprecated: false
+    headers:
+      Authorization: 'Bearer {YOUR_AUTH_TOKEN}'
+      Content-Type: multipart/form-data
+      Accept: application/json
+    urlParameters:
+      theft_report_id:
+        custom: []
+        name: theft_report_id
+        description: 'The ID of the theft report.'
+        required: true
+        example: 16
+        type: integer
+        enumValues: []
+        exampleWasSpecified: false
+        nullable: false
+        deprecated: false
+    cleanUrlParameters:
+      theft_report_id: 16
+    queryParameters: []
+    cleanQueryParameters: []
+    bodyParameters:
+      photos:
+        custom: []
+        name: photos
+        description: 'Must be an image. Must not be greater than 5120 kilobytes.'
+        required: false
+        example:
+          - null
+        type: 'file[]'
+        enumValues: []
+        exampleWasSpecified: false
+        nullable: false
+        deprecated: false
+    cleanBodyParameters: []
+    fileParameters:
+      photos:
+        - null
+    responses: []
+    responseFields: []
+    auth:
+      - headers
+      - Authorization
+      - 'Bearer 6g43cv8PD1aE5beadkZfhV6'
+    controller: null
+    method: null
+    route: null
+  -
+    custom: []
+    httpMethods:
+      - DELETE
+    uri: 'api/v1/theft-reports/{theft_report_id}/evidence'
+    metadata:
+      custom: []
+      groupName: 'Theft Reports'
+      groupDescription: |-
+
+        APIs for theft reporting - report stolen devices, track recovery, and manage status.
+      subgroup: ''
+      subgroupDescription: ''
+      title: ''
+      description: ''
+      authenticated: true
+      deprecated: false
+    headers:
+      Authorization: 'Bearer {YOUR_AUTH_TOKEN}'
+      Content-Type: application/json
+      Accept: application/json
+    urlParameters:
+      theft_report_id:
+        custom: []
+        name: theft_report_id
+        description: 'The ID of the theft report.'
+        required: true
+        example: 16
+        type: integer
+        enumValues: []
+        exampleWasSpecified: false
+        nullable: false
+        deprecated: false
+    cleanUrlParameters:
+      theft_report_id: 16
+    queryParameters: []
+    cleanQueryParameters: []
+    bodyParameters:
+      photo_path:
+        custom: []
+        name: photo_path
+        description: ''
+        required: true
+        example: architecto
+        type: string
+        enumValues: []
+        exampleWasSpecified: false
+        nullable: false
+        deprecated: false
+    cleanBodyParameters:
+      photo_path: architecto
+    fileParameters: []
+    responses: []
+    responseFields: []
+    auth:
+      - headers
+      - Authorization
+      - 'Bearer 6g43cv8PD1aE5beadkZfhV6'
+    controller: null
+    method: null
+    route: null
+  -
+    custom: []
+    httpMethods:
+      - GET
+    uri: 'api/v1/theft-reports/{theft_report_id}/updates'
+    metadata:
+      custom: []
+      groupName: 'Theft Reports'
+      groupDescription: |-
+
+        APIs for theft reporting - report stolen devices, track recovery, and manage status.
+      subgroup: ''
+      subgroupDescription: ''
+      title: ''
+      description: ''
+      authenticated: true
+      deprecated: false
+    headers:
+      Authorization: 'Bearer {YOUR_AUTH_TOKEN}'
+      Content-Type: application/json
+      Accept: application/json
+    urlParameters:
+      theft_report_id:
+        custom: []
+        name: theft_report_id
+        description: 'The ID of the theft report.'
+        required: true
+        example: 16
+        type: integer
+        enumValues: []
+        exampleWasSpecified: false
+        nullable: false
+        deprecated: false
+    cleanUrlParameters:
+      theft_report_id: 16
+    queryParameters: []
+    cleanQueryParameters: []
+    bodyParameters: []
+    cleanBodyParameters: []
+    fileParameters: []
+    responses:
+      -
+        custom: []
+        status: 401
+        content: '{"success":false,"message":"Unauthenticated. Please login to continue."}'
+        headers:
+          cache-control: 'no-cache, private'
+          content-type: application/json
+          vary: Origin
+        description: null
+    responseFields: []
+    auth:
+      - headers
+      - Authorization
+      - 'Bearer 6g43cv8PD1aE5beadkZfhV6'
+    controller: null
+    method: null
+    route: null

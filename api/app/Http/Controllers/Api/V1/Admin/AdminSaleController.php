@@ -1,0 +1,791 @@
+<?php
+
+namespace App\Http\Controllers\Api\V1\Admin;
+
+use App\Enums\InventoryStatus;
+use App\Enums\PaymentMethod;
+use App\Enums\PaymentStatus;
+use App\Enums\SaleStatus;
+use App\Http\Controllers\Api\V1\BaseController;
+use App\Http\Resources\SaleResource;
+use App\Models\ActivityLog;
+use App\Models\CommunicationSettings;
+use App\Models\Device;
+use App\Models\Sale;
+use App\Models\SaleItem;
+use App\Notifications\NewSaleNotification;
+use App\Services\InventoryMovementService;
+use App\Services\ReceiptService;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Notification;
+use Illuminate\Support\Facades\URL;
+use Illuminate\Validation\ValidationException;
+use Illuminate\Database\QueryException;
+use Illuminate\Validation\Rule;
+
+class AdminSaleController extends BaseController
+{
+    public function __construct(private readonly InventoryMovementService $movementService)
+    {
+    }
+
+    /**
+     * List all sales with filtering and pagination.
+     */
+    public function index(Request $request): JsonResponse
+    {
+        $branchId = $this->resolveSaleReadBranchId($request, $request->filled('branch_id') ? $request->integer('branch_id') : null);
+        $query = Sale::query()
+            ->with(['customer', 'soldBy', 'branch'])
+            ->withCount('items')
+            ->when($branchId, fn ($q) => $q->where('branch_id', $branchId));
+
+        // Filter by status
+        if ($request->has('status')) {
+            $query->where('status', $request->status);
+        }
+
+        // Filter by payment status
+        if ($request->has('payment_status')) {
+            $query->where('payment_status', $request->payment_status);
+        }
+
+        // Filter by customer
+        if ($request->has('customer_id')) {
+            $query->where('customer_id', $request->customer_id);
+        }
+
+        // Filter by date range
+        if ($request->has('date_from')) {
+            $query->whereDate('sale_date', '>=', $request->date_from);
+        }
+        if ($request->has('date_to')) {
+            $query->whereDate('sale_date', '<=', $request->date_to);
+        }
+
+        // Search by sale number or customer name
+        if ($request->has('search')) {
+            $search = $request->search;
+            $query->where(function ($q) use ($search) {
+                $q->where('sale_number', 'like', "%{$search}%")
+                    ->orWhereHas('customer', function ($customerQuery) use ($search) {
+                        $customerQuery->where('name', 'like', "%{$search}%")
+                            ->orWhere('email', 'like', "%{$search}%");
+                    });
+            });
+        }
+
+        // Sort
+        $sortField = $request->get('sort', 'created_at');
+        $sortDirection = $request->get('direction', 'desc');
+        $query->orderBy($sortField, $sortDirection);
+
+        // Paginate
+        $perPage = $request->get('per_page', 15);
+        $sales = $query->paginate($perPage);
+
+        return $this->paginated(SaleResource::collection($sales));
+    }
+
+    /**
+     * Get a specific sale with full details.
+     */
+    public function show(Request $request, Sale $sale): JsonResponse
+    {
+        $this->authorizeSaleView($request, $sale);
+
+        $sale->load(['customer', 'soldBy', 'branch', 'items.device.category', 'items.subscriptionPlan']);
+
+        return $this->success(new SaleResource($sale));
+    }
+
+    /**
+     * Create a new sale (POS transaction).
+     * Supports two formats:
+     * 1. Legacy: device_id (specific device)
+     * 2. New: category_id, brand, model, color, quantity (product specs)
+     */
+    public function store(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'customer_id' => 'required|exists:users,id',
+            'branch_id' => 'nullable|exists:branches,id',
+            'payment_method' => ['required', Rule::enum(PaymentMethod::class)],
+            'payment_reference' => 'nullable|string|max:100',
+            'payment_amount' => 'nullable|numeric|min:0',
+            'notes' => 'nullable|string|max:1000',
+            'vat_applicable' => 'nullable|boolean',
+            'status' => ['nullable', Rule::in([SaleStatus::DRAFT->value, SaleStatus::COMPLETED->value])],
+            'items' => 'required|array|min:1',
+            // Legacy format (direct device_id)
+            'items.*.device_id' => 'required_without:items.*.category_id|exists:devices,id',
+            // New format (product specs + quantity)
+            'items.*.category_id' => 'required_without:items.*.device_id|exists:device_categories,id',
+            'items.*.brand' => 'required_with:items.*.category_id|string|max:100',
+            'items.*.model' => 'required_with:items.*.category_id|string|max:150',
+            'items.*.color' => 'nullable|string|max:50',
+            'items.*.quantity' => 'required_with:items.*.category_id|integer|min:1|max:100',
+            // Common fields
+            'items.*.subscription_plan_id' => 'nullable|exists:subscription_plans,id',
+            'items.*.unit_price' => 'required|numeric|min:0',
+            'items.*.discount' => 'nullable|numeric|min:0',
+            'items.*.tax' => 'nullable|numeric|min:0',
+        ]);
+
+        return DB::transaction(function () use ($validated, $request) {
+            $user = $request->user();
+            $branchId = $this->resolveSaleBranchId($request, $validated);
+
+            // Get active shift for customer service users
+            $activeShift = null;
+            if ($user->hasRole('customer_service')) {
+                $activeShift = $user->activeShift()->first();
+            }
+
+            $paymentMethod = PaymentMethod::from($validated['payment_method']);
+            $requestedStatus = $validated['status'] ?? null;
+            $shouldComplete = $requestedStatus
+                ? $requestedStatus === SaleStatus::COMPLETED->value
+                : $paymentMethod !== PaymentMethod::Credit;
+
+            $sale = $this->createSaleWithRetry([
+                'customer_id' => $validated['customer_id'],
+                'branch_id' => $branchId,
+                'sold_by_id' => $user->id,
+                'shift_id' => $activeShift?->id,
+                'payment_method' => $validated['payment_method'],
+                'payment_reference' => $validated['payment_reference'] ?? null,
+                'payment_amount' => $validated['payment_amount'] ?? null,
+                'payment_status' => $shouldComplete ? PaymentStatus::Completed : PaymentStatus::Pending,
+                'status' => $shouldComplete ? SaleStatus::COMPLETED : SaleStatus::DRAFT,
+                'notes' => $validated['notes'] ?? null,
+                'sale_date' => now(),
+                'vat_applicable' => $validated['vat_applicable'] ?? true,
+                'subtotal' => 0,
+                'tax_amount' => 0,
+                'discount_amount' => 0,
+                'total_amount' => 0,
+            ]);
+
+            // Create sale items and update devices
+            foreach ($validated['items'] as $itemData) {
+                $unitPrice = round((float) $itemData['unit_price'], 2);
+                $discount = round((float) ($itemData['discount'] ?? 0), 2);
+                $tax = round((float) ($itemData['tax'] ?? 0), 2);
+                $totalPrice = round(($unitPrice - $discount) + $tax, 2);
+
+                if ($discount > $unitPrice) {
+                    throw ValidationException::withMessages([
+                        'items' => ['Discount cannot be greater than the unit price.'],
+                    ]);
+                }
+
+                // Determine if using legacy (device_id) or new (product specs) format
+                if (isset($itemData['device_id'])) {
+                    // Legacy format: single device
+                    $device = Device::whereKey($itemData['device_id'])->lockForUpdate()->firstOrFail();
+
+                    if (! $device->isInStock()) {
+                        throw ValidationException::withMessages([
+                            'items' => ["Device {$device->serial_number} is not available for sale."],
+                        ]);
+                    }
+
+                    if ($branchId !== null && (int) $device->branch_id !== (int) $branchId) {
+                        throw ValidationException::withMessages([
+                            'items' => ["Device {$device->serial_number} does not belong to the sale branch."],
+                        ]);
+                    }
+
+                    $costPrice = round((float) ($device->purchase_price ?? 0), 2);
+                    $saleItem = SaleItem::create([
+                        'sale_id' => $sale->id,
+                        'device_id' => $device->id,
+                        'subscription_plan_id' => $itemData['subscription_plan_id'] ?? null,
+                        'item_description' => "{$device->brand} {$device->model} ({$device->serial_number})",
+                        'unit_price' => $unitPrice,
+                        'discount' => $discount,
+                        'tax' => $tax,
+                        'total_price' => $totalPrice,
+                        'cost_price' => $costPrice,
+                        'selling_price' => $unitPrice,
+                        'profit_amount' => round($unitPrice - $discount - $costPrice, 2),
+                    ]);
+
+                    $this->applySaleDeviceState($device, $sale, $saleItem, $shouldComplete, $user);
+                } else {
+                    // New format: product specs with quantity
+                    $quantity = $itemData['quantity'];
+                    $categoryId = $itemData['category_id'];
+                    $brand = $itemData['brand'];
+                    $model = $itemData['model'];
+                    $color = $itemData['color'] ?? null;
+
+                    // Find available devices matching the product specs
+                    $devicesQuery = Device::where('category_id', $categoryId)
+                        ->where('brand', $brand)
+                        ->where('model', $model)
+                        ->when($branchId !== null, fn ($q) => $q->where('branch_id', $branchId))
+                        ->available()
+                        ->orderByRaw('purchase_date IS NULL')
+                        ->orderBy('purchase_date')
+                        ->orderByRaw('inventory_batch_id IS NULL')
+                        ->orderBy('inventory_batch_id')
+                        ->orderBy('created_at')
+                        ->orderBy('id')
+                        ->lockForUpdate();
+
+                    // Handle color matching (including null)
+                    if ($color === null) {
+                        $devicesQuery->whereNull('color');
+                    } else {
+                        $devicesQuery->where('color', $color);
+                    }
+
+                    $devices = $devicesQuery->limit($quantity)->get();
+
+                    // Verify we have enough devices
+                    if ($devices->count() < $quantity) {
+                        $colorText = $color ? " ({$color})" : '';
+                        throw ValidationException::withMessages([
+                            'items' => ["Not enough {$brand} {$model}{$colorText} devices available. Requested: {$quantity}, Available: {$devices->count()}."],
+                        ]);
+                    }
+
+                    // Create a sale item for each device
+                    foreach ($devices as $device) {
+                        $colorText = $device->color ? " - {$device->color}" : '';
+                        $costPrice = round((float) ($device->purchase_price ?? 0), 2);
+                        $saleItem = SaleItem::create([
+                            'sale_id' => $sale->id,
+                            'device_id' => $device->id,
+                            'subscription_plan_id' => $itemData['subscription_plan_id'] ?? null,
+                            'item_description' => "{$device->brand} {$device->model}{$colorText} ({$device->serial_number})",
+                            'unit_price' => $unitPrice,
+                            'discount' => $discount,
+                            'tax' => $tax,
+                            'total_price' => $totalPrice,
+                            'cost_price' => $costPrice,
+                            'selling_price' => $unitPrice,
+                            'profit_amount' => round($unitPrice - $discount - $costPrice, 2),
+                        ]);
+
+                        $this->applySaleDeviceState($device, $sale, $saleItem, $shouldComplete, $user);
+                    }
+                }
+            }
+
+            // Recalculate totals
+            $sale->load('items');
+            $sale->calculateTotals();
+
+            // Validate payment amount and calculate change due for cash payments
+            if ($sale->payment_method === PaymentMethod::Cash && $sale->payment_amount !== null) {
+                if ($sale->payment_amount < $sale->total_amount) {
+                    throw ValidationException::withMessages([
+                        'payment_amount' => ['Payment amount must be greater than or equal to the total amount for cash payments.'],
+                    ]);
+                }
+                $sale->change_due = round($sale->payment_amount - $sale->total_amount, 2);
+            }
+
+            if ($shouldComplete && $sale->payment_method === PaymentMethod::Cash && $sale->payment_amount === null) {
+                throw ValidationException::withMessages([
+                    'payment_amount' => ['Payment amount is required for completed cash sales.'],
+                ]);
+            }
+
+            $sale->save();
+            $this->logActivity($sale, $user, $shouldComplete ? 'completed' : 'draft_created', 'Sale created', [
+                'status' => $sale->status->value,
+                'payment_status' => $sale->payment_status->value,
+                'total_amount' => $sale->total_amount,
+            ]);
+
+            $sale->load(['customer', 'soldBy', 'branch', 'items.device.category']);
+
+            // Send notification to admin emails if enabled
+            $settings = CommunicationSettings::current();
+            if ($settings->sale_notifications_enabled && ! empty($settings->getEmailsArray())) {
+                foreach ($settings->getEmailsArray() as $email) {
+                    Notification::route('mail', $email)->notify(new NewSaleNotification($sale));
+                }
+            }
+
+            return $this->success(new SaleResource($sale), 'Sale created successfully', 201);
+        });
+    }
+
+    /**
+     * Complete a sale (finalize transaction).
+     */
+    public function complete(Request $request, Sale $sale): JsonResponse
+    {
+        if ($sale->status === SaleStatus::COMPLETED) {
+            return $this->error('Sale is already completed', 400);
+        }
+
+        if ($sale->status === SaleStatus::CANCELLED) {
+            return $this->error('Cannot complete a cancelled sale', 400);
+        }
+
+        $validated = $request->validate([
+            'payment_reference' => 'nullable|string|max:100',
+            'payment_amount' => 'nullable|numeric|min:0',
+        ]);
+
+        return DB::transaction(function () use ($sale, $validated, $request) {
+            $sale = Sale::whereKey($sale->id)->lockForUpdate()->firstOrFail();
+            $this->authorizeSaleMutation($request, $sale);
+
+            if ($sale->status === SaleStatus::COMPLETED) {
+                return $this->error('Sale is already completed', 400);
+            }
+
+            if ($sale->status === SaleStatus::CANCELLED) {
+                return $this->error('Cannot complete a cancelled sale', 400);
+            }
+
+            // Calculate change due for cash payments
+            $changeDue = null;
+            if (isset($validated['payment_amount']) && $sale->payment_method === PaymentMethod::Cash) {
+                if ($validated['payment_amount'] < $sale->total_amount) {
+                    return $this->error('Payment amount must be greater than or equal to the total amount for cash payments.', 422);
+                }
+                $changeDue = round($validated['payment_amount'] - $sale->total_amount, 2);
+            }
+
+            if ($sale->payment_method === PaymentMethod::Cash && ! isset($validated['payment_amount']) && $sale->payment_amount === null) {
+                throw ValidationException::withMessages([
+                    'payment_amount' => ['Payment amount is required for completed cash sales.'],
+                ]);
+            }
+
+            // Update sale status
+            $sale->update([
+                'status' => SaleStatus::COMPLETED,
+                'payment_status' => PaymentStatus::Completed,
+                'payment_reference' => $validated['payment_reference'] ?? $sale->payment_reference,
+                'payment_amount' => $validated['payment_amount'] ?? $sale->payment_amount,
+                'change_due' => $changeDue ?? $sale->change_due,
+            ]);
+
+            // Transfer device ownership and mark as sold
+            foreach ($sale->items()->with('device')->get() as $item) {
+                $device = Device::whereKey($item->device_id)->lockForUpdate()->firstOrFail();
+
+                if ($device->sale_id !== $sale->id || $device->inventory_status !== InventoryStatus::RESERVED) {
+                    throw ValidationException::withMessages([
+                        'items' => ["Device {$device->serial_number} is no longer reserved for this sale."],
+                    ]);
+                }
+
+                $previousStatus = $device->inventory_status?->value;
+                $device->update([
+                    'inventory_status' => InventoryStatus::SOLD,
+                    'owner_id' => $sale->customer_id,
+                    'sold_at' => now(),
+                    'sold_by_id' => $request->user()->id,
+                ]);
+                $this->movementService->recordSale($device->fresh(), $sale, $item, $request->user(), $previousStatus);
+            }
+
+            $this->logActivity($sale, $request->user(), 'completed', 'Sale completed', [
+                'payment_amount' => $sale->payment_amount,
+                'change_due' => $sale->change_due,
+            ]);
+
+            $sale->load(['customer', 'soldBy', 'branch', 'items.device.category']);
+
+            return $this->success(new SaleResource($sale), 'Sale completed successfully');
+        });
+    }
+
+    /**
+     * Cancel a sale.
+     */
+    public function cancel(Request $request, Sale $sale): JsonResponse
+    {
+        if ($sale->status === SaleStatus::COMPLETED) {
+            return $this->error('Cannot cancel a completed sale. Use refund instead.', 400);
+        }
+
+        if ($sale->status === SaleStatus::CANCELLED) {
+            return $this->error('Sale is already cancelled', 400);
+        }
+
+        return DB::transaction(function () use ($sale, $request) {
+            $sale = Sale::whereKey($sale->id)->lockForUpdate()->firstOrFail();
+            $this->authorizeSaleMutation($request, $sale);
+
+            if ($sale->status === SaleStatus::COMPLETED) {
+                return $this->error('Cannot cancel a completed sale. Use refund instead.', 400);
+            }
+
+            if ($sale->status === SaleStatus::CANCELLED) {
+                return $this->error('Sale is already cancelled', 400);
+            }
+
+            // Return devices to stock
+            foreach ($sale->items()->with('device')->get() as $item) {
+                $device = Device::whereKey($item->device_id)->lockForUpdate()->firstOrFail();
+                if ($device->sale_id !== $sale->id || $device->inventory_status !== InventoryStatus::RESERVED) {
+                    throw ValidationException::withMessages([
+                        'items' => ["Device {$device->serial_number} is no longer reserved for this sale."],
+                    ]);
+                }
+
+                $device->update([
+                    'inventory_status' => InventoryStatus::IN_STOCK,
+                    'sale_id' => null,
+                ]);
+                $this->movementService->recordReservationCancelled($device->fresh(), $sale, $item, $request->user(), 'Sale cancelled');
+            }
+
+            // Update sale status
+            $sale->update([
+                'status' => SaleStatus::CANCELLED,
+            ]);
+            $this->logActivity($sale, $request->user(), 'cancelled', 'Sale cancelled');
+
+            $sale->load(['customer', 'soldBy', 'branch', 'items.device.category']);
+
+            return $this->success(new SaleResource($sale), 'Sale cancelled successfully');
+        });
+    }
+
+    /**
+     * Refund a completed sale.
+     */
+    public function refund(Request $request, Sale $sale): JsonResponse
+    {
+        if ($sale->status !== SaleStatus::COMPLETED) {
+            return $this->error('Can only refund completed sales', 400);
+        }
+
+        if ($sale->status === SaleStatus::REFUNDED) {
+            return $this->error('Sale is already refunded', 400);
+        }
+
+        $validated = $request->validate([
+            'reason' => 'required|string|max:1000',
+        ]);
+
+        return DB::transaction(function () use ($sale, $validated, $request) {
+            $sale = Sale::whereKey($sale->id)->lockForUpdate()->firstOrFail();
+            $this->authorizeSaleMutation($request, $sale);
+
+            if ($sale->status !== SaleStatus::COMPLETED) {
+                return $this->error('Can only refund completed sales', 400);
+            }
+
+            // Return devices to stock and remove ownership
+            foreach ($sale->items()->with('device')->get() as $item) {
+                $device = Device::whereKey($item->device_id)->lockForUpdate()->firstOrFail();
+                if ($device->sale_id !== $sale->id || $device->inventory_status !== InventoryStatus::SOLD) {
+                    throw ValidationException::withMessages([
+                        'items' => ["Device {$device->serial_number} is no longer sold under this sale."],
+                    ]);
+                }
+
+                $device->update([
+                    'inventory_status' => InventoryStatus::IN_STOCK,
+                    'owner_id' => null,
+                    'sale_id' => null,
+                    'sold_at' => null,
+                    'sold_by_id' => null,
+                ]);
+                $this->movementService->recordRefund($device->fresh(), $sale, $item, $request->user(), $validated['reason']);
+            }
+
+            // Update sale status
+            $sale->update([
+                'status' => SaleStatus::REFUNDED,
+                'payment_status' => PaymentStatus::Refunded,
+                'refund_reason' => $validated['reason'],
+            ]);
+            $this->logActivity($sale, $request->user(), 'refunded', 'Sale refunded', [
+                'reason' => $validated['reason'],
+            ]);
+
+            $sale->load(['customer', 'soldBy', 'branch', 'items.device.category']);
+
+            return $this->success(new SaleResource($sale), 'Sale refunded successfully');
+        });
+    }
+
+    /**
+     * Delete a draft sale.
+     */
+    public function destroy(Request $request, Sale $sale): JsonResponse
+    {
+        if ($sale->status !== SaleStatus::DRAFT) {
+            return $this->error('Can only delete draft sales', 400);
+        }
+
+        return DB::transaction(function () use ($sale, $request) {
+            $sale = Sale::whereKey($sale->id)->lockForUpdate()->firstOrFail();
+            $this->authorizeSaleMutation($request, $sale);
+
+            if ($sale->status !== SaleStatus::DRAFT) {
+                return $this->error('Can only delete draft sales', 400);
+            }
+
+            // Return devices to stock
+            foreach ($sale->items()->with('device')->get() as $item) {
+                $device = Device::whereKey($item->device_id)->lockForUpdate()->firstOrFail();
+                if ($device->sale_id !== $sale->id || $device->inventory_status !== InventoryStatus::RESERVED) {
+                    throw ValidationException::withMessages([
+                        'items' => ["Device {$device->serial_number} is no longer reserved for this sale."],
+                    ]);
+                }
+
+                $device->update([
+                    'inventory_status' => InventoryStatus::IN_STOCK,
+                    'sale_id' => null,
+                ]);
+                $this->movementService->recordReservationCancelled($device->fresh(), $sale, $item, $request->user(), 'Draft sale deleted');
+            }
+
+            $saleNumber = $sale->sale_number;
+            $this->logActivity($sale, $request->user(), 'deleted', 'Draft sale deleted');
+            $sale->items()->delete();
+            $sale->delete();
+
+            return $this->success(null, "Sale '{$saleNumber}' has been deleted successfully");
+        });
+    }
+
+    /**
+     * Generate and display receipt for a sale.
+     */
+    public function receipt(Request $request, Sale $sale): mixed
+    {
+        $this->authorizeSaleView($request, $sale);
+
+        $receiptService = new ReceiptService;
+
+        $format = $request->get('format', 'a4'); // a4 or thermal
+        $output = $request->get('output', 'html'); // html or pdf
+
+        if (! \in_array($format, ['a4', 'thermal'], true)) {
+            return $this->error('Invalid format. Use "a4" or "thermal"', 400);
+        }
+
+        if (! \in_array($output, ['html', 'pdf'], true)) {
+            return $this->error('Invalid output. Use "html" or "pdf"', 400);
+        }
+
+        if ($output === 'pdf') {
+            return $receiptService->generatePdf($sale, $format);
+        }
+
+        // Return HTML view
+        $html = $receiptService->generateHtml($sale, $format);
+
+        return response($html)
+            ->header('Content-Type', 'text/html');
+    }
+
+    /**
+     * Generate a signed URL for receipt access.
+     */
+    public function generateReceiptUrl(Request $request, Sale $sale): JsonResponse
+    {
+        $this->authorizeSaleView($request, $sale);
+
+        $format = $request->get('format', 'a4');
+
+        if (! \in_array($format, ['a4', 'thermal'], true)) {
+            return $this->error('Invalid format. Use "a4" or "thermal"', 400);
+        }
+
+        // Generate signed URL valid for 15 minutes
+        $signedUrl = URL::signedRoute(
+            'sales.public-receipt',
+            ['sale' => $sale->id, 'format' => $format],
+            now()->addMinutes(15)
+        );
+
+        return $this->success([
+            'signed_url' => $signedUrl,
+            'expires_in' => 900, // 15 minutes in seconds
+        ], 'Signed URL generated successfully');
+    }
+
+    /**
+     * Public receipt access using signed URL.
+     */
+    public function publicReceipt(Request $request, Sale $sale): mixed
+    {
+        // Verify the URL signature
+        if (! $request->hasValidSignature()) {
+            abort(403, 'Invalid or expired receipt URL');
+        }
+
+        $receiptService = new ReceiptService;
+        $format = $request->get('format', 'a4');
+
+        if (! \in_array($format, ['a4', 'thermal'], true)) {
+            abort(400, 'Invalid format');
+        }
+
+        // Return HTML view
+        $html = $receiptService->generateHtml($sale, $format);
+
+        return response($html)
+            ->header('Content-Type', 'text/html');
+    }
+
+    private function applySaleDeviceState(Device $device, Sale $sale, SaleItem $saleItem, bool $completed, $user): void
+    {
+        if ($device->stock_transfer_request_id) {
+            throw ValidationException::withMessages(['items' => ["Device {$device->serial_number} is awaiting transfer approval."]]);
+        }
+        if ($completed) {
+            $previousStatus = $device->inventory_status?->value;
+            $device->update([
+                'inventory_status' => InventoryStatus::SOLD,
+                'sale_id' => $sale->id,
+                'owner_id' => $sale->customer_id,
+                'sold_at' => now(),
+                'sold_by_id' => $user->id,
+            ]);
+            $this->movementService->recordSale($device->fresh(), $sale, $saleItem, $user, $previousStatus);
+
+            return;
+        }
+
+        $device->update([
+            'inventory_status' => InventoryStatus::RESERVED,
+            'sale_id' => $sale->id,
+        ]);
+        $this->movementService->recordReservation($device->fresh(), $sale, $saleItem, $user);
+    }
+
+    private function resolveSaleBranchId(Request $request, array $validated): ?int
+    {
+        $user = $request->user();
+
+        if ($user->hasRole('super_admin')) {
+            return isset($validated['branch_id']) ? (int) $validated['branch_id'] : ($user->branch_id ? (int) $user->branch_id : null);
+        }
+
+        if (! $user->branch_id) {
+            throw ValidationException::withMessages([
+                'branch_id' => ['Your account must be assigned to a branch before creating sales.'],
+            ]);
+        }
+
+        return (int) $user->branch_id;
+    }
+
+    private function resolveSaleReadBranchId(Request $request, ?int $requestedBranchId): ?int
+    {
+        $user = $request->user();
+
+        if ($user?->hasRole('super_admin')) {
+            return $requestedBranchId ?: ($user->branch_id ? (int) $user->branch_id : null);
+        }
+
+        return $user?->branch_id ? (int) $user->branch_id : null;
+    }
+
+    private function createSaleWithRetry(array $attributes): Sale
+    {
+        for ($attempt = 0; $attempt < 5; $attempt++) {
+            try {
+                return Sale::create([
+                    ...$attributes,
+                    'sale_number' => Sale::generateSaleNumber(),
+                ]);
+            } catch (QueryException $e) {
+                if (! $this->isUniqueConstraintViolation($e) || $attempt === 4) {
+                    throw $e;
+                }
+            }
+        }
+
+        throw new \RuntimeException('Unable to allocate a sale number.');
+    }
+
+    private function isUniqueConstraintViolation(QueryException $e): bool
+    {
+        $sqlState = (string) ($e->errorInfo[0] ?? '');
+        $driverCode = (string) ($e->errorInfo[1] ?? '');
+
+        return in_array($sqlState, ['23000', '23505'], true) || $driverCode === '1062';
+    }
+
+    private function authorizeSaleMutation(Request $request, Sale $sale): void
+    {
+        $user = $request->user();
+
+        if ($user->hasRole('super_admin')) {
+            return;
+        }
+
+        if ($user->hasRole('store_admin') && (int) $sale->branch_id === (int) $user->branch_id) {
+            return;
+        }
+
+        if (
+            $user->hasRole('customer_service')
+            && (int) $sale->branch_id === (int) $user->branch_id
+            && (int) $sale->sold_by_id === (int) $user->id
+        ) {
+            return;
+        }
+
+        abort(403, 'You are not allowed to modify this sale.');
+    }
+
+    private function authorizeSaleView(Request $request, Sale $sale): void
+    {
+        $user = $request->user();
+
+        if ($user->hasRole('super_admin')) {
+            return;
+        }
+
+        if ($user->hasRole('store_admin') && (int) $sale->branch_id === (int) $user->branch_id) {
+            return;
+        }
+
+        if (
+            $user->hasRole('customer_service')
+            && (int) $sale->branch_id === (int) $user->branch_id
+            && (int) $sale->sold_by_id === (int) $user->id
+        ) {
+            return;
+        }
+
+        abort(403, 'You are not allowed to view this sale.');
+    }
+
+    private function logActivity(Sale $sale, $user, string $event, string $description, array $properties = []): void
+    {
+        try {
+            ActivityLog::create([
+                'log_name' => 'sales',
+                'description' => $description,
+                'subject_type' => Sale::class,
+                'subject_id' => $sale->id,
+                'causer_type' => $user ? get_class($user) : null,
+                'causer_id' => $user?->id,
+                'properties' => $properties,
+                'event' => $event,
+                'created_at' => now(),
+            ]);
+        } catch (\Throwable $e) {
+            Log::warning('Failed to write sale activity log', [
+                'sale_id' => $sale->id,
+                'event' => $event,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+}

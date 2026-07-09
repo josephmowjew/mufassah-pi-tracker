@@ -1,0 +1,86 @@
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+
+class InventoryReceipt extends Model
+{
+    use HasFactory;
+
+    protected $fillable = [
+        'receipt_number',
+        'branch_id',
+        'supplier',
+        'reference_number',
+        'purchase_date',
+        'purchase_location',
+        'status',
+        'notes',
+        'received_by_id',
+        'received_at',
+    ];
+
+    protected function casts(): array
+    {
+        return [
+            'purchase_date' => 'date',
+            'received_at' => 'datetime',
+        ];
+    }
+
+    public function branch(): BelongsTo
+    {
+        return $this->belongsTo(Branch::class);
+    }
+
+    public function receivedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'received_by_id');
+    }
+
+    public function batches(): HasMany
+    {
+        return $this->hasMany(InventoryBatch::class);
+    }
+
+    public static function generateReceiptNumber(): string
+    {
+        $year = now()->format('Y');
+        $lastReceipt = static::whereYear('created_at', $year)
+            ->orderByDesc('id')
+            ->first();
+
+        $sequence = $lastReceipt ? ((int) substr($lastReceipt->receipt_number, -5)) + 1 : 1;
+
+        return sprintf('REC-%s-%05d', $year, $sequence);
+    }
+
+    public function summary(): array
+    {
+        $batches = $this->relationLoaded('batches')
+            ? $this->batches
+            : $this->batches()->with('devices.sale.items')->get();
+
+        $units = (int) $batches->sum('quantity_received');
+        $totalCost = round($batches->sum(fn (InventoryBatch $batch) => (float) $batch->buying_price * $batch->quantity_received), 2);
+        $expectedRevenue = round($batches->sum(fn (InventoryBatch $batch) => (float) $batch->target_selling_price * $batch->quantity_received), 2);
+        $expectedProfit = round($expectedRevenue - $totalCost, 2);
+        $realizedRevenue = round($batches->sum(fn (InventoryBatch $batch) => $batch->summary()['realized_revenue']), 2);
+        $realizedProfit = round($batches->sum(fn (InventoryBatch $batch) => $batch->summary()['realized_gross_profit']), 2);
+
+        return [
+            'lines' => $batches->count(),
+            'units' => $units,
+            'total_cost' => $totalCost,
+            'expected_revenue' => $expectedRevenue,
+            'expected_gross_profit' => $expectedProfit,
+            'realized_revenue' => $realizedRevenue,
+            'realized_gross_profit' => $realizedProfit,
+            'margin' => $realizedRevenue > 0 ? round(($realizedProfit / $realizedRevenue) * 100, 2) : null,
+        ];
+    }
+}

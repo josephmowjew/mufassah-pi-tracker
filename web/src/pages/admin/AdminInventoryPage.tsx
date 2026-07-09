@@ -1,0 +1,734 @@
+import { useState, useEffect } from 'react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { Search, Package, Plus, Loader2, LayoutGrid, List, Layers } from 'lucide-react'
+import { Authorize } from '@/components/auth/Authorize'
+import { PERMISSIONS } from '@/stores/auth-store'
+import apiClient from '@/api/client'
+import { toast } from 'sonner'
+import type { Device, GroupedInventoryItem, InventoryBatch } from '@/types'
+import StockViewTable from '@/components/inventory/StockViewTable'
+import SerialViewTable from '@/components/inventory/SerialViewTable'
+import ProductDetailsModal from '@/components/inventory/ProductDetailsModal'
+import BulkAddDeviceModal from '@/components/inventory/BulkAddDeviceModal'
+import { CheckCircle, Clock, Tag, RotateCcw, AlertTriangle } from 'lucide-react'
+
+interface PaginatedResponse {
+  data: Device[]
+  meta: {
+    current_page: number
+    last_page: number
+    per_page: number
+    total: number
+  }
+}
+
+interface InventoryStats {
+  summary: {
+    total: number
+    in_stock: number
+    reserved: number
+    sold: number
+    returned: number
+    faulty: number
+    available: number
+  }
+  by_category: Array<{
+    category_id: number | null
+    category_name: string
+    counts: Record<string, number>
+  }>
+}
+
+type ViewMode = 'stock' | 'serial' | 'batches'
+
+const formatMoney = (value: number | string | null | undefined) => {
+  const amount = Number(value || 0)
+  return `MWK ${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+}
+
+const formatDate = (value: string | null | undefined) => {
+  if (!value) return '-'
+  return new Date(value).toLocaleDateString()
+}
+
+export default function AdminInventoryPage() {
+  const queryClient = useQueryClient()
+  const [search, setSearch] = useState('')
+  const [page, setPage] = useState(1)
+  const [inventoryStatus, setInventoryStatus] = useState('')
+  const [selectedBranchId, setSelectedBranchId] = useState('')
+  const [selectedDevice, setSelectedDevice] = useState<Device | null>(null)
+  const [showBulkAddModal, setShowBulkAddModal] = useState(false)
+  const [showStatusModal, setShowStatusModal] = useState(false)
+  const [selectedProduct, setSelectedProduct] = useState<GroupedInventoryItem | null>(null)
+  const [selectedBatch, setSelectedBatch] = useState<InventoryBatch | null>(null)
+  const [newStatus, setNewStatus] = useState('')
+  const [statusNotes, setStatusNotes] = useState('')
+
+  // View mode with localStorage persistence
+  const [viewMode, setViewMode] = useState<ViewMode>(() => {
+    const saved = localStorage.getItem('inventory-view-mode')
+    return (saved === 'stock' || saved === 'serial' || saved === 'batches') ? saved : 'stock'
+  })
+
+  useEffect(() => {
+    localStorage.setItem('inventory-view-mode', viewMode)
+  }, [viewMode])
+
+  // Fetch inventory stats
+  const { data: stats } = useQuery({
+    queryKey: ['inventory-stats'],
+    queryFn: async () => {
+      const response = await apiClient.get<{ success: boolean; data: InventoryStats }>('/admin/inventory/stats')
+      return response.data.data
+    },
+  })
+
+  // Fetch branches
+  const { data: branches } = useQuery({
+    queryKey: ['branches'],
+    queryFn: async () => {
+      const response = await apiClient.get<{ success: boolean; data: Array<{ id: number; name: string }> }>('/admin/branches')
+      return response.data.data
+    },
+  })
+
+  // Fetch grouped inventory data
+  const { data: groupedData, isLoading: groupedLoading } = useQuery({
+    queryKey: ['inventory-grouped', search, inventoryStatus, selectedBranchId],
+    queryFn: async () => {
+      const params = new URLSearchParams()
+      if (search) params.append('search', search)
+      if (inventoryStatus) params.append('inventory_status', inventoryStatus)
+      if (selectedBranchId) params.append('branch_id', selectedBranchId)
+
+      const response = await apiClient.get<{ success: boolean; data: { data: GroupedInventoryItem[]; total: number } }>(
+        `/admin/inventory/grouped?${params.toString()}`
+      )
+      return response.data.data.data
+    },
+    enabled: viewMode === 'stock',
+  })
+
+  // Fetch inventory items (serial view)
+  const { data: serialData, isLoading: serialLoading } = useQuery({
+    queryKey: ['admin-inventory', search, page, inventoryStatus, selectedBranchId],
+    queryFn: async () => {
+      const params = new URLSearchParams()
+      params.append('page', page.toString())
+      params.append('per_page', '15')
+      if (search) params.append('search', search)
+      if (inventoryStatus) params.append('inventory_status', inventoryStatus)
+      if (selectedBranchId) params.append('branch_id', selectedBranchId)
+
+      const response = await apiClient.get<{ success: boolean; data: Device[]; meta: PaginatedResponse['meta'] }>(
+        `/admin/inventory?${params.toString()}`
+      )
+      return response.data
+    },
+    enabled: viewMode === 'serial',
+  })
+
+  const { data: batchesData, isLoading: batchesLoading } = useQuery({
+    queryKey: ['inventory-batches', search, page, selectedBranchId],
+    queryFn: async () => {
+      const params = new URLSearchParams()
+      params.append('page', page.toString())
+      params.append('per_page', '15')
+      if (search) params.append('search', search)
+      if (selectedBranchId) params.append('branch_id', selectedBranchId)
+
+      const response = await apiClient.get<{ success: boolean; data: InventoryBatch[]; meta: PaginatedResponse['meta'] }>(
+        `/admin/inventory/batches?${params.toString()}`
+      )
+      return response.data
+    },
+    enabled: viewMode === 'batches',
+  })
+
+  const { data: selectedBatchDetails } = useQuery({
+    queryKey: ['inventory-batch', selectedBatch?.id],
+    queryFn: async () => {
+      const response = await apiClient.get<{ success: boolean; data: InventoryBatch }>(
+        `/admin/inventory/batches/${selectedBatch?.id}`
+      )
+      return response.data.data
+    },
+    enabled: !!selectedBatch?.id,
+  })
+
+  const batchForModal = selectedBatchDetails || selectedBatch
+
+  // Update inventory status mutation
+  const updateStatusMutation = useMutation({
+    mutationFn: async ({ deviceId, status, notes }: { deviceId: number; status: string; notes?: string }) => {
+      await apiClient.put(`/admin/inventory/${deviceId}/status`, { inventory_status: status, notes })
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-inventory'] })
+      queryClient.invalidateQueries({ queryKey: ['inventory-grouped'] })
+      queryClient.invalidateQueries({ queryKey: ['inventory-stats'] })
+      queryClient.invalidateQueries({ queryKey: ['inventory-devices'] })
+      toast.success('Inventory status updated')
+      setShowStatusModal(false)
+      setSelectedDevice(null)
+      setNewStatus('')
+      setStatusNotes('')
+    },
+    onError: (error: Error & { response?: { data?: { message?: string } } }) => {
+      toast.error(error.response?.data?.message || 'Failed to update status')
+    },
+  })
+
+  const handleOpenStatusModal = (device: Device) => {
+    setSelectedDevice(device)
+    const currentStatus = typeof device.inventory_status === 'string'
+      ? device.inventory_status
+      : device.inventory_status?.value || 'in_stock'
+    setNewStatus(currentStatus)
+    setShowStatusModal(true)
+  }
+
+  const handleViewProductDetails = (product: GroupedInventoryItem) => {
+    setSelectedProduct(product)
+  }
+
+  const devices = serialData?.data || []
+  const meta = serialData?.meta
+  const groupedItems = groupedData || []
+  const isLoading = viewMode === 'stock' ? groupedLoading : viewMode === 'serial' ? serialLoading : batchesLoading
+  const batches = batchesData?.data || []
+  const batchesMeta = batchesData?.meta
+
+  return (
+    <Authorize permission={PERMISSIONS.ACCESS_ADMIN_PANEL} fallback={<div className="p-6">Access denied</div>}>
+      <div className="space-y-6 p-6">
+        {/* Header */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-bold text-slate-900">Inventory Management</h1>
+            <p className="text-slate-500 text-sm mt-1">Manage device stock and inventory</p>
+          </div>
+          <Authorize permission={PERMISSIONS.MANAGE_INVENTORY}>
+            <button
+              onClick={() => setShowBulkAddModal(true)}
+              className="inline-flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              <Plus className="h-4 w-4" />
+              Receive Stock
+            </button>
+          </Authorize>
+        </div>
+
+        {/* Stats Cards */}
+        {stats && (
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
+            <div className="bg-white rounded-xl border border-slate-200 p-4">
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 rounded-lg bg-slate-100 flex items-center justify-center">
+                  <Package className="h-5 w-5 text-slate-600" />
+                </div>
+                <div>
+                  <p className="text-2xl font-bold text-slate-900">{stats.summary.total}</p>
+                  <p className="text-xs text-slate-500">Total</p>
+                </div>
+              </div>
+            </div>
+            <div className="bg-white rounded-xl border border-slate-200 p-4">
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 rounded-lg bg-emerald-100 flex items-center justify-center">
+                  <CheckCircle className="h-5 w-5 text-emerald-600" />
+                </div>
+                <div>
+                  <p className="text-2xl font-bold text-emerald-600">{stats.summary.in_stock}</p>
+                  <p className="text-xs text-slate-500">In Stock</p>
+                </div>
+              </div>
+            </div>
+            <div className="bg-white rounded-xl border border-slate-200 p-4">
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 rounded-lg bg-amber-100 flex items-center justify-center">
+                  <Clock className="h-5 w-5 text-amber-600" />
+                </div>
+                <div>
+                  <p className="text-2xl font-bold text-amber-600">{stats.summary.reserved}</p>
+                  <p className="text-xs text-slate-500">Reserved</p>
+                </div>
+              </div>
+            </div>
+            <div className="bg-white rounded-xl border border-slate-200 p-4">
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 rounded-lg bg-blue-100 flex items-center justify-center">
+                  <Tag className="h-5 w-5 text-blue-600" />
+                </div>
+                <div>
+                  <p className="text-2xl font-bold text-blue-600">{stats.summary.sold}</p>
+                  <p className="text-xs text-slate-500">Sold</p>
+                </div>
+              </div>
+            </div>
+            <div className="bg-white rounded-xl border border-slate-200 p-4">
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 rounded-lg bg-purple-100 flex items-center justify-center">
+                  <RotateCcw className="h-5 w-5 text-purple-600" />
+                </div>
+                <div>
+                  <p className="text-2xl font-bold text-purple-600">{stats.summary.returned}</p>
+                  <p className="text-xs text-slate-500">Returned</p>
+                </div>
+              </div>
+            </div>
+            <div className="bg-white rounded-xl border border-slate-200 p-4">
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 rounded-lg bg-red-100 flex items-center justify-center">
+                  <AlertTriangle className="h-5 w-5 text-red-600" />
+                </div>
+                <div>
+                  <p className="text-2xl font-bold text-red-600">{stats.summary.faulty}</p>
+                  <p className="text-xs text-slate-500">Faulty</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Filters & View Toggle */}
+        <div className="bg-white rounded-xl border border-slate-200 p-4">
+          <div className="flex flex-col sm:flex-row gap-4">
+            <div className="flex-1 relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+              <input
+                type="text"
+                placeholder={
+                  viewMode === 'batches'
+                    ? "Search by batch, brand, model, location..."
+                    : viewMode === 'stock'
+                      ? "Search by brand, model..."
+                      : "Search by serial number, brand, model..."
+                }
+                value={search}
+                onChange={(e) => { setSearch(e.target.value); setPage(1) }}
+                className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+            </div>
+            <select
+              value={selectedBranchId}
+              onChange={(e) => { setSelectedBranchId(e.target.value); setPage(1) }}
+              className="px-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="">All Branches</option>
+              {branches?.map((branch) => (
+                <option key={branch.id} value={branch.id.toString()}>
+                  {branch.name}
+                </option>
+              ))}
+            </select>
+            {viewMode !== 'batches' && (
+              <select
+                value={inventoryStatus}
+                onChange={(e) => { setInventoryStatus(e.target.value); setPage(1) }}
+                className="px-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">All Status</option>
+                <option value="in_stock">In Stock</option>
+                <option value="reserved">Reserved</option>
+                <option value="sold">Sold</option>
+                <option value="returned">Returned</option>
+                <option value="faulty">Faulty</option>
+              </select>
+            )}
+
+            {/* View Toggle */}
+            <div className="flex rounded-lg border border-slate-200 p-1 bg-slate-50">
+              <button
+                onClick={() => setViewMode('stock')}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                  viewMode === 'stock'
+                    ? 'bg-white text-blue-600 shadow-sm'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <LayoutGrid className="h-4 w-4" />
+                Stock View
+              </button>
+              <button
+                onClick={() => setViewMode('serial')}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                  viewMode === 'serial'
+                    ? 'bg-white text-blue-600 shadow-sm'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <List className="h-4 w-4" />
+                Serial View
+              </button>
+              <button
+                onClick={() => setViewMode('batches')}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                  viewMode === 'batches'
+                    ? 'bg-white text-blue-600 shadow-sm'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <Layers className="h-4 w-4" />
+                Batches
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Inventory View */}
+        <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+          {viewMode === 'stock' ? (
+            <StockViewTable
+              data={groupedItems}
+              isLoading={isLoading}
+              onViewDetails={handleViewProductDetails}
+            />
+          ) : viewMode === 'serial' ? (
+            <SerialViewTable
+              devices={devices}
+              isLoading={isLoading}
+              onChangeStatus={handleOpenStatusModal}
+              meta={meta}
+              onPageChange={setPage}
+            />
+          ) : (
+            <div className="overflow-x-auto">
+              {isLoading ? (
+                <div className="flex items-center justify-center py-16">
+                  <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
+                </div>
+              ) : batches.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-16">
+                  <Layers className="h-10 w-10 text-slate-300 mb-2" />
+                  <p className="text-sm text-slate-500">No inventory batches found</p>
+                </div>
+              ) : (
+                <table className="w-full">
+                  <thead className="bg-slate-50 border-b border-slate-200">
+                    <tr>
+                      <th className="text-left px-4 py-3 text-xs font-medium text-slate-500 uppercase">Batch</th>
+                      <th className="text-left px-4 py-3 text-xs font-medium text-slate-500 uppercase">Product</th>
+                      <th className="text-left px-4 py-3 text-xs font-medium text-slate-500 uppercase">Branch</th>
+                      <th className="text-right px-4 py-3 text-xs font-medium text-slate-500 uppercase">Received</th>
+                      <th className="text-right px-4 py-3 text-xs font-medium text-slate-500 uppercase">Stock</th>
+                      <th className="text-right px-4 py-3 text-xs font-medium text-slate-500 uppercase">Reserved</th>
+                      <th className="text-right px-4 py-3 text-xs font-medium text-slate-500 uppercase">Sold</th>
+                      <th className="text-right px-4 py-3 text-xs font-medium text-slate-500 uppercase">Cost</th>
+                      <th className="text-right px-4 py-3 text-xs font-medium text-slate-500 uppercase">Target</th>
+                      <th className="text-right px-4 py-3 text-xs font-medium text-slate-500 uppercase">Revenue</th>
+                      <th className="text-right px-4 py-3 text-xs font-medium text-slate-500 uppercase">Profit</th>
+                      <th className="text-right px-4 py-3 text-xs font-medium text-slate-500 uppercase">Margin</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200">
+                    {batches.map((batch) => (
+                      <tr
+                        key={batch.id}
+                        onClick={() => setSelectedBatch(batch)}
+                        className="hover:bg-slate-50 cursor-pointer"
+                      >
+                        <td className="px-4 py-3 font-medium text-slate-900">{batch.batch_number}</td>
+                        <td className="px-4 py-3 text-sm text-slate-600">
+                          {batch.brand} {batch.model}{batch.color ? ` - ${batch.color}` : ''}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-slate-600">{batch.branch?.name || '-'}</td>
+                        <td className="px-4 py-3 text-sm text-right">{batch.quantity_received}</td>
+                        <td className="px-4 py-3 text-sm text-right text-emerald-700">{batch.summary.in_stock}</td>
+                        <td className="px-4 py-3 text-sm text-right text-amber-700">{batch.summary.reserved}</td>
+                        <td className="px-4 py-3 text-sm text-right text-blue-700">{batch.summary.sold}</td>
+                        <td className="px-4 py-3 text-sm text-right">{formatMoney(batch.buying_price)}</td>
+                        <td className="px-4 py-3 text-sm text-right">{formatMoney(batch.target_selling_price)}</td>
+                        <td className="px-4 py-3 text-sm text-right">{formatMoney(batch.summary.realized_revenue)}</td>
+                        <td className="px-4 py-3 text-sm text-right font-medium text-emerald-700">{formatMoney(batch.summary.realized_gross_profit)}</td>
+                        <td className="px-4 py-3 text-sm text-right">{batch.summary.margin === null ? '-' : `${batch.summary.margin}%`}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+              {batchesMeta && batchesMeta.last_page > 1 && (
+                <div className="flex items-center justify-between px-6 py-4 border-t border-slate-200">
+                  <p className="text-sm text-slate-500">
+                    Showing {((batchesMeta.current_page - 1) * batchesMeta.per_page) + 1} to {Math.min(batchesMeta.current_page * batchesMeta.per_page, batchesMeta.total)} of {batchesMeta.total}
+                  </p>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setPage(p => Math.max(1, p - 1))}
+                      disabled={batchesMeta.current_page === 1}
+                      className="px-3 py-1 text-sm border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-50"
+                    >
+                      Previous
+                    </button>
+                    <button
+                      onClick={() => setPage(p => Math.min(batchesMeta.last_page, p + 1))}
+                      disabled={batchesMeta.current_page === batchesMeta.last_page}
+                      className="px-3 py-1 text-sm border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-50"
+                    >
+                      Next
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Bulk Add Device Modal */}
+        {showBulkAddModal && (
+          <BulkAddDeviceModal onClose={() => setShowBulkAddModal(false)} />
+        )}
+
+        {/* Product Details Modal */}
+        {selectedProduct && (
+          <ProductDetailsModal
+            product={selectedProduct}
+            onClose={() => setSelectedProduct(null)}
+            onChangeStatus={handleOpenStatusModal}
+          />
+        )}
+
+        {batchForModal && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-xl max-w-6xl w-full max-h-[90vh] overflow-y-auto">
+              <div className="p-6 border-b border-slate-200 flex items-start justify-between gap-4">
+                <div>
+                  <h2 className="text-lg font-semibold text-slate-900">{batchForModal.batch_number}</h2>
+                  <p className="text-sm text-slate-500">
+                    {batchForModal.brand} {batchForModal.model}{batchForModal.color ? ` - ${batchForModal.color}` : ''}
+                  </p>
+                  {batchForModal.receipt && (
+                    <p className="text-xs text-slate-500 mt-1">
+                      Receipt {batchForModal.receipt.receipt_number}
+                      {batchForModal.receipt.reference_number ? ` | Ref ${batchForModal.receipt.reference_number}` : ''}
+                    </p>
+                  )}
+                </div>
+                <button onClick={() => setSelectedBatch(null)} className="text-sm text-slate-500 hover:text-slate-900">Close</button>
+              </div>
+              <div className="p-6 space-y-6">
+                <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
+                  <div className="p-3 bg-slate-50 rounded-lg">
+                    <p className="text-xs text-slate-500">Received</p>
+                    <p className="font-semibold">{batchForModal.quantity_received}</p>
+                  </div>
+                  <div className="p-3 bg-emerald-50 rounded-lg">
+                    <p className="text-xs text-emerald-700">In Stock</p>
+                    <p className="font-semibold text-emerald-700">{batchForModal.summary.in_stock}</p>
+                  </div>
+                  <div className="p-3 bg-amber-50 rounded-lg">
+                    <p className="text-xs text-amber-700">Reserved</p>
+                    <p className="font-semibold text-amber-700">{batchForModal.summary.reserved}</p>
+                  </div>
+                  <div className="p-3 bg-blue-50 rounded-lg">
+                    <p className="text-xs text-blue-700">Sold</p>
+                    <p className="font-semibold text-blue-700">{batchForModal.summary.sold}</p>
+                  </div>
+                  <div className="p-3 bg-purple-50 rounded-lg">
+                    <p className="text-xs text-purple-700">Returned</p>
+                    <p className="font-semibold text-purple-700">{batchForModal.summary.returned}</p>
+                  </div>
+                  <div className="p-3 bg-red-50 rounded-lg">
+                    <p className="text-xs text-red-700">Faulty</p>
+                    <p className="font-semibold text-red-700">{batchForModal.summary.faulty}</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                  <div className="border border-slate-200 rounded-lg p-4">
+                    <h3 className="font-medium text-slate-900 mb-3">Product & Source</h3>
+                    <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+                      <dt className="text-slate-500">Category</dt>
+                      <dd className="text-slate-900">{batchForModal.category?.name || '-'}</dd>
+                      <dt className="text-slate-500">Branch</dt>
+                      <dd className="text-slate-900">{batchForModal.branch?.name || '-'}</dd>
+                      <dt className="text-slate-500">Purchase Date</dt>
+                      <dd className="text-slate-900">{formatDate(batchForModal.purchase_date)}</dd>
+                      <dt className="text-slate-500">Purchase Location</dt>
+                      <dd className="text-slate-900">{batchForModal.purchase_location || '-'}</dd>
+                      <dt className="text-slate-500">Created</dt>
+                      <dd className="text-slate-900">{formatDate(batchForModal.created_at)}</dd>
+                      <dt className="text-slate-500">Notes</dt>
+                      <dd className="text-slate-900">{batchForModal.notes || '-'}</dd>
+                    </dl>
+                  </div>
+
+                  <div className="border border-slate-200 rounded-lg p-4">
+                    <h3 className="font-medium text-slate-900 mb-3">Receipt</h3>
+                    {batchForModal.receipt ? (
+                      <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+                        <dt className="text-slate-500">Receipt No.</dt>
+                        <dd className="text-slate-900">{batchForModal.receipt.receipt_number}</dd>
+                        <dt className="text-slate-500">Supplier</dt>
+                        <dd className="text-slate-900">{batchForModal.receipt.supplier || '-'}</dd>
+                        <dt className="text-slate-500">Reference</dt>
+                        <dd className="text-slate-900">{batchForModal.receipt.reference_number || '-'}</dd>
+                        <dt className="text-slate-500">Received By</dt>
+                        <dd className="text-slate-900">{batchForModal.receipt.received_by?.name || '-'}</dd>
+                        <dt className="text-slate-500">Received At</dt>
+                        <dd className="text-slate-900">{formatDate(batchForModal.receipt.received_at)}</dd>
+                        <dt className="text-slate-500">Receipt Notes</dt>
+                        <dd className="text-slate-900">{batchForModal.receipt.notes || '-'}</dd>
+                      </dl>
+                    ) : (
+                      <p className="text-sm text-slate-500">Standalone or legacy batch without a receipt.</p>
+                    )}
+                  </div>
+
+                  <div className="border border-slate-200 rounded-lg p-4">
+                    <h3 className="font-medium text-slate-900 mb-3">Unit Economics</h3>
+                    <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+                      <dt className="text-slate-500">Buying Price</dt>
+                      <dd className="text-slate-900">{formatMoney(batchForModal.buying_price)}</dd>
+                      <dt className="text-slate-500">Target Price</dt>
+                      <dd className="text-slate-900">{formatMoney(batchForModal.target_selling_price)}</dd>
+                      <dt className="text-slate-500">Expected Revenue</dt>
+                      <dd className="text-slate-900">{formatMoney(Number(batchForModal.target_selling_price) * batchForModal.quantity_received)}</dd>
+                      <dt className="text-slate-500">Expected Profit</dt>
+                      <dd className="text-blue-700 font-medium">{formatMoney(batchForModal.summary.expected_gross_profit)}</dd>
+                      <dt className="text-slate-500">Realized Revenue</dt>
+                      <dd className="text-slate-900">{formatMoney(batchForModal.summary.realized_revenue)}</dd>
+                      <dt className="text-slate-500">Realized Profit</dt>
+                      <dd className="text-emerald-700 font-medium">{formatMoney(batchForModal.summary.realized_gross_profit)}</dd>
+                      <dt className="text-slate-500">Margin</dt>
+                      <dd className="text-slate-900">{batchForModal.summary.margin === null ? '-' : `${batchForModal.summary.margin}%`}</dd>
+                    </dl>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div className="p-3 bg-slate-50 rounded-lg">
+                    <p className="text-xs text-slate-500">Total Cost</p>
+                    <p className="font-semibold">{formatMoney(batchForModal.summary.total_cost)}</p>
+                  </div>
+                  <div className="p-3 bg-slate-50 rounded-lg">
+                    <p className="text-xs text-slate-500">Revenue</p>
+                    <p className="font-semibold">{formatMoney(batchForModal.summary.realized_revenue)}</p>
+                  </div>
+                  <div className="p-3 bg-emerald-50 rounded-lg">
+                    <p className="text-xs text-emerald-700">Realized Profit</p>
+                    <p className="font-semibold text-emerald-700">{formatMoney(batchForModal.summary.realized_gross_profit)}</p>
+                  </div>
+                  <div className="p-3 bg-blue-50 rounded-lg">
+                    <p className="text-xs text-blue-700">Expected Profit</p>
+                    <p className="font-semibold text-blue-700">{formatMoney(batchForModal.summary.expected_gross_profit)}</p>
+                  </div>
+                </div>
+                <div>
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="font-medium text-slate-900">Devices In This Batch</h3>
+                    <p className="text-sm text-slate-500">{batchForModal.devices?.length || 0} serials loaded</p>
+                  </div>
+                  <div className="overflow-x-auto border border-slate-200 rounded-lg">
+                    <table className="w-full">
+                      <thead className="bg-slate-50 border-b border-slate-200">
+                        <tr>
+                          <th className="text-left px-4 py-3 text-xs font-medium text-slate-500 uppercase">Serial</th>
+                          <th className="text-left px-4 py-3 text-xs font-medium text-slate-500 uppercase">Status</th>
+                          <th className="text-left px-4 py-3 text-xs font-medium text-slate-500 uppercase">Owner</th>
+                          <th className="text-left px-4 py-3 text-xs font-medium text-slate-500 uppercase">Sold By</th>
+                          <th className="text-left px-4 py-3 text-xs font-medium text-slate-500 uppercase">Sold At</th>
+                          <th className="text-right px-4 py-3 text-xs font-medium text-slate-500 uppercase">Cost</th>
+                          <th className="text-left px-4 py-3 text-xs font-medium text-slate-500 uppercase">Code</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-200">
+                        {(batchForModal.devices || []).map((device) => {
+                          const status = typeof device.inventory_status === 'string' ? device.inventory_status : device.inventory_status?.label
+                          return (
+                            <tr key={device.id}>
+                              <td className="px-4 py-3 text-sm font-medium text-slate-900">{device.serial_number}</td>
+                              <td className="px-4 py-3 text-sm text-slate-600">{status || '-'}</td>
+                              <td className="px-4 py-3 text-sm text-slate-600">{device.owner?.name || '-'}</td>
+                              <td className="px-4 py-3 text-sm text-slate-600">{device.sold_by?.name || '-'}</td>
+                              <td className="px-4 py-3 text-sm text-slate-600">{formatDate(device.sold_at)}</td>
+                              <td className="px-4 py-3 text-sm text-right text-slate-600">{formatMoney(device.purchase_price)}</td>
+                              <td className="px-4 py-3 text-sm text-slate-500">{device.unique_device_code || device.device_code || '-'}</td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Status Change Modal */}
+        {showStatusModal && selectedDevice && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-xl max-w-md w-full">
+              <div className="p-6 border-b border-slate-200">
+                <h2 className="text-lg font-semibold text-slate-900">Change Inventory Status</h2>
+                <p className="text-sm text-slate-500 mt-1">{selectedDevice.brand} {selectedDevice.model}</p>
+              </div>
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault()
+                  updateStatusMutation.mutate({
+                    deviceId: selectedDevice.id,
+                    status: newStatus,
+                    notes: statusNotes || undefined,
+                  })
+                }}
+                className="p-6 space-y-4"
+              >
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Status</label>
+                  <select
+                    value={newStatus}
+                    onChange={(e) => setNewStatus(e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="in_stock">In Stock</option>
+                    <option value="reserved">Reserved</option>
+                    <option value="returned">Returned</option>
+                    <option value="faulty">Faulty</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Notes</label>
+                  <textarea
+                    value={statusNotes}
+                    onChange={(e) => setStatusNotes(e.target.value)}
+                    rows={3}
+                    placeholder="Add any notes about this status change..."
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div className="flex justify-end gap-3 pt-4">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowStatusModal(false)
+                      setSelectedDevice(null)
+                      setNewStatus('')
+                      setStatusNotes('')
+                    }}
+                    className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={updateStatusMutation.isPending}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
+                  >
+                    {updateStatusMutation.isPending ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      'Update Status'
+                    )}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+      </div>
+    </Authorize>
+  )
+}

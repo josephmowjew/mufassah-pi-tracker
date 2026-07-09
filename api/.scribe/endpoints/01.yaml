@@ -1,0 +1,241 @@
+name: Authentication
+description: |-
+
+  APIs for user authentication - registration, login, logout, and token management.
+endpoints:
+  -
+    custom: []
+    httpMethods:
+      - POST
+    uri: api/v1/auth/register
+    metadata:
+      custom: []
+      groupName: Authentication
+      groupDescription: |-
+
+        APIs for user authentication - registration, login, logout, and token management.
+      subgroup: ''
+      subgroupDescription: ''
+      title: 'Register a new user.'
+      description: 'Create a new user account and receive an authentication token.'
+      authenticated: false
+      deprecated: false
+    headers:
+      Content-Type: application/json
+      Accept: application/json
+    urlParameters: []
+    cleanUrlParameters: []
+    queryParameters: []
+    cleanQueryParameters: []
+    bodyParameters:
+      name:
+        custom: []
+        name: name
+        description: 'Must not be greater than 255 characters.'
+        required: true
+        example: b
+        type: string
+        enumValues: []
+        exampleWasSpecified: false
+        nullable: false
+        deprecated: false
+      email:
+        custom: []
+        name: email
+        description: 'Must be a valid email address. Must not be greater than 255 characters.'
+        required: true
+        example: zbailey@example.net
+        type: string
+        enumValues: []
+        exampleWasSpecified: false
+        nullable: false
+        deprecated: false
+      password:
+        custom: []
+        name: password
+        description: ''
+        required: true
+        example: '|]|{+-'
+        type: string
+        enumValues: []
+        exampleWasSpecified: false
+        nullable: false
+        deprecated: false
+      phone_number:
+        custom: []
+        name: phone_number
+        description: 'Must match the regex /^(\+265|265|0)[0-9]{9}$/. Must not be greater than 20 characters.'
+        required: true
+        example: vdljnikhwaykcmyu
+        type: string
+        enumValues: []
+        exampleWasSpecified: false
+        nullable: false
+        deprecated: false
+    cleanBodyParameters:
+      name: b
+      email: zbailey@example.net
+      password: '|]|{+-'
+      phone_number: vdljnikhwaykcmyu
+    fileParameters: []
+    responses:
+      -
+        custom: []
+        status: 201
+        content: '{"success":true,"message":"Registration successful. Please check your email to verify your account.","data":{"user":{"id":1,"name":"John Doe","email":"john@example.com","roles":["customer"]},"token":"1|abc123..."}}'
+        headers: []
+        description: Success
+      -
+        custom: []
+        status: 422
+        content: '{"success":false,"message":"Validation failed.","errors":{"email":["The email has already been taken."]}}'
+        headers: []
+        description: 'Validation Error'
+    responseFields: []
+    auth: []
+    controller: null
+    method: null
+    route: null
+  -
+    custom: []
+    httpMethods:
+      - POST
+    uri: api/v1/auth/login
+    metadata:
+      custom: []
+      groupName: Authentication
+      groupDescription: |-
+
+        APIs for user authentication - registration, login, logout, and token management.
+      subgroup: ''
+      subgroupDescription: ''
+      title: 'Login user and create token.'
+      description: 'Authenticate with email and password to receive an API token.'
+      authenticated: false
+      deprecated: false
+    headers:
+      Content-Type: application/json
+      Accept: application/json
+    urlParameters: []
+    cleanUrlParameters: []
+    queryParameters: []
+    cleanQueryParameters: []
+    bodyParameters:
+      email:
+        custom: []
+        name: email
+        description: 'Must be a valid email address.'
+        required: true
+        example: gbailey@example.net
+        type: string
+        enumValues: []
+        exampleWasSpecified: false
+        nullable: false
+        deprecated: false
+      password:
+        custom: []
+        name: password
+        description: ''
+        required: true
+        example: '|]|{+-'
+        type: string
+        enumValues: []
+        exampleWasSpecified: false
+        nullable: false
+        deprecated: false
+    cleanBodyParameters:
+      email: gbailey@example.net
+      password: '|]|{+-'
+    fileParameters: []
+    responses:
+      -
+        custom: []
+        status: 200
+        content: '{"success":true,"message":"Login successful.","data":{"user":{"id":1,"name":"John Doe","email":"john@example.com","roles":["customer"]},"token":"2|xyz789..."}}'
+        headers: []
+        description: Success
+      -
+        custom: []
+        status: 401
+        content: '{"success":false,"message":"Invalid credentials. Please check your email and password."}'
+        headers: []
+        description: 'Invalid Credentials'
+    responseFields: []
+    auth: []
+    controller: null
+    method: null
+    route: null
+  -
+    custom: []
+    httpMethods:
+      - POST
+    uri: api/v1/auth/logout
+    metadata:
+      custom: []
+      groupName: Authentication
+      groupDescription: |-
+
+        APIs for user authentication - registration, login, logout, and token management.
+      subgroup: ''
+      subgroupDescription: ''
+      title: 'Logout user (revoke current token).'
+      description: ''
+      authenticated: true
+      deprecated: false
+    headers:
+      Authorization: 'Bearer {YOUR_AUTH_TOKEN}'
+      Content-Type: application/json
+      Accept: application/json
+    urlParameters: []
+    cleanUrlParameters: []
+    queryParameters: []
+    cleanQueryParameters: []
+    bodyParameters: []
+    cleanBodyParameters: []
+    fileParameters: []
+    responses: []
+    responseFields: []
+    auth:
+      - headers
+      - Authorization
+      - 'Bearer 6g43cv8PD1aE5beadkZfhV6'
+    controller: null
+    method: null
+    route: null
+  -
+    custom: []
+    httpMethods:
+      - POST
+    uri: api/v1/auth/refresh
+    metadata:
+      custom: []
+      groupName: Authentication
+      groupDescription: |-
+
+        APIs for user authentication - registration, login, logout, and token management.
+      subgroup: ''
+      subgroupDescription: ''
+      title: 'Refresh token (revoke current and issue new).'
+      description: ''
+      authenticated: true
+      deprecated: false
+    headers:
+      Authorization: 'Bearer {YOUR_AUTH_TOKEN}'
+      Content-Type: application/json
+      Accept: application/json
+    urlParameters: []
+    cleanUrlParameters: []
+    queryParameters: []
+    cleanQueryParameters: []
+    bodyParameters: []
+    cleanBodyParameters: []
+    fileParameters: []
+    responses: []
+    responseFields: []
+    auth:
+      - headers
+      - Authorization
+      - 'Bearer 6g43cv8PD1aE5beadkZfhV6'
+    controller: null
+    method: null
+    route: null

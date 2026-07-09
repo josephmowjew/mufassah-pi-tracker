@@ -1,0 +1,4296 @@
+openapi: 3.0.3
+info:
+  title: 'Mufasah Device Tracking API'
+  description: 'API for the Mufasah Device Tracking System - A comprehensive platform for tracking and protecting electronic devices with IoT integration, geofencing, theft reporting, and subscription management.'
+  version: 1.0.0
+servers:
+  -
+    url: 'http://localhost:8000'
+tags:
+  -
+    name: Authentication
+    description: "\nAPIs for user authentication - registration, login, logout, and token management."
+  -
+    name: 'User Profile'
+    description: "\nAPIs for user profile management - view and update profile, change password."
+  -
+    name: Devices
+    description: "\nAPIs for managing tracked devices - registration, updates, ownership, and IoT module linking."
+  -
+    name: 'Device Locations'
+    description: "\nAPIs for device location tracking - history, latest location, analytics, and manual entry."
+  -
+    name: Geofences
+    description: "\nAPIs for geofencing - create virtual boundaries with entry/exit alerts for tracked devices."
+  -
+    name: 'Theft Reports'
+    description: "\nAPIs for theft reporting - report stolen devices, track recovery, and manage status."
+  -
+    name: Subscriptions
+    description: "\nAPIs for subscription management - view, cancel, and reactivate subscriptions."
+  -
+    name: 'Subscription Plans'
+    description: "\nAPIs for subscription plans - browse available plans and pricing."
+  -
+    name: Payments
+    description: "\nAPIs for payment processing - initiate payments and view payment history."
+  -
+    name: Warranties
+    description: "\nAPIs for warranty management - register warranties and view warranty details."
+  -
+    name: 'Warranty Claims'
+    description: "\nAPIs for warranty claims - submit and track warranty claims."
+  -
+    name: Notifications
+    description: "\nAPIs for notification management - view, mark as read, and manage preferences."
+  -
+    name: 'IoT Modules'
+    description: "\nAPIs for IoT module management - register and configure tracking hardware."
+  -
+    name: 'Device Categories'
+    description: "\nAPIs for device categories - browse available device types."
+  -
+    name: 'Admin Dashboard'
+    description: "\nAPIs for admin dashboard - overview statistics and detailed metrics."
+  -
+    name: 'Admin User Management'
+    description: "\nAPIs for managing users - create, update, suspend, and assign roles."
+  -
+    name: 'Admin Reports'
+    description: "\nAPIs for generating detailed reports - theft, revenue, devices, subscriptions, and users."
+  -
+    name: 'Email Verification'
+    description: "\nAPIs for email verification - resend verification email and verify email address."
+  -
+    name: 'IoT Location Updates'
+    description: "\nAPIs for IoT devices to send location updates and heartbeats.\nAuthentication uses module_id:api_token instead of user Bearer tokens."
+  -
+    name: 'Other Endpoints'
+    description: ''
+  -
+    name: 'Password Reset'
+    description: "\nAPIs for password reset functionality - request reset link and reset password."
+components:
+  securitySchemes:
+    default:
+      type: http
+      scheme: bearer
+      description: "    To authenticate, include the Bearer token in the Authorization header:\n    ```\n    Authorization: Bearer {YOUR_AUTH_TOKEN}\n    ```\n\n    Get your token by:\n    1. Register via `POST /api/v1/auth/register`\n    2. Or login via `POST /api/v1/auth/login`\n\n    The token is returned in the `data.token` field of the response."
+security:
+  -
+    default: []
+paths:
+  /api/v1/auth/register:
+    post:
+      summary: 'Register a new user.'
+      operationId: registerANewUser
+      description: 'Create a new user account and receive an authentication token.'
+      parameters: []
+      responses:
+        201:
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                example:
+                  success: true
+                  message: 'Registration successful. Please check your email to verify your account.'
+                  data:
+                    user:
+                      id: 1
+                      name: 'John Doe'
+                      email: john@example.com
+                      roles:
+                        - customer
+                    token: 1|abc123...
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: 'Registration successful. Please check your email to verify your account.'
+                  data:
+                    type: object
+                    properties:
+                      user:
+                        type: object
+                        properties:
+                          id:
+                            type: integer
+                            example: 1
+                          name:
+                            type: string
+                            example: 'John Doe'
+                          email:
+                            type: string
+                            example: john@example.com
+                          roles:
+                            type: array
+                            example:
+                              - customer
+                            items:
+                              type: string
+                      token:
+                        type: string
+                        example: 1|abc123...
+        422:
+          description: 'Validation Error'
+          content:
+            application/json:
+              schema:
+                type: object
+                example:
+                  success: false
+                  message: 'Validation failed.'
+                  errors:
+                    email:
+                      - 'The email has already been taken.'
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+                    example: 'Validation failed.'
+                  errors:
+                    type: object
+                    properties:
+                      email:
+                        type: array
+                        example:
+                          - 'The email has already been taken.'
+                        items:
+                          type: string
+      tags:
+        - Authentication
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  description: 'Must not be greater than 255 characters.'
+                  example: b
+                  nullable: false
+                email:
+                  type: string
+                  description: 'Must be a valid email address. Must not be greater than 255 characters.'
+                  example: zbailey@example.net
+                  nullable: false
+                password:
+                  type: string
+                  description: ''
+                  example: '|]|{+-'
+                  nullable: false
+                phone_number:
+                  type: string
+                  description: 'Must match the regex /^(\+265|265|0)[0-9]{9}$/. Must not be greater than 20 characters.'
+                  example: vdljnikhwaykcmyu
+                  nullable: false
+              required:
+                - name
+                - email
+                - password
+                - phone_number
+      security: []
+  /api/v1/auth/login:
+    post:
+      summary: 'Login user and create token.'
+      operationId: loginUserAndCreateToken
+      description: 'Authenticate with email and password to receive an API token.'
+      parameters: []
+      responses:
+        200:
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                example:
+                  success: true
+                  message: 'Login successful.'
+                  data:
+                    user:
+                      id: 1
+                      name: 'John Doe'
+                      email: john@example.com
+                      roles:
+                        - customer
+                    token: 2|xyz789...
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: 'Login successful.'
+                  data:
+                    type: object
+                    properties:
+                      user:
+                        type: object
+                        properties:
+                          id:
+                            type: integer
+                            example: 1
+                          name:
+                            type: string
+                            example: 'John Doe'
+                          email:
+                            type: string
+                            example: john@example.com
+                          roles:
+                            type: array
+                            example:
+                              - customer
+                            items:
+                              type: string
+                      token:
+                        type: string
+                        example: 2|xyz789...
+        401:
+          description: 'Invalid Credentials'
+          content:
+            application/json:
+              schema:
+                type: object
+                example:
+                  success: false
+                  message: 'Invalid credentials. Please check your email and password.'
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+                    example: 'Invalid credentials. Please check your email and password.'
+      tags:
+        - Authentication
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email:
+                  type: string
+                  description: 'Must be a valid email address.'
+                  example: gbailey@example.net
+                  nullable: false
+                password:
+                  type: string
+                  description: ''
+                  example: '|]|{+-'
+                  nullable: false
+              required:
+                - email
+                - password
+      security: []
+  /api/v1/auth/logout:
+    post:
+      summary: 'Logout user (revoke current token).'
+      operationId: logoutUserrevokeCurrentToken
+      description: ''
+      parameters: []
+      responses: {  }
+      tags:
+        - Authentication
+  /api/v1/auth/refresh:
+    post:
+      summary: 'Refresh token (revoke current and issue new).'
+      operationId: refreshTokenrevokeCurrentAndIssueNew
+      description: ''
+      parameters: []
+      responses: {  }
+      tags:
+        - Authentication
+  /api/v1/user:
+    get:
+      summary: "Get the authenticated user's profile."
+      operationId: getTheAuthenticatedUsersProfile
+      description: ''
+      parameters: []
+      responses:
+        401:
+          description: ''
+          content:
+            application/json:
+              schema:
+                type: object
+                example:
+                  success: false
+                  message: 'Unauthenticated. Please login to continue.'
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+                    example: 'Unauthenticated. Please login to continue.'
+      tags:
+        - 'User Profile'
+    put:
+      summary: "Update the authenticated user's profile."
+      operationId: updateTheAuthenticatedUsersProfile
+      description: ''
+      parameters: []
+      responses: {  }
+      tags:
+        - 'User Profile'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  description: 'Must not be greater than 255 characters.'
+                  example: b
+                  nullable: false
+                phone_number:
+                  type: string
+                  description: 'Must match the regex /^(\+265|265|0)[0-9]{9}$/. Must not be greater than 20 characters.'
+                  example: ngzmiyvdljnikhwa
+                  nullable: false
+                address:
+                  type: string
+                  description: 'Must not be greater than 500 characters.'
+                  example: 'y'
+                  nullable: true
+                city:
+                  type: string
+                  description: 'Must not be greater than 100 characters.'
+                  example: k
+                  nullable: true
+  /api/v1/user/password:
+    put:
+      summary: "Change the authenticated user's password."
+      operationId: changeTheAuthenticatedUsersPassword
+      description: ''
+      parameters: []
+      responses: {  }
+      tags:
+        - 'User Profile'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                current_password:
+                  type: string
+                  description: ''
+                  example: architecto
+                  nullable: false
+                password:
+                  type: string
+                  description: 'The value and <code>current_password</code> must be different.'
+                  example: '|]|{+-'
+                  nullable: false
+              required:
+                - current_password
+                - password
+  /api/v1/user/avatar:
+    post:
+      summary: 'Upload avatar for the authenticated user.'
+      operationId: uploadAvatarForTheAuthenticatedUser
+      description: ''
+      parameters: []
+      responses: {  }
+      tags:
+        - 'User Profile'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                avatar:
+                  type: string
+                  format: binary
+                  description: 'Must be an image. Must not be greater than 2048 kilobytes.'
+                  nullable: false
+              required:
+                - avatar
+    delete:
+      summary: 'Delete avatar for the authenticated user.'
+      operationId: deleteAvatarForTheAuthenticatedUser
+      description: ''
+      parameters: []
+      responses: {  }
+      tags:
+        - 'User Profile'
+  /api/v1/devices:
+    get:
+      summary: "List user's devices with optional filtering."
+      operationId: listUsersDevicesWithOptionalFiltering
+      description: ''
+      parameters: []
+      responses:
+        401:
+          description: ''
+          content:
+            application/json:
+              schema:
+                type: object
+                example:
+                  success: false
+                  message: 'Unauthenticated. Please login to continue.'
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+                    example: 'Unauthenticated. Please login to continue.'
+      tags:
+        - Devices
+    post:
+      summary: 'Register a new device.'
+      operationId: registerANewDevice
+      description: ''
+      parameters: []
+      responses: {  }
+      tags:
+        - Devices
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                serial_number:
+                  type: string
+                  description: 'Must not be greater than 100 characters.'
+                  example: b
+                  nullable: false
+                category_id:
+                  type: integer
+                  description: 'The <code>id</code> of an existing record in the device_categories table.'
+                  example: 16
+                  nullable: false
+                brand:
+                  type: string
+                  description: 'Must not be greater than 100 characters.'
+                  example: 'n'
+                  nullable: false
+                model:
+                  type: string
+                  description: 'Must not be greater than 100 characters.'
+                  example: g
+                  nullable: false
+                description:
+                  type: string
+                  description: 'Must not be greater than 1000 characters.'
+                  example: 'Quos velit et fugiat sunt nihil accusantium harum.'
+                  nullable: true
+                color:
+                  type: string
+                  description: 'Must not be greater than 50 characters.'
+                  example: i
+                  nullable: true
+                purchase_date:
+                  type: string
+                  description: 'Must be a valid date. Must be a date before or equal to <code>today</code>.'
+                  example: '2021-12-17'
+                  nullable: true
+                purchase_price:
+                  type: number
+                  description: 'Must be at least 0.'
+                  example: 39
+                  nullable: true
+                purchase_location:
+                  type: string
+                  description: 'Must not be greater than 255 characters.'
+                  example: g
+                  nullable: true
+                notes:
+                  type: string
+                  description: 'Must not be greater than 1000 characters.'
+                  example: z
+                  nullable: true
+                photos:
+                  type: array
+                  description: 'Must be an image. Must not be greater than 2048 kilobytes.'
+                  items:
+                    type: string
+                    format: binary
+              required:
+                - serial_number
+                - category_id
+                - brand
+                - model
+  '/api/v1/devices/{id}':
+    get:
+      summary: 'View a specific device.'
+      operationId: viewASpecificDevice
+      description: ''
+      parameters: []
+      responses:
+        401:
+          description: ''
+          content:
+            application/json:
+              schema:
+                type: object
+                example:
+                  success: false
+                  message: 'Unauthenticated. Please login to continue.'
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+                    example: 'Unauthenticated. Please login to continue.'
+      tags:
+        - Devices
+    put:
+      summary: 'Update a device.'
+      operationId: updateADevice
+      description: ''
+      parameters: []
+      responses: {  }
+      tags:
+        - Devices
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                category_id:
+                  type: integer
+                  description: 'The <code>id</code> of an existing record in the device_categories table.'
+                  example: 16
+                  nullable: false
+                brand:
+                  type: string
+                  description: 'Must not be greater than 100 characters.'
+                  example: 'n'
+                  nullable: false
+                model:
+                  type: string
+                  description: 'Must not be greater than 100 characters.'
+                  example: g
+                  nullable: false
+                description:
+                  type: string
+                  description: 'Must not be greater than 1000 characters.'
+                  example: 'Quos velit et fugiat sunt nihil accusantium harum.'
+                  nullable: true
+                color:
+                  type: string
+                  description: 'Must not be greater than 50 characters.'
+                  example: i
+                  nullable: true
+                purchase_date:
+                  type: string
+                  description: 'Must be a valid date. Must be a date before or equal to <code>today</code>.'
+                  example: '2021-12-17'
+                  nullable: true
+                purchase_price:
+                  type: number
+                  description: 'Must be at least 0.'
+                  example: 39
+                  nullable: true
+                purchase_location:
+                  type: string
+                  description: 'Must not be greater than 255 characters.'
+                  example: g
+                  nullable: true
+                notes:
+                  type: string
+                  description: 'Must not be greater than 1000 characters.'
+                  example: z
+                  nullable: true
+    delete:
+      summary: 'Delete a device.'
+      operationId: deleteADevice
+      description: ''
+      parameters: []
+      responses: {  }
+      tags:
+        - Devices
+    parameters:
+      -
+        in: path
+        name: id
+        description: 'The ID of the device.'
+        example: 16
+        required: true
+        schema:
+          type: integer
+  '/api/v1/devices/{device_id}/status':
+    put:
+      summary: 'Update device status.'
+      operationId: updateDeviceStatus
+      description: ''
+      parameters: []
+      responses: {  }
+      tags:
+        - Devices
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status:
+                  type: string
+                  description: ''
+                  example: maintenance
+                  nullable: false
+                  enum:
+                    - active
+                    - stolen
+                    - recovered
+                    - inactive
+                    - maintenance
+                notes:
+                  type: string
+                  description: 'Must not be greater than 1000 characters.'
+                  example: b
+                  nullable: true
+              required:
+                - status
+    parameters:
+      -
+        in: path
+        name: device_id
+        description: 'The ID of the device.'
+        example: 16
+        required: true
+        schema:
+          type: integer
+  '/api/v1/devices/{device_id}/photos':
+    post:
+      summary: 'Upload photos for a device.'
+      operationId: uploadPhotosForADevice
+      description: ''
+      parameters: []
+      responses: {  }
+      tags:
+        - Devices
+      requestBody:
+        required: false
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                photos:
+                  type: array
+                  description: 'Must be an image. Must not be greater than 2048 kilobytes.'
+                  items:
+                    type: string
+                    format: binary
+    delete:
+      summary: 'Delete a photo from a device.'
+      operationId: deleteAPhotoFromADevice
+      description: ''
+      parameters: []
+      responses: {  }
+      tags:
+        - Devices
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                photo_index:
+                  type: integer
+                  description: 'Must be at least 0.'
+                  example: 27
+                  nullable: false
+              required:
+                - photo_index
+    parameters:
+      -
+        in: path
+        name: device_id
+        description: 'The ID of the device.'
+        example: 16
+        required: true
+        schema:
+          type: integer
+  '/api/v1/devices/{device_id}/transfer':
+    post:
+      summary: 'Transfer device ownership.'
+      operationId: transferDeviceOwnership
+      description: ''
+      parameters: []
+      responses: {  }
+      tags:
+        - Devices
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                to_user_email:
+                  type: string
+                  description: 'Must be a valid email address. The <code>email</code> of an existing record in the users table.'
+                  example: gbailey@example.net
+                  nullable: false
+                transfer_reason:
+                  type: string
+                  description: 'Must not be greater than 255 characters.'
+                  example: m
+                  nullable: false
+                notes:
+                  type: string
+                  description: 'Must not be greater than 1000 characters.'
+                  example: i
+                  nullable: true
+              required:
+                - to_user_email
+                - transfer_reason
+    parameters:
+      -
+        in: path
+        name: device_id
+        description: 'The ID of the device.'
+        example: 16
+        required: true
+        schema:
+          type: integer
+  '/api/v1/devices/{device_id}/ownership-history':
+    get:
+      summary: 'Get device ownership history.'
+      operationId: getDeviceOwnershipHistory
+      description: ''
+      parameters: []
+      responses:
+        401:
+          description: ''
+          content:
+            application/json:
+              schema:
+                type: object
+                example:
+                  success: false
+                  message: 'Unauthenticated. Please login to continue.'
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+                    example: 'Unauthenticated. Please login to continue.'
+      tags:
+        - Devices
+    parameters:
+      -
+        in: path
+        name: device_id
+        description: 'The ID of the device.'
+        example: 16
+        required: true
+        schema:
+          type: integer
+  '/api/v1/devices/{device_id}/link-module':
+    post:
+      summary: 'Link IoT module to device.'
+      operationId: linkIoTModuleToDevice
+      description: ''
+      parameters: []
+      responses: {  }
+      tags:
+        - Devices
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                iot_module_id:
+                  type: integer
+                  description: 'The <code>id</code> of an existing record in the iot_modules table.'
+                  example: 16
+                  nullable: false
+              required:
+                - iot_module_id
+    parameters:
+      -
+        in: path
+        name: device_id
+        description: 'The ID of the device.'
+        example: 16
+        required: true
+        schema:
+          type: integer
+  '/api/v1/devices/{device_id}/unlink-module':
+    delete:
+      summary: 'Unlink IoT module from device.'
+      operationId: unlinkIoTModuleFromDevice
+      description: ''
+      parameters: []
+      responses: {  }
+      tags:
+        - Devices
+    parameters:
+      -
+        in: path
+        name: device_id
+        description: 'The ID of the device.'
+        example: 16
+        required: true
+        schema:
+          type: integer
+  '/api/v1/devices/{device_id}/locations':
+    get:
+      summary: 'Get location history for a device.'
+      operationId: getLocationHistoryForADevice
+      description: ''
+      parameters: []
+      responses:
+        401:
+          description: ''
+          content:
+            application/json:
+              schema:
+                type: object
+                example:
+                  success: false
+                  message: 'Unauthenticated. Please login to continue.'
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+                    example: 'Unauthenticated. Please login to continue.'
+      tags:
+        - 'Device Locations'
+    post:
+      summary: 'Store a manual location (user-provided).'
+      operationId: storeAManualLocationuserProvided
+      description: ''
+      parameters: []
+      responses: {  }
+      tags:
+        - 'Device Locations'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                latitude:
+                  type: number
+                  description: 'Must be between -90 and 90.'
+                  example: -89
+                  nullable: false
+                longitude:
+                  type: number
+                  description: 'Must be between -180 and 180.'
+                  example: -179
+                  nullable: false
+                address:
+                  type: string
+                  description: 'Must not be greater than 500 characters.'
+                  example: g
+                  nullable: true
+                notes:
+                  type: string
+                  description: 'Must not be greater than 500 characters.'
+                  example: z
+                  nullable: true
+              required:
+                - latitude
+                - longitude
+    parameters:
+      -
+        in: path
+        name: device_id
+        description: 'The ID of the device.'
+        example: 16
+        required: true
+        schema:
+          type: integer
+  '/api/v1/devices/{device_id}/locations/latest':
+    get:
+      summary: 'Get the latest location for a device.'
+      operationId: getTheLatestLocationForADevice
+      description: ''
+      parameters: []
+      responses:
+        401:
+          description: ''
+          content:
+            application/json:
+              schema:
+                type: object
+                example:
+                  success: false
+                  message: 'Unauthenticated. Please login to continue.'
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+                    example: 'Unauthenticated. Please login to continue.'
+      tags:
+        - 'Device Locations'
+    parameters:
+      -
+        in: path
+        name: device_id
+        description: 'The ID of the device.'
+        example: 16
+        required: true
+        schema:
+          type: integer
+  '/api/v1/devices/{device_id}/locations/statistics':
+    get:
+      summary: 'Get location statistics for a device.'
+      operationId: getLocationStatisticsForADevice
+      description: ''
+      parameters: []
+      responses:
+        401:
+          description: ''
+          content:
+            application/json:
+              schema:
+                type: object
+                example:
+                  success: false
+                  message: 'Unauthenticated. Please login to continue.'
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+                    example: 'Unauthenticated. Please login to continue.'
+      tags:
+        - 'Device Locations'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                from:
+                  type: string
+                  description: 'Must be a valid date.'
+                  example: '2025-11-23T17:28:01'
+                  nullable: true
+                to:
+                  type: string
+                  description: 'Must be a valid date. Must be a date after or equal to <code>from</code>.'
+                  example: '2051-12-17'
+                  nullable: true
+    parameters:
+      -
+        in: path
+        name: device_id
+        description: 'The ID of the device.'
+        example: 16
+        required: true
+        schema:
+          type: integer
+  '/api/v1/devices/{device_id}/locations/heatmap':
+    get:
+      summary: 'Get heatmap data for a device (location density).'
+      operationId: getHeatmapDataForADevicelocationDensity
+      description: ''
+      parameters: []
+      responses:
+        401:
+          description: ''
+          content:
+            application/json:
+              schema:
+                type: object
+                example:
+                  success: false
+                  message: 'Unauthenticated. Please login to continue.'
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+                    example: 'Unauthenticated. Please login to continue.'
+      tags:
+        - 'Device Locations'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                from:
+                  type: string
+                  description: 'Must be a valid date.'
+                  example: '2025-11-23T17:28:01'
+                  nullable: true
+                to:
+                  type: string
+                  description: 'Must be a valid date. Must be a date after or equal to <code>from</code>.'
+                  example: '2051-12-17'
+                  nullable: true
+                precision:
+                  type: integer
+                  description: 'Must be between 1 and 6.'
+                  example: 2
+                  nullable: true
+    parameters:
+      -
+        in: path
+        name: device_id
+        description: 'The ID of the device.'
+        example: 16
+        required: true
+        schema:
+          type: integer
+  '/api/v1/devices/{device_id}/locations/track':
+    get:
+      summary: 'Get track/path data for playback visualization.'
+      operationId: getTrackpathDataForPlaybackVisualization
+      description: ''
+      parameters: []
+      responses:
+        401:
+          description: ''
+          content:
+            application/json:
+              schema:
+                type: object
+                example:
+                  success: false
+                  message: 'Unauthenticated. Please login to continue.'
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+                    example: 'Unauthenticated. Please login to continue.'
+      tags:
+        - 'Device Locations'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                from:
+                  type: string
+                  description: 'Must be a valid date.'
+                  example: '2025-11-23T17:28:01'
+                  nullable: false
+                to:
+                  type: string
+                  description: 'Must be a valid date. Must be a date after or equal to <code>from</code>.'
+                  example: '2051-12-17'
+                  nullable: false
+              required:
+                - from
+                - to
+    parameters:
+      -
+        in: path
+        name: device_id
+        description: 'The ID of the device.'
+        example: 16
+        required: true
+        schema:
+          type: integer
+  '/api/v1/devices/{device_id}/geofences':
+    get:
+      summary: 'List geofences for a device.'
+      operationId: listGeofencesForADevice
+      description: ''
+      parameters: []
+      responses:
+        401:
+          description: ''
+          content:
+            application/json:
+              schema:
+                type: object
+                example:
+                  success: false
+                  message: 'Unauthenticated. Please login to continue.'
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+                    example: 'Unauthenticated. Please login to continue.'
+      tags:
+        - Geofences
+    parameters:
+      -
+        in: path
+        name: device_id
+        description: 'The ID of the device.'
+        example: 16
+        required: true
+        schema:
+          type: integer
+  /api/v1/geofences:
+    post:
+      summary: 'Create a new geofence for a device.'
+      operationId: createANewGeofenceForADevice
+      description: ''
+      parameters: []
+      responses: {  }
+      tags:
+        - Geofences
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                device_id:
+                  type: integer
+                  description: 'The <code>id</code> of an existing record in the devices table.'
+                  example: 16
+                  nullable: false
+                name:
+                  type: string
+                  description: 'Must not be greater than 255 characters.'
+                  example: 'n'
+                  nullable: false
+                description:
+                  type: string
+                  description: 'Must not be greater than 1000 characters.'
+                  example: 'Animi quos velit et fugiat.'
+                  nullable: true
+                shape_type:
+                  type: string
+                  description: ''
+                  example: polygon
+                  nullable: false
+                  enum:
+                    - circle
+                    - polygon
+                center_latitude:
+                  type: number
+                  description: 'Must be between -90 and 90.'
+                  example: -89
+                  nullable: false
+                center_longitude:
+                  type: number
+                  description: 'Must be between -180 and 180.'
+                  example: -179
+                  nullable: false
+                radius_meters:
+                  type: number
+                  description: 'This field is required when <code>shape_type</code> is <code>circle</code>. Must be at least 10. Must not be greater than 50000.'
+                  example: 19
+                  nullable: true
+                polygon_coordinates:
+                  type: array
+                  description: 'This field is required when <code>shape_type</code> is <code>polygon</code>. Must have at least 3 items.'
+                  example: null
+                  items:
+                    type: object
+                    nullable: true
+                    properties:
+                      latitude:
+                        type: number
+                        description: 'This field is required when <code>polygon_coordinates</code> is present. Must be between -90 and 90.'
+                        example: -89
+                        nullable: false
+                      longitude:
+                        type: number
+                        description: 'This field is required when <code>polygon_coordinates</code> is present. Must be between -180 and 180.'
+                        example: -180
+                        nullable: false
+                is_active:
+                  type: boolean
+                  description: ''
+                  example: false
+                  nullable: false
+                notify_on_entry:
+                  type: boolean
+                  description: ''
+                  example: false
+                  nullable: false
+                notify_on_exit:
+                  type: boolean
+                  description: ''
+                  example: false
+                  nullable: false
+                active_days:
+                  type: array
+                  description: ''
+                  example:
+                    - friday
+                  items:
+                    type: string
+                    enum:
+                      - monday
+                      - tuesday
+                      - wednesday
+                      - thursday
+                      - friday
+                      - saturday
+                      - sunday
+                active_time_start:
+                  type: string
+                  description: 'Must be a valid date in the format <code>H:i</code>.'
+                  example: '17:28'
+                  nullable: true
+                active_time_end:
+                  type: string
+                  description: 'Must be a valid date in the format <code>H:i</code>. Must be a date after <code>active_time_start</code>.'
+                  example: '2051-12-17'
+                  nullable: true
+              required:
+                - device_id
+                - name
+                - shape_type
+                - center_latitude
+                - center_longitude
+  '/api/v1/geofences/{id}':
+    get:
+      summary: 'Get a specific geofence.'
+      operationId: getASpecificGeofence
+      description: ''
+      parameters: []
+      responses:
+        401:
+          description: ''
+          content:
+            application/json:
+              schema:
+                type: object
+                example:
+                  success: false
+                  message: 'Unauthenticated. Please login to continue.'
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+                    example: 'Unauthenticated. Please login to continue.'
+      tags:
+        - Geofences
+    put:
+      summary: 'Update a geofence.'
+      operationId: updateAGeofence
+      description: ''
+      parameters: []
+      responses: {  }
+      tags:
+        - Geofences
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  description: 'Must not be greater than 255 characters.'
+                  example: b
+                  nullable: false
+                description:
+                  type: string
+                  description: 'Must not be greater than 1000 characters.'
+                  example: 'Et animi quos velit et fugiat.'
+                  nullable: true
+                shape_type:
+                  type: string
+                  description: ''
+                  example: polygon
+                  nullable: false
+                  enum:
+                    - circle
+                    - polygon
+                center_latitude:
+                  type: number
+                  description: 'Must be between -90 and 90.'
+                  example: -89
+                  nullable: false
+                center_longitude:
+                  type: number
+                  description: 'Must be between -180 and 180.'
+                  example: -179
+                  nullable: false
+                radius_meters:
+                  type: number
+                  description: 'Must be at least 10. Must not be greater than 50000.'
+                  example: 19
+                  nullable: true
+                polygon_coordinates:
+                  type: array
+                  description: 'Must have at least 3 items.'
+                  example: null
+                  items:
+                    type: object
+                    nullable: true
+                    properties:
+                      latitude:
+                        type: number
+                        description: 'This field is required when <code>polygon_coordinates</code> is present. Must be between -90 and 90.'
+                        example: -89
+                        nullable: false
+                      longitude:
+                        type: number
+                        description: 'This field is required when <code>polygon_coordinates</code> is present. Must be between -180 and 180.'
+                        example: -180
+                        nullable: false
+                is_active:
+                  type: boolean
+                  description: ''
+                  example: true
+                  nullable: false
+                notify_on_entry:
+                  type: boolean
+                  description: ''
+                  example: false
+                  nullable: false
+                notify_on_exit:
+                  type: boolean
+                  description: ''
+                  example: false
+                  nullable: false
+                active_days:
+                  type: array
+                  description: ''
+                  example:
+                    - friday
+                  items:
+                    type: string
+                    enum:
+                      - monday
+                      - tuesday
+                      - wednesday
+                      - thursday
+                      - friday
+                      - saturday
+                      - sunday
+                active_time_start:
+                  type: string
+                  description: 'Must be a valid date in the format <code>H:i</code>.'
+                  example: '17:28'
+                  nullable: true
+                active_time_end:
+                  type: string
+                  description: 'Must be a valid date in the format <code>H:i</code>.'
+                  example: '17:28'
+                  nullable: true
+    delete:
+      summary: 'Delete a geofence.'
+      operationId: deleteAGeofence
+      description: ''
+      parameters: []
+      responses: {  }
+      tags:
+        - Geofences
+    parameters:
+      -
+        in: path
+        name: id
+        description: 'The ID of the geofence.'
+        example: 16
+        required: true
+        schema:
+          type: integer
+  '/api/v1/geofences/{geofence_id}/toggle':
+    post:
+      summary: 'Toggle geofence active status.'
+      operationId: toggleGeofenceActiveStatus
+      description: ''
+      parameters: []
+      responses: {  }
+      tags:
+        - Geofences
+    parameters:
+      -
+        in: path
+        name: geofence_id
+        description: 'The ID of the geofence.'
+        example: 16
+        required: true
+        schema:
+          type: integer
+  '/api/v1/geofences/{geofence_id}/events':
+    get:
+      summary: 'Get events for a geofence.'
+      operationId: getEventsForAGeofence
+      description: ''
+      parameters: []
+      responses:
+        401:
+          description: ''
+          content:
+            application/json:
+              schema:
+                type: object
+                example:
+                  success: false
+                  message: 'Unauthenticated. Please login to continue.'
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+                    example: 'Unauthenticated. Please login to continue.'
+      tags:
+        - Geofences
+    parameters:
+      -
+        in: path
+        name: geofence_id
+        description: 'The ID of the geofence.'
+        example: 16
+        required: true
+        schema:
+          type: integer
+  /api/v1/theft-reports:
+    get:
+      summary: ''
+      operationId: getApiV1TheftReports
+      description: ''
+      parameters: []
+      responses:
+        401:
+          description: ''
+          content:
+            application/json:
+              schema:
+                type: object
+                example:
+                  success: false
+                  message: 'Unauthenticated. Please login to continue.'
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+                    example: 'Unauthenticated. Please login to continue.'
+      tags:
+        - 'Theft Reports'
+    post:
+      summary: ''
+      operationId: postApiV1TheftReports
+      description: ''
+      parameters: []
+      responses: {  }
+      tags:
+        - 'Theft Reports'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                device_id:
+                  type: integer
+                  description: 'The <code>id</code> of an existing record in the devices table.'
+                  example: 16
+                  nullable: false
+                theft_date:
+                  type: string
+                  description: 'Must be a valid date. Must be a date before or equal to <code>now</code>.'
+                  example: '2021-12-17'
+                  nullable: false
+                theft_location:
+                  type: string
+                  description: 'Must not be greater than 255 characters.'
+                  example: 'n'
+                  nullable: false
+                theft_latitude:
+                  type: number
+                  description: 'Must be between -90 and 90.'
+                  example: -90
+                  nullable: true
+                theft_longitude:
+                  type: number
+                  description: 'Must be between -180 and 180.'
+                  example: -179
+                  nullable: true
+                description:
+                  type: string
+                  description: 'Must not be greater than 2000 characters.'
+                  example: 'Velit et fugiat sunt nihil accusantium.'
+                  nullable: false
+                police_report_number:
+                  type: string
+                  description: 'Must not be greater than 50 characters.'
+                  example: 'n'
+                  nullable: true
+                police_station:
+                  type: string
+                  description: 'Must not be greater than 100 characters.'
+                  example: i
+                  nullable: true
+                officer_name:
+                  type: string
+                  description: 'Must not be greater than 100 characters.'
+                  example: k
+                  nullable: true
+                officer_contact:
+                  type: string
+                  description: 'Must not be greater than 20 characters.'
+                  example: hwaykcmyuwpwlvqw
+                  nullable: true
+                evidence_photos:
+                  type: array
+                  description: 'Must be an image. Must not be greater than 5120 kilobytes.'
+                  items:
+                    type: string
+                    format: binary
+              required:
+                - device_id
+                - theft_date
+                - theft_location
+                - description
+  '/api/v1/theft-reports/{id}':
+    get:
+      summary: ''
+      operationId: getApiV1TheftReportsId
+      description: ''
+      parameters: []
+      responses:
+        401:
+          description: ''
+          content:
+            application/json:
+              schema:
+                type: object
+                example:
+                  success: false
+                  message: 'Unauthenticated. Please login to continue.'
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+                    example: 'Unauthenticated. Please login to continue.'
+      tags:
+        - 'Theft Reports'
+    put:
+      summary: ''
+      operationId: putApiV1TheftReportsId
+      description: ''
+      parameters: []
+      responses: {  }
+      tags:
+        - 'Theft Reports'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                theft_date:
+                  type: string
+                  description: 'Must be a valid date. Must be a date before or equal to <code>now</code>.'
+                  example: '2021-12-17'
+                  nullable: false
+                theft_location:
+                  type: string
+                  description: 'Must not be greater than 255 characters.'
+                  example: 'n'
+                  nullable: false
+                theft_latitude:
+                  type: number
+                  description: 'Must be between -90 and 90.'
+                  example: -90
+                  nullable: true
+                theft_longitude:
+                  type: number
+                  description: 'Must be between -180 and 180.'
+                  example: -179
+                  nullable: true
+                description:
+                  type: string
+                  description: 'Must not be greater than 2000 characters.'
+                  example: 'Velit et fugiat sunt nihil accusantium.'
+                  nullable: false
+                police_report_number:
+                  type: string
+                  description: 'Must not be greater than 50 characters.'
+                  example: 'n'
+                  nullable: true
+                police_station:
+                  type: string
+                  description: 'Must not be greater than 100 characters.'
+                  example: i
+                  nullable: true
+                officer_name:
+                  type: string
+                  description: 'Must not be greater than 100 characters.'
+                  example: k
+                  nullable: true
+                officer_contact:
+                  type: string
+                  description: 'Must not be greater than 20 characters.'
+                  example: hwaykcmyuwpwlvqw
+                  nullable: true
+    delete:
+      summary: ''
+      operationId: deleteApiV1TheftReportsId
+      description: ''
+      parameters: []
+      responses: {  }
+      tags:
+        - 'Theft Reports'
+    parameters:
+      -
+        in: path
+        name: id
+        description: 'The ID of the theft report.'
+        example: 16
+        required: true
+        schema:
+          type: integer
+  '/api/v1/theft-reports/{theft_report_id}/status':
+    post:
+      summary: ''
+      operationId: postApiV1TheftReportsTheft_report_idStatus
+      description: ''
+      parameters: []
+      responses: {  }
+      tags:
+        - 'Theft Reports'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status:
+                  type: string
+                  description: ''
+                  example: closed
+                  nullable: false
+                  enum:
+                    - reported
+                    - investigating
+                    - recovered
+                    - closed
+                    - false_alarm
+                notes:
+                  type: string
+                  description: 'Must not be greater than 1000 characters.'
+                  example: b
+                  nullable: false
+                is_public:
+                  type: boolean
+                  description: ''
+                  example: true
+                  nullable: false
+                recovery_location:
+                  type: string
+                  description: 'This field is required when <code>status</code> is <code>recovered</code>. Must not be greater than 255 characters.'
+                  example: 'n'
+                  nullable: true
+                recovery_notes:
+                  type: string
+                  description: 'Must not be greater than 1000 characters.'
+                  example: g
+                  nullable: true
+              required:
+                - status
+                - notes
+    parameters:
+      -
+        in: path
+        name: theft_report_id
+        description: 'The ID of the theft report.'
+        example: 16
+        required: true
+        schema:
+          type: integer
+  '/api/v1/theft-reports/{theft_report_id}/assign':
+    post:
+      summary: ''
+      operationId: postApiV1TheftReportsTheft_report_idAssign
+      description: ''
+      parameters: []
+      responses: {  }
+      tags:
+        - 'Theft Reports'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                assigned_to:
+                  type: integer
+                  description: 'The <code>id</code> of an existing record in the users table.'
+                  example: 16
+                  nullable: false
+                notes:
+                  type: string
+                  description: 'Must not be greater than 500 characters.'
+                  example: 'n'
+                  nullable: true
+              required:
+                - assigned_to
+    parameters:
+      -
+        in: path
+        name: theft_report_id
+        description: 'The ID of the theft report.'
+        example: 16
+        required: true
+        schema:
+          type: integer
+  '/api/v1/theft-reports/{theft_report_id}/evidence':
+    post:
+      summary: ''
+      operationId: postApiV1TheftReportsTheft_report_idEvidence
+      description: ''
+      parameters: []
+      responses: {  }
+      tags:
+        - 'Theft Reports'
+      requestBody:
+        required: false
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                photos:
+                  type: array
+                  description: 'Must be an image. Must not be greater than 5120 kilobytes.'
+                  items:
+                    type: string
+                    format: binary
+    delete:
+      summary: ''
+      operationId: deleteApiV1TheftReportsTheft_report_idEvidence
+      description: ''
+      parameters: []
+      responses: {  }
+      tags:
+        - 'Theft Reports'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                photo_path:
+                  type: string
+                  description: ''
+                  example: architecto
+                  nullable: false
+              required:
+                - photo_path
+    parameters:
+      -
+        in: path
+        name: theft_report_id
+        description: 'The ID of the theft report.'
+        example: 16
+        required: true
+        schema:
+          type: integer
+  '/api/v1/theft-reports/{theft_report_id}/updates':
+    get:
+      summary: ''
+      operationId: getApiV1TheftReportsTheft_report_idUpdates
+      description: ''
+      parameters: []
+      responses:
+        401:
+          description: ''
+          content:
+            application/json:
+              schema:
+                type: object
+                example:
+                  success: false
+                  message: 'Unauthenticated. Please login to continue.'
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+                    example: 'Unauthenticated. Please login to continue.'
+      tags:
+        - 'Theft Reports'
+    parameters:
+      -
+        in: path
+        name: theft_report_id
+        description: 'The ID of the theft report.'
+        example: 16
+        required: true
+        schema:
+          type: integer
+  /api/v1/subscriptions/current:
+    get:
+      summary: ''
+      operationId: getApiV1SubscriptionsCurrent
+      description: ''
+      parameters: []
+      responses:
+        401:
+          description: ''
+          content:
+            application/json:
+              schema:
+                type: object
+                example:
+                  success: false
+                  message: 'Unauthenticated. Please login to continue.'
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+                    example: 'Unauthenticated. Please login to continue.'
+      tags:
+        - Subscriptions
+  /api/v1/subscriptions/subscribe:
+    post:
+      summary: ''
+      operationId: postApiV1SubscriptionsSubscribe
+      description: ''
+      parameters: []
+      responses: {  }
+      tags:
+        - Subscriptions
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                plan_id:
+                  type: integer
+                  description: 'The <code>id</code> of an existing record in the subscription_plans table.'
+                  example: 16
+                  nullable: false
+                billing_cycle:
+                  type: string
+                  description: ''
+                  example: monthly
+                  nullable: false
+                  enum:
+                    - monthly
+                    - yearly
+                payment_method:
+                  type: string
+                  description: ''
+                  example: card
+                  nullable: false
+                  enum:
+                    - mobile_money
+                    - bank_transfer
+                    - cash
+                    - card
+                phone_number:
+                  type: string
+                  description: 'This field is required when <code>payment_method</code> is <code>mobile_money</code>. Must match the regex /^(\+?265|0)?[89]\d{8}$/.'
+                  example: '842559314'
+                  nullable: true
+                return_url:
+                  type: string
+                  description: 'Must be a valid URL.'
+                  example: 'http://www.considine.com/provident-perspiciatis-quo-omnis-nostrum-aut-adipisci-quidem'
+                  nullable: false
+              required:
+                - plan_id
+                - billing_cycle
+                - payment_method
+  '/api/v1/subscriptions/{id}':
+    get:
+      summary: ''
+      operationId: getApiV1SubscriptionsId
+      description: ''
+      parameters: []
+      responses:
+        401:
+          description: ''
+          content:
+            application/json:
+              schema:
+                type: object
+                example:
+                  success: false
+                  message: 'Unauthenticated. Please login to continue.'
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+                    example: 'Unauthenticated. Please login to continue.'
+      tags:
+        - Subscriptions
+    parameters:
+      -
+        in: path
+        name: id
+        description: 'The ID of the subscription.'
+        example: 16
+        required: true
+        schema:
+          type: integer
+  '/api/v1/subscriptions/{subscription_id}/cancel':
+    post:
+      summary: ''
+      operationId: postApiV1SubscriptionsSubscription_idCancel
+      description: ''
+      parameters: []
+      responses: {  }
+      tags:
+        - Subscriptions
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+                  description: 'Must not be greater than 500 characters.'
+                  example: b
+                  nullable: false
+                immediate:
+                  type: boolean
+                  description: ''
+                  example: false
+                  nullable: false
+              required:
+                - reason
+    parameters:
+      -
+        in: path
+        name: subscription_id
+        description: 'The ID of the subscription.'
+        example: 16
+        required: true
+        schema:
+          type: integer
+  '/api/v1/subscriptions/{subscription_id}/change-plan':
+    post:
+      summary: ''
+      operationId: postApiV1SubscriptionsSubscription_idChangePlan
+      description: ''
+      parameters: []
+      responses: {  }
+      tags:
+        - Subscriptions
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                plan_id:
+                  type: integer
+                  description: 'The <code>id</code> of an existing record in the subscription_plans table.'
+                  example: 16
+                  nullable: false
+                billing_cycle:
+                  type: string
+                  description: ''
+                  example: monthly
+                  nullable: false
+                  enum:
+                    - monthly
+                    - yearly
+              required:
+                - plan_id
+    parameters:
+      -
+        in: path
+        name: subscription_id
+        description: 'The ID of the subscription.'
+        example: 16
+        required: true
+        schema:
+          type: integer
+  '/api/v1/subscriptions/{subscription_id}/toggle-auto-renew':
+    post:
+      summary: ''
+      operationId: postApiV1SubscriptionsSubscription_idToggleAutoRenew
+      description: ''
+      parameters: []
+      responses: {  }
+      tags:
+        - Subscriptions
+    parameters:
+      -
+        in: path
+        name: subscription_id
+        description: 'The ID of the subscription.'
+        example: 16
+        required: true
+        schema:
+          type: integer
+  /api/v1/admin/subscriptions:
+    get:
+      summary: ''
+      operationId: getApiV1AdminSubscriptions
+      description: ''
+      parameters: []
+      responses:
+        401:
+          description: ''
+          content:
+            application/json:
+              schema:
+                type: object
+                example:
+                  success: false
+                  message: 'Unauthenticated. Please login to continue.'
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+                    example: 'Unauthenticated. Please login to continue.'
+      tags:
+        - Subscriptions
+  '/api/v1/admin/subscriptions/{subscription_id}/suspend':
+    post:
+      summary: ''
+      operationId: postApiV1AdminSubscriptionsSubscription_idSuspend
+      description: ''
+      parameters: []
+      responses: {  }
+      tags:
+        - Subscriptions
+    parameters:
+      -
+        in: path
+        name: subscription_id
+        description: 'The ID of the subscription.'
+        example: 16
+        required: true
+        schema:
+          type: integer
+  '/api/v1/admin/subscriptions/{subscription_id}/reactivate':
+    post:
+      summary: ''
+      operationId: postApiV1AdminSubscriptionsSubscription_idReactivate
+      description: ''
+      parameters: []
+      responses: {  }
+      tags:
+        - Subscriptions
+    parameters:
+      -
+        in: path
+        name: subscription_id
+        description: 'The ID of the subscription.'
+        example: 16
+        required: true
+        schema:
+          type: integer
+  /api/v1/subscription-plans:
+    get:
+      summary: ''
+      operationId: getApiV1SubscriptionPlans
+      description: ''
+      parameters: []
+      responses:
+        401:
+          description: ''
+          content:
+            application/json:
+              schema:
+                type: object
+                example:
+                  success: false
+                  message: 'Unauthenticated. Please login to continue.'
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+                    example: 'Unauthenticated. Please login to continue.'
+      tags:
+        - 'Subscription Plans'
+  '/api/v1/subscription-plans/{subscriptionPlan_id}':
+    get:
+      summary: ''
+      operationId: getApiV1SubscriptionPlansSubscriptionPlan_id
+      description: ''
+      parameters: []
+      responses:
+        401:
+          description: ''
+          content:
+            application/json:
+              schema:
+                type: object
+                example:
+                  success: false
+                  message: 'Unauthenticated. Please login to continue.'
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+                    example: 'Unauthenticated. Please login to continue.'
+      tags:
+        - 'Subscription Plans'
+    parameters:
+      -
+        in: path
+        name: subscriptionPlan_id
+        description: 'The ID of the subscriptionPlan.'
+        example: 1
+        required: true
+        schema:
+          type: integer
+  /api/v1/payments/my-payments:
+    get:
+      summary: ''
+      operationId: getApiV1PaymentsMyPayments
+      description: ''
+      parameters: []
+      responses:
+        401:
+          description: ''
+          content:
+            application/json:
+              schema:
+                type: object
+                example:
+                  success: false
+                  message: 'Unauthenticated. Please login to continue.'
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+                    example: 'Unauthenticated. Please login to continue.'
+      tags:
+        - Payments
+  '/api/v1/payments/{id}':
+    get:
+      summary: ''
+      operationId: getApiV1PaymentsId
+      description: ''
+      parameters: []
+      responses:
+        401:
+          description: ''
+          content:
+            application/json:
+              schema:
+                type: object
+                example:
+                  success: false
+                  message: 'Unauthenticated. Please login to continue.'
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+                    example: 'Unauthenticated. Please login to continue.'
+      tags:
+        - Payments
+    parameters:
+      -
+        in: path
+        name: id
+        description: 'The ID of the payment.'
+        example: 16
+        required: true
+        schema:
+          type: integer
+  '/api/v1/payments/{payment_id}/verify':
+    post:
+      summary: ''
+      operationId: postApiV1PaymentsPayment_idVerify
+      description: ''
+      parameters: []
+      responses: {  }
+      tags:
+        - Payments
+    parameters:
+      -
+        in: path
+        name: payment_id
+        description: 'The ID of the payment.'
+        example: 16
+        required: true
+        schema:
+          type: integer
+  /api/v1/admin/payments:
+    get:
+      summary: ''
+      operationId: getApiV1AdminPayments
+      description: ''
+      parameters: []
+      responses:
+        401:
+          description: ''
+          content:
+            application/json:
+              schema:
+                type: object
+                example:
+                  success: false
+                  message: 'Unauthenticated. Please login to continue.'
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+                    example: 'Unauthenticated. Please login to continue.'
+      tags:
+        - Payments
+  '/api/v1/admin/payments/{payment_id}/refund':
+    post:
+      summary: ''
+      operationId: postApiV1AdminPaymentsPayment_idRefund
+      description: ''
+      parameters: []
+      responses: {  }
+      tags:
+        - Payments
+    parameters:
+      -
+        in: path
+        name: payment_id
+        description: 'The ID of the payment.'
+        example: 16
+        required: true
+        schema:
+          type: integer
+  '/api/v1/devices/{device_id}/warranty':
+    get:
+      summary: ''
+      operationId: getApiV1DevicesDevice_idWarranty
+      description: ''
+      parameters: []
+      responses:
+        401:
+          description: ''
+          content:
+            application/json:
+              schema:
+                type: object
+                example:
+                  success: false
+                  message: 'Unauthenticated. Please login to continue.'
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+                    example: 'Unauthenticated. Please login to continue.'
+      tags:
+        - Warranties
+    parameters:
+      -
+        in: path
+        name: device_id
+        description: 'The ID of the device.'
+        example: 16
+        required: true
+        schema:
+          type: integer
+  /api/v1/warranties:
+    get:
+      summary: ''
+      operationId: getApiV1Warranties
+      description: ''
+      parameters: []
+      responses:
+        401:
+          description: ''
+          content:
+            application/json:
+              schema:
+                type: object
+                example:
+                  success: false
+                  message: 'Unauthenticated. Please login to continue.'
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+                    example: 'Unauthenticated. Please login to continue.'
+      tags:
+        - Warranties
+  '/api/v1/warranties/{id}':
+    get:
+      summary: ''
+      operationId: getApiV1WarrantiesId
+      description: ''
+      parameters: []
+      responses:
+        401:
+          description: ''
+          content:
+            application/json:
+              schema:
+                type: object
+                example:
+                  success: false
+                  message: 'Unauthenticated. Please login to continue.'
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+                    example: 'Unauthenticated. Please login to continue.'
+      tags:
+        - Warranties
+    put:
+      summary: ''
+      operationId: putApiV1WarrantiesId
+      description: ''
+      parameters: []
+      responses: {  }
+      tags:
+        - Warranties
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                coverage_details:
+                  type: string
+                  description: 'Must not be greater than 1000 characters.'
+                  example: b
+                  nullable: false
+                terms_conditions:
+                  type: object
+                  description: ''
+                  example: null
+                  nullable: false
+                  properties: {  }
+                provider:
+                  type: string
+                  description: 'Must not be greater than 100 characters.'
+                  example: 'n'
+                  nullable: false
+                notes:
+                  type: string
+                  description: 'Must not be greater than 500 characters.'
+                  example: g
+                  nullable: false
+    delete:
+      summary: ''
+      operationId: deleteApiV1WarrantiesId
+      description: ''
+      parameters: []
+      responses: {  }
+      tags:
+        - Warranties
+    parameters:
+      -
+        in: path
+        name: id
+        description: 'The ID of the warranty.'
+        example: 16
+        required: true
+        schema:
+          type: integer
+  '/api/v1/warranties/{warranty_id}/void':
+    post:
+      summary: ''
+      operationId: postApiV1WarrantiesWarranty_idVoid
+      description: ''
+      parameters: []
+      responses: {  }
+      tags:
+        - Warranties
+    parameters:
+      -
+        in: path
+        name: warranty_id
+        description: 'The ID of the warranty.'
+        example: 16
+        required: true
+        schema:
+          type: integer
+  /api/v1/admin/warranties:
+    post:
+      summary: ''
+      operationId: postApiV1AdminWarranties
+      description: ''
+      parameters: []
+      responses: {  }
+      tags:
+        - Warranties
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                device_id:
+                  type: integer
+                  description: 'The <code>id</code> of an existing record in the devices table.'
+                  example: 16
+                  nullable: false
+                start_date:
+                  type: string
+                  description: 'Must be a valid date.'
+                  example: '2025-11-23T17:28:02'
+                  nullable: false
+                duration_months:
+                  type: integer
+                  description: 'Must be at least 1. Must not be greater than 120.'
+                  example: 22
+                  nullable: false
+                coverage_details:
+                  type: string
+                  description: 'Must not be greater than 1000 characters.'
+                  example: g
+                  nullable: true
+                terms_conditions:
+                  type: object
+                  description: ''
+                  example: null
+                  nullable: true
+                  properties: {  }
+                provider:
+                  type: string
+                  description: 'Must not be greater than 100 characters.'
+                  example: z
+                  nullable: true
+                notes:
+                  type: string
+                  description: 'Must not be greater than 500 characters.'
+                  example: m
+                  nullable: true
+              required:
+                - device_id
+                - start_date
+                - duration_months
+  '/api/v1/warranties/{warranty_id}/claims':
+    get:
+      summary: ''
+      operationId: getApiV1WarrantiesWarranty_idClaims
+      description: ''
+      parameters: []
+      responses:
+        401:
+          description: ''
+          content:
+            application/json:
+              schema:
+                type: object
+                example:
+                  success: false
+                  message: 'Unauthenticated. Please login to continue.'
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+                    example: 'Unauthenticated. Please login to continue.'
+      tags:
+        - 'Warranty Claims'
+    post:
+      summary: ''
+      operationId: postApiV1WarrantiesWarranty_idClaims
+      description: ''
+      parameters: []
+      responses: {  }
+      tags:
+        - 'Warranty Claims'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                issue_description:
+                  type: string
+                  description: 'Must not be greater than 2000 characters.'
+                  example: b
+                  nullable: false
+                issue_category:
+                  type: string
+                  description: ''
+                  example: battery
+                  nullable: false
+                  enum:
+                    - hardware
+                    - software
+                    - battery
+                    - screen
+                    - other
+                evidence_photos:
+                  type: array
+                  description: 'Must be an image. Must not be greater than 5120 kilobytes.'
+                  items:
+                    type: string
+                    format: binary
+              required:
+                - issue_description
+                - issue_category
+    parameters:
+      -
+        in: path
+        name: warranty_id
+        description: 'The ID of the warranty.'
+        example: 16
+        required: true
+        schema:
+          type: integer
+  '/api/v1/warranty-claims/{id}':
+    get:
+      summary: ''
+      operationId: getApiV1WarrantyClaimsId
+      description: ''
+      parameters: []
+      responses:
+        401:
+          description: ''
+          content:
+            application/json:
+              schema:
+                type: object
+                example:
+                  success: false
+                  message: 'Unauthenticated. Please login to continue.'
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+                    example: 'Unauthenticated. Please login to continue.'
+      tags:
+        - 'Warranty Claims'
+    delete:
+      summary: ''
+      operationId: deleteApiV1WarrantyClaimsId
+      description: ''
+      parameters: []
+      responses: {  }
+      tags:
+        - 'Warranty Claims'
+    parameters:
+      -
+        in: path
+        name: id
+        description: 'The ID of the warranty claim.'
+        example: 16
+        required: true
+        schema:
+          type: integer
+  '/api/v1/warranty-claims/{warranty_claim_id}/process':
+    post:
+      summary: ''
+      operationId: postApiV1WarrantyClaimsWarranty_claim_idProcess
+      description: ''
+      parameters: []
+      responses: {  }
+      tags:
+        - 'Warranty Claims'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status:
+                  type: string
+                  description: ''
+                  example: pending
+                  nullable: false
+                  enum:
+                    - pending
+                    - approved
+                    - rejected
+                    - processing
+                    - completed
+                resolution_type:
+                  type: string
+                  description: 'This field is required when <code>status</code> is <code>completed</code>.'
+                  example: replacement
+                  nullable: true
+                  enum:
+                    - repair
+                    - replacement
+                    - refund
+                resolution_notes:
+                  type: string
+                  description: 'Must not be greater than 1000 characters.'
+                  example: b
+                  nullable: false
+                repair_cost:
+                  type: number
+                  description: 'Must be at least 0.'
+                  example: 39
+                  nullable: true
+              required:
+                - status
+                - resolution_notes
+    parameters:
+      -
+        in: path
+        name: warranty_claim_id
+        description: 'The ID of the warranty claim.'
+        example: 16
+        required: true
+        schema:
+          type: integer
+  '/api/v1/warranty-claims/{warranty_claim_id}/evidence':
+    post:
+      summary: ''
+      operationId: postApiV1WarrantyClaimsWarranty_claim_idEvidence
+      description: ''
+      parameters: []
+      responses: {  }
+      tags:
+        - 'Warranty Claims'
+      requestBody:
+        required: false
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                photos:
+                  type: array
+                  description: 'Must be an image. Must not be greater than 5120 kilobytes.'
+                  items:
+                    type: string
+                    format: binary
+    parameters:
+      -
+        in: path
+        name: warranty_claim_id
+        description: 'The ID of the warranty claim.'
+        example: 16
+        required: true
+        schema:
+          type: integer
+  /api/v1/admin/warranty-claims:
+    get:
+      summary: ''
+      operationId: getApiV1AdminWarrantyClaims
+      description: ''
+      parameters: []
+      responses:
+        401:
+          description: ''
+          content:
+            application/json:
+              schema:
+                type: object
+                example:
+                  success: false
+                  message: 'Unauthenticated. Please login to continue.'
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+                    example: 'Unauthenticated. Please login to continue.'
+      tags:
+        - 'Warranty Claims'
+  /api/v1/notifications:
+    get:
+      summary: 'Get all notifications for the authenticated user.'
+      operationId: getAllNotificationsForTheAuthenticatedUser
+      description: ''
+      parameters: []
+      responses:
+        401:
+          description: ''
+          content:
+            application/json:
+              schema:
+                type: object
+                example:
+                  success: false
+                  message: 'Unauthenticated. Please login to continue.'
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+                    example: 'Unauthenticated. Please login to continue.'
+      tags:
+        - Notifications
+  /api/v1/notifications/unread-count:
+    get:
+      summary: 'Get unread notifications count.'
+      operationId: getUnreadNotificationsCount
+      description: ''
+      parameters: []
+      responses:
+        401:
+          description: ''
+          content:
+            application/json:
+              schema:
+                type: object
+                example:
+                  success: false
+                  message: 'Unauthenticated. Please login to continue.'
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+                    example: 'Unauthenticated. Please login to continue.'
+      tags:
+        - Notifications
+  /api/v1/notifications/read-all:
+    post:
+      summary: 'Mark all notifications as read.'
+      operationId: markAllNotificationsAsRead
+      description: ''
+      parameters: []
+      responses: {  }
+      tags:
+        - Notifications
+  /api/v1/notifications/delete-all:
+    delete:
+      summary: 'Delete all notifications for the user.'
+      operationId: deleteAllNotificationsForTheUser
+      description: ''
+      parameters: []
+      responses: {  }
+      tags:
+        - Notifications
+  '/api/v1/notifications/{id}':
+    get:
+      summary: 'Get a specific notification.'
+      operationId: getASpecificNotification
+      description: ''
+      parameters: []
+      responses:
+        401:
+          description: ''
+          content:
+            application/json:
+              schema:
+                type: object
+                example:
+                  success: false
+                  message: 'Unauthenticated. Please login to continue.'
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+                    example: 'Unauthenticated. Please login to continue.'
+      tags:
+        - Notifications
+    delete:
+      summary: 'Delete a notification.'
+      operationId: deleteANotification
+      description: ''
+      parameters: []
+      responses: {  }
+      tags:
+        - Notifications
+    parameters:
+      -
+        in: path
+        name: id
+        description: 'The ID of the notification.'
+        example: architecto
+        required: true
+        schema:
+          type: string
+  '/api/v1/notifications/{notification}/read':
+    post:
+      summary: 'Mark a notification as read.'
+      operationId: markANotificationAsRead
+      description: ''
+      parameters: []
+      responses: {  }
+      tags:
+        - Notifications
+    parameters:
+      -
+        in: path
+        name: notification
+        description: 'The notification.'
+        example: architecto
+        required: true
+        schema:
+          type: string
+  /api/v1/admin/iot-modules:
+    get:
+      summary: 'List all IoT modules (admin only).'
+      operationId: listAllIoTModulesadminOnly
+      description: ''
+      parameters: []
+      responses:
+        401:
+          description: ''
+          content:
+            application/json:
+              schema:
+                type: object
+                example:
+                  success: false
+                  message: 'Unauthenticated. Please login to continue.'
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+                    example: 'Unauthenticated. Please login to continue.'
+      tags:
+        - 'IoT Modules'
+    post:
+      summary: 'Register a new IoT module (admin only).'
+      operationId: registerANewIoTModuleadminOnly
+      description: ''
+      parameters: []
+      responses: {  }
+      tags:
+        - 'IoT Modules'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                module_id:
+                  type: string
+                  description: 'Must not be greater than 50 characters.'
+                  example: b
+                  nullable: false
+                sim_number:
+                  type: string
+                  description: 'Must not be greater than 20 characters.'
+                  example: ngzmiyvdljnikhwa
+                  nullable: false
+                imei:
+                  type: string
+                  description: 'Must be 15 characters.'
+                  example: ykcmyuwpwlvqwrs
+                  nullable: false
+                modem_type:
+                  type: string
+                  description: ''
+                  example: GPS_GSM
+                  nullable: false
+                  enum:
+                    - GPS
+                    - GSM
+                    - GPS_GSM
+                    - WIFI
+                firmware_version:
+                  type: string
+                  description: 'Must not be greater than 20 characters.'
+                  example: itcpscqldzsnrwtu
+                  nullable: true
+                hardware_version:
+                  type: string
+                  description: 'Must not be greater than 20 characters.'
+                  example: jwvlxjklqppwqbew
+                  nullable: true
+                configuration:
+                  type: object
+                  description: ''
+                  example: null
+                  nullable: true
+                  properties: {  }
+              required:
+                - module_id
+                - sim_number
+                - imei
+                - modem_type
+  '/api/v1/admin/iot-modules/{id}':
+    get:
+      summary: 'View a specific IoT module.'
+      operationId: viewASpecificIoTModule
+      description: ''
+      parameters: []
+      responses:
+        401:
+          description: ''
+          content:
+            application/json:
+              schema:
+                type: object
+                example:
+                  success: false
+                  message: 'Unauthenticated. Please login to continue.'
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+                    example: 'Unauthenticated. Please login to continue.'
+      tags:
+        - 'IoT Modules'
+    put:
+      summary: 'Update an IoT module (admin only).'
+      operationId: updateAnIoTModuleadminOnly
+      description: ''
+      parameters: []
+      responses: {  }
+      tags:
+        - 'IoT Modules'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                sim_number:
+                  type: string
+                  description: 'Must not be greater than 20 characters.'
+                  example: bngzmiyvdljnikhw
+                  nullable: true
+                imei:
+                  type: string
+                  description: 'Must not be greater than 20 characters.'
+                  example: aykcmyuwpwlvqwrs
+                  nullable: true
+                modem_type:
+                  type: string
+                  description: ''
+                  example: GPS_GSM
+                  nullable: false
+                  enum:
+                    - GPS
+                    - GSM
+                    - GPS_GSM
+                    - WIFI
+                firmware_version:
+                  type: string
+                  description: 'Must not be greater than 20 characters.'
+                  example: itcpscqldzsnrwtu
+                  nullable: true
+                hardware_version:
+                  type: string
+                  description: 'Must not be greater than 20 characters.'
+                  example: jwvlxjklqppwqbew
+                  nullable: true
+                status:
+                  type: string
+                  description: ''
+                  example: inactive
+                  nullable: false
+                  enum:
+                    - active
+                    - inactive
+                    - tampered
+                    - offline
+                    - maintenance
+                configuration:
+                  type: object
+                  description: ''
+                  example: null
+                  nullable: true
+                  properties: {  }
+    delete:
+      summary: 'Delete an IoT module (admin only).'
+      operationId: deleteAnIoTModuleadminOnly
+      description: ''
+      parameters: []
+      responses: {  }
+      tags:
+        - 'IoT Modules'
+    parameters:
+      -
+        in: path
+        name: id
+        description: 'The ID of the iot module.'
+        example: 16
+        required: true
+        schema:
+          type: integer
+  '/api/v1/admin/iot-modules/{iot_module_id}/regenerate-token':
+    post:
+      summary: 'Regenerate API token for an IoT module.'
+      operationId: regenerateAPITokenForAnIoTModule
+      description: ''
+      parameters: []
+      responses: {  }
+      tags:
+        - 'IoT Modules'
+    parameters:
+      -
+        in: path
+        name: iot_module_id
+        description: 'The ID of the iot module.'
+        example: 16
+        required: true
+        schema:
+          type: integer
+  '/api/v1/admin/iot-modules/{iot_module_id}/activate':
+    post:
+      summary: 'Activate an IoT module.'
+      operationId: activateAnIoTModule
+      description: ''
+      parameters: []
+      responses: {  }
+      tags:
+        - 'IoT Modules'
+    parameters:
+      -
+        in: path
+        name: iot_module_id
+        description: 'The ID of the iot module.'
+        example: 16
+        required: true
+        schema:
+          type: integer
+  '/api/v1/admin/iot-modules/{iot_module_id}/deactivate':
+    post:
+      summary: 'Deactivate an IoT module.'
+      operationId: deactivateAnIoTModule
+      description: ''
+      parameters: []
+      responses: {  }
+      tags:
+        - 'IoT Modules'
+    parameters:
+      -
+        in: path
+        name: iot_module_id
+        description: 'The ID of the iot module.'
+        example: 16
+        required: true
+        schema:
+          type: integer
+  /api/v1/device-categories:
+    get:
+      summary: 'List all active device categories.'
+      operationId: listAllActiveDeviceCategories
+      description: ''
+      parameters: []
+      responses:
+        401:
+          description: ''
+          content:
+            application/json:
+              schema:
+                type: object
+                example:
+                  success: false
+                  message: 'Unauthenticated. Please login to continue.'
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+                    example: 'Unauthenticated. Please login to continue.'
+      tags:
+        - 'Device Categories'
+  '/api/v1/device-categories/{deviceCategory_id}':
+    get:
+      summary: 'View a specific category.'
+      operationId: viewASpecificCategory
+      description: ''
+      parameters: []
+      responses:
+        401:
+          description: ''
+          content:
+            application/json:
+              schema:
+                type: object
+                example:
+                  success: false
+                  message: 'Unauthenticated. Please login to continue.'
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+                    example: 'Unauthenticated. Please login to continue.'
+      tags:
+        - 'Device Categories'
+    parameters:
+      -
+        in: path
+        name: deviceCategory_id
+        description: 'The ID of the deviceCategory.'
+        example: 1
+        required: true
+        schema:
+          type: integer
+  /api/v1/admin/device-categories:
+    post:
+      summary: 'Create a new category (admin only).'
+      operationId: createANewCategoryadminOnly
+      description: ''
+      parameters: []
+      responses: {  }
+      tags:
+        - 'Device Categories'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  description: 'Must not be greater than 100 characters.'
+                  example: b
+                  nullable: false
+                slug:
+                  type: string
+                  description: 'Must not be greater than 100 characters.'
+                  example: 'n'
+                  nullable: false
+                description:
+                  type: string
+                  description: 'Must not be greater than 500 characters.'
+                  example: 'Animi quos velit et fugiat.'
+                  nullable: true
+                icon:
+                  type: string
+                  description: 'Must not be greater than 50 characters.'
+                  example: d
+                  nullable: true
+                is_active:
+                  type: boolean
+                  description: ''
+                  example: false
+                  nullable: false
+              required:
+                - name
+  '/api/v1/admin/device-categories/{deviceCategory_id}':
+    put:
+      summary: 'Update a category (admin only).'
+      operationId: updateACategoryadminOnly
+      description: ''
+      parameters: []
+      responses: {  }
+      tags:
+        - 'Device Categories'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  description: 'Must not be greater than 100 characters.'
+                  example: b
+                  nullable: false
+                description:
+                  type: string
+                  description: 'Must not be greater than 500 characters.'
+                  example: 'Et animi quos velit et fugiat.'
+                  nullable: true
+                icon:
+                  type: string
+                  description: 'Must not be greater than 50 characters.'
+                  example: d
+                  nullable: true
+                is_active:
+                  type: boolean
+                  description: ''
+                  example: false
+                  nullable: false
+    delete:
+      summary: 'Delete a category (admin only).'
+      operationId: deleteACategoryadminOnly
+      description: ''
+      parameters: []
+      responses: {  }
+      tags:
+        - 'Device Categories'
+    parameters:
+      -
+        in: path
+        name: deviceCategory_id
+        description: 'The ID of the deviceCategory.'
+        example: 1
+        required: true
+        schema:
+          type: integer
+  /api/v1/admin/dashboard:
+    get:
+      summary: 'Get main dashboard overview with key metrics.'
+      operationId: getMainDashboardOverviewWithKeyMetrics
+      description: ''
+      parameters: []
+      responses:
+        401:
+          description: ''
+          content:
+            application/json:
+              schema:
+                type: object
+                example:
+                  success: false
+                  message: 'Unauthenticated. Please login to continue.'
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+                    example: 'Unauthenticated. Please login to continue.'
+      tags:
+        - 'Admin Dashboard'
+  /api/v1/admin/dashboard/users:
+    get:
+      summary: 'Get detailed user statistics.'
+      operationId: getDetailedUserStatistics
+      description: ''
+      parameters: []
+      responses:
+        401:
+          description: ''
+          content:
+            application/json:
+              schema:
+                type: object
+                example:
+                  success: false
+                  message: 'Unauthenticated. Please login to continue.'
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+                    example: 'Unauthenticated. Please login to continue.'
+      tags:
+        - 'Admin Dashboard'
+  /api/v1/admin/dashboard/devices:
+    get:
+      summary: 'Get detailed device statistics.'
+      operationId: getDetailedDeviceStatistics
+      description: ''
+      parameters: []
+      responses:
+        401:
+          description: ''
+          content:
+            application/json:
+              schema:
+                type: object
+                example:
+                  success: false
+                  message: 'Unauthenticated. Please login to continue.'
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+                    example: 'Unauthenticated. Please login to continue.'
+      tags:
+        - 'Admin Dashboard'
+  /api/v1/admin/dashboard/revenue:
+    get:
+      summary: 'Get revenue and payment statistics.'
+      operationId: getRevenueAndPaymentStatistics
+      description: ''
+      parameters: []
+      responses:
+        401:
+          description: ''
+          content:
+            application/json:
+              schema:
+                type: object
+                example:
+                  success: false
+                  message: 'Unauthenticated. Please login to continue.'
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+                    example: 'Unauthenticated. Please login to continue.'
+      tags:
+        - 'Admin Dashboard'
+  /api/v1/admin/dashboard/theft-reports:
+    get:
+      summary: 'Get theft report statistics.'
+      operationId: getTheftReportStatistics
+      description: ''
+      parameters: []
+      responses:
+        401:
+          description: ''
+          content:
+            application/json:
+              schema:
+                type: object
+                example:
+                  success: false
+                  message: 'Unauthenticated. Please login to continue.'
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+                    example: 'Unauthenticated. Please login to continue.'
+      tags:
+        - 'Admin Dashboard'
+  /api/v1/admin/dashboard/subscriptions:
+    get:
+      summary: 'Get subscription statistics.'
+      operationId: getSubscriptionStatistics
+      description: ''
+      parameters: []
+      responses:
+        401:
+          description: ''
+          content:
+            application/json:
+              schema:
+                type: object
+                example:
+                  success: false
+                  message: 'Unauthenticated. Please login to continue.'
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+                    example: 'Unauthenticated. Please login to continue.'
+      tags:
+        - 'Admin Dashboard'
+  /api/v1/admin/dashboard/support:
+    get:
+      summary: 'Get support statistics (warranty claims).'
+      operationId: getSupportStatisticswarrantyClaims
+      description: ''
+      parameters: []
+      responses:
+        401:
+          description: ''
+          content:
+            application/json:
+              schema:
+                type: object
+                example:
+                  success: false
+                  message: 'Unauthenticated. Please login to continue.'
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+                    example: 'Unauthenticated. Please login to continue.'
+      tags:
+        - 'Admin Dashboard'
+  /api/v1/admin/users:
+    get:
+      summary: 'List all users with filtering and pagination.'
+      operationId: listAllUsersWithFilteringAndPagination
+      description: ''
+      parameters: []
+      responses:
+        401:
+          description: ''
+          content:
+            application/json:
+              schema:
+                type: object
+                example:
+                  success: false
+                  message: 'Unauthenticated. Please login to continue.'
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+                    example: 'Unauthenticated. Please login to continue.'
+      tags:
+        - 'Admin User Management'
+    post:
+      summary: 'Create a new user.'
+      operationId: createANewUser
+      description: ''
+      parameters: []
+      responses: {  }
+      tags:
+        - 'Admin User Management'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  description: 'Must not be greater than 255 characters.'
+                  example: b
+                  nullable: false
+                email:
+                  type: string
+                  description: 'Must be a valid email address. Must not be greater than 255 characters.'
+                  example: zbailey@example.net
+                  nullable: false
+                phone_number:
+                  type: string
+                  description: 'Must not be greater than 20 characters.'
+                  example: iyvdljnikhwaykcm
+                  nullable: true
+                password:
+                  type: string
+                  description: ''
+                  example: architecto
+                  nullable: false
+                role:
+                  type: string
+                  description: ''
+                  example: architecto
+                  nullable: false
+                address:
+                  type: string
+                  description: 'Must not be greater than 500 characters.'
+                  example: 'n'
+                  nullable: true
+                city:
+                  type: string
+                  description: 'Must not be greater than 100 characters.'
+                  example: g
+                  nullable: true
+                national_id:
+                  type: string
+                  description: 'Must not be greater than 50 characters.'
+                  example: z
+                  nullable: true
+                verify_email:
+                  type: boolean
+                  description: ''
+                  example: false
+                  nullable: false
+              required:
+                - name
+                - email
+                - password
+                - role
+  '/api/v1/admin/users/{id}':
+    get:
+      summary: 'Get a specific user.'
+      operationId: getASpecificUser
+      description: ''
+      parameters: []
+      responses:
+        401:
+          description: ''
+          content:
+            application/json:
+              schema:
+                type: object
+                example:
+                  success: false
+                  message: 'Unauthenticated. Please login to continue.'
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+                    example: 'Unauthenticated. Please login to continue.'
+      tags:
+        - 'Admin User Management'
+    put:
+      summary: 'Update a user.'
+      operationId: updateAUser
+      description: ''
+      parameters: []
+      responses: {  }
+      tags:
+        - 'Admin User Management'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  description: 'Must not be greater than 255 characters.'
+                  example: b
+                  nullable: false
+                email:
+                  type: string
+                  description: 'Must be a valid email address. Must not be greater than 255 characters.'
+                  example: zbailey@example.net
+                  nullable: false
+                phone_number:
+                  type: string
+                  description: 'Must not be greater than 20 characters.'
+                  example: iyvdljnikhwaykcm
+                  nullable: true
+                password:
+                  type: string
+                  description: ''
+                  example: null
+                  nullable: false
+                address:
+                  type: string
+                  description: 'Must not be greater than 500 characters.'
+                  example: 'y'
+                  nullable: true
+                city:
+                  type: string
+                  description: 'Must not be greater than 100 characters.'
+                  example: u
+                  nullable: true
+                national_id:
+                  type: string
+                  description: 'Must not be greater than 50 characters.'
+                  example: w
+                  nullable: true
+    delete:
+      summary: 'Delete a user.'
+      operationId: deleteAUser
+      description: ''
+      parameters: []
+      responses: {  }
+      tags:
+        - 'Admin User Management'
+    parameters:
+      -
+        in: path
+        name: id
+        description: 'The ID of the user.'
+        example: 1
+        required: true
+        schema:
+          type: integer
+  '/api/v1/admin/users/{user_id}/assign-role':
+    post:
+      summary: 'Assign a role to a user.'
+      operationId: assignARoleToAUser
+      description: ''
+      parameters: []
+      responses: {  }
+      tags:
+        - 'Admin User Management'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                role:
+                  type: string
+                  description: ''
+                  example: architecto
+                  nullable: false
+              required:
+                - role
+    parameters:
+      -
+        in: path
+        name: user_id
+        description: 'The ID of the user.'
+        example: 1
+        required: true
+        schema:
+          type: integer
+  '/api/v1/admin/users/{user_id}/suspend':
+    post:
+      summary: 'Suspend a user account.'
+      operationId: suspendAUserAccount
+      description: ''
+      parameters: []
+      responses: {  }
+      tags:
+        - 'Admin User Management'
+    parameters:
+      -
+        in: path
+        name: user_id
+        description: 'The ID of the user.'
+        example: 1
+        required: true
+        schema:
+          type: integer
+  '/api/v1/admin/users/{user_id}/unsuspend':
+    post:
+      summary: 'Unsuspend a user account.'
+      operationId: unsuspendAUserAccount
+      description: ''
+      parameters: []
+      responses: {  }
+      tags:
+        - 'Admin User Management'
+    parameters:
+      -
+        in: path
+        name: user_id
+        description: 'The ID of the user.'
+        example: 1
+        required: true
+        schema:
+          type: integer
+  '/api/v1/admin/users/{user_id}/verify-email':
+    post:
+      summary: "Verify user's email manually."
+      operationId: verifyUsersEmailManually
+      description: ''
+      parameters: []
+      responses: {  }
+      tags:
+        - 'Admin User Management'
+    parameters:
+      -
+        in: path
+        name: user_id
+        description: 'The ID of the user.'
+        example: 1
+        required: true
+        schema:
+          type: integer
+  /api/v1/admin/roles:
+    get:
+      summary: 'Get available roles.'
+      operationId: getAvailableRoles
+      description: ''
+      parameters: []
+      responses:
+        401:
+          description: ''
+          content:
+            application/json:
+              schema:
+                type: object
+                example:
+                  success: false
+                  message: 'Unauthenticated. Please login to continue.'
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+                    example: 'Unauthenticated. Please login to continue.'
+      tags:
+        - 'Admin User Management'
+  /api/v1/admin/reports/theft:
+    get:
+      summary: 'Generate theft reports summary.'
+      operationId: generateTheftReportsSummary
+      description: ''
+      parameters: []
+      responses:
+        401:
+          description: ''
+          content:
+            application/json:
+              schema:
+                type: object
+                example:
+                  success: false
+                  message: 'Unauthenticated. Please login to continue.'
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+                    example: 'Unauthenticated. Please login to continue.'
+      tags:
+        - 'Admin Reports'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                from:
+                  type: string
+                  description: 'Must be a valid date.'
+                  example: '2025-11-23T17:28:02'
+                  nullable: true
+                to:
+                  type: string
+                  description: 'Must be a valid date. Must be a date after or equal to <code>from</code>.'
+                  example: '2051-12-17'
+                  nullable: true
+                status:
+                  type: string
+                  description: ''
+                  example: architecto
+                  nullable: true
+  /api/v1/admin/reports/revenue:
+    get:
+      summary: 'Generate revenue reports.'
+      operationId: generateRevenueReports
+      description: ''
+      parameters: []
+      responses:
+        401:
+          description: ''
+          content:
+            application/json:
+              schema:
+                type: object
+                example:
+                  success: false
+                  message: 'Unauthenticated. Please login to continue.'
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+                    example: 'Unauthenticated. Please login to continue.'
+      tags:
+        - 'Admin Reports'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                from:
+                  type: string
+                  description: 'Must be a valid date.'
+                  example: '2025-11-23T17:28:02'
+                  nullable: true
+                to:
+                  type: string
+                  description: 'Must be a valid date. Must be a date after or equal to <code>from</code>.'
+                  example: '2051-12-17'
+                  nullable: true
+                group_by:
+                  type: string
+                  description: ''
+                  example: week
+                  nullable: true
+                  enum:
+                    - day
+                    - week
+                    - month
+                    - year
+  /api/v1/admin/reports/devices:
+    get:
+      summary: 'Generate device reports.'
+      operationId: generateDeviceReports
+      description: ''
+      parameters: []
+      responses:
+        401:
+          description: ''
+          content:
+            application/json:
+              schema:
+                type: object
+                example:
+                  success: false
+                  message: 'Unauthenticated. Please login to continue.'
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+                    example: 'Unauthenticated. Please login to continue.'
+      tags:
+        - 'Admin Reports'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                from:
+                  type: string
+                  description: 'Must be a valid date.'
+                  example: '2025-11-23T17:28:02'
+                  nullable: true
+                to:
+                  type: string
+                  description: 'Must be a valid date. Must be a date after or equal to <code>from</code>.'
+                  example: '2051-12-17'
+                  nullable: true
+  /api/v1/admin/reports/subscriptions:
+    get:
+      summary: 'Generate subscription reports.'
+      operationId: generateSubscriptionReports
+      description: ''
+      parameters: []
+      responses:
+        401:
+          description: ''
+          content:
+            application/json:
+              schema:
+                type: object
+                example:
+                  success: false
+                  message: 'Unauthenticated. Please login to continue.'
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+                    example: 'Unauthenticated. Please login to continue.'
+      tags:
+        - 'Admin Reports'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                from:
+                  type: string
+                  description: 'Must be a valid date.'
+                  example: '2025-11-23T17:28:02'
+                  nullable: true
+                to:
+                  type: string
+                  description: 'Must be a valid date. Must be a date after or equal to <code>from</code>.'
+                  example: '2051-12-17'
+                  nullable: true
+  /api/v1/admin/reports/users:
+    get:
+      summary: 'Generate user reports.'
+      operationId: generateUserReports
+      description: ''
+      parameters: []
+      responses:
+        401:
+          description: ''
+          content:
+            application/json:
+              schema:
+                type: object
+                example:
+                  success: false
+                  message: 'Unauthenticated. Please login to continue.'
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+                    example: 'Unauthenticated. Please login to continue.'
+      tags:
+        - 'Admin Reports'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                from:
+                  type: string
+                  description: 'Must be a valid date.'
+                  example: '2025-11-23T17:28:02'
+                  nullable: true
+                to:
+                  type: string
+                  description: 'Must be a valid date. Must be a date after or equal to <code>from</code>.'
+                  example: '2051-12-17'
+                  nullable: true
+  '/api/v1/auth/email/verify/{id}/{hash}':
+    get:
+      summary: 'Verify email address.'
+      operationId: verifyEmailAddress
+      description: ''
+      parameters: []
+      responses:
+        403:
+          description: ''
+          content:
+            application/json:
+              schema:
+                type: object
+                example:
+                  message: 'Invalid signature.'
+                properties:
+                  message:
+                    type: string
+                    example: 'Invalid signature.'
+      tags:
+        - 'Email Verification'
+    parameters:
+      -
+        in: path
+        name: id
+        description: 'The ID of the verify.'
+        example: architecto
+        required: true
+        schema:
+          type: string
+      -
+        in: path
+        name: hash
+        description: ''
+        example: architecto
+        required: true
+        schema:
+          type: string
+  /api/v1/auth/email/resend:
+    post:
+      summary: 'Resend email verification notification.'
+      operationId: resendEmailVerificationNotification
+      description: ''
+      parameters: []
+      responses: {  }
+      tags:
+        - 'Email Verification'
+  /api/v1/auth/email/status:
+    get:
+      summary: 'Check verification status.'
+      operationId: checkVerificationStatus
+      description: ''
+      parameters: []
+      responses:
+        401:
+          description: ''
+          content:
+            application/json:
+              schema:
+                type: object
+                example:
+                  success: false
+                  message: 'Unauthenticated. Please login to continue.'
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+                    example: 'Unauthenticated. Please login to continue.'
+      tags:
+        - 'Email Verification'
+  /api/v1/iot/location:
+    post:
+      summary: 'Store a location update from an IoT module.'
+      operationId: storeALocationUpdateFromAnIoTModule
+      description: ''
+      parameters: []
+      responses: {  }
+      tags:
+        - 'IoT Location Updates'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                latitude:
+                  type: number
+                  description: 'Must be between -90 and 90.'
+                  example: -89
+                  nullable: false
+                longitude:
+                  type: number
+                  description: 'Must be between -180 and 180.'
+                  example: -179
+                  nullable: false
+                altitude:
+                  type: number
+                  description: ''
+                  example: 4326.41688
+                  nullable: true
+                accuracy:
+                  type: number
+                  description: 'Must be at least 0.'
+                  example: 77
+                  nullable: true
+                speed:
+                  type: number
+                  description: 'Must be at least 0.'
+                  example: 8
+                  nullable: true
+                heading:
+                  type: number
+                  description: 'Must be between 0 and 360.'
+                  example: 0
+                  nullable: true
+                battery_level:
+                  type: integer
+                  description: 'Must be between 0 and 100.'
+                  example: 1
+                  nullable: true
+                signal_strength:
+                  type: integer
+                  description: 'Must be between 0 and 100.'
+                  example: 1
+                  nullable: true
+                recorded_at:
+                  type: string
+                  description: 'Must be a valid date.'
+                  example: '2025-11-23T17:28:02'
+                  nullable: true
+              required:
+                - latitude
+                - longitude
+  /api/v1/iot/locations/batch:
+    post:
+      summary: 'Store multiple location updates (batch upload for offline sync).'
+      operationId: storeMultipleLocationUpdatesbatchUploadForOfflineSync
+      description: ''
+      parameters: []
+      responses: {  }
+      tags:
+        - 'IoT Location Updates'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                locations:
+                  type: array
+                  description: 'Must not have more than 100 items.'
+                  example:
+                    - []
+                  items:
+                    type: object
+                    properties:
+                      latitude:
+                        type: number
+                        description: 'Must be between -90 and 90.'
+                        example: -89
+                        nullable: false
+                      longitude:
+                        type: number
+                        description: 'Must be between -180 and 180.'
+                        example: -179
+                        nullable: false
+                      altitude:
+                        type: number
+                        description: ''
+                        example: 4326.41688
+                        nullable: true
+                      accuracy:
+                        type: number
+                        description: 'Must be at least 0.'
+                        example: 77
+                        nullable: true
+                      speed:
+                        type: number
+                        description: 'Must be at least 0.'
+                        example: 8
+                        nullable: true
+                      heading:
+                        type: number
+                        description: 'Must be between 0 and 360.'
+                        example: 0
+                        nullable: true
+                      recorded_at:
+                        type: string
+                        description: 'Must be a valid date.'
+                        example: '2025-11-23T17:28:02'
+                        nullable: false
+                    required:
+                      - latitude
+                      - longitude
+                      - recorded_at
+              required:
+                - locations
+  /api/v1/iot/heartbeat:
+    post:
+      summary: 'Send a heartbeat/ping from the IoT module.'
+      operationId: sendAHeartbeatpingFromTheIoTModule
+      description: ''
+      parameters: []
+      responses: {  }
+      tags:
+        - 'IoT Location Updates'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                battery_level:
+                  type: integer
+                  description: 'Must be between 0 and 100.'
+                  example: 1
+                  nullable: true
+                signal_strength:
+                  type: integer
+                  description: 'Must be between 0 and 100.'
+                  example: 1
+                  nullable: true
+                firmware_version:
+                  type: string
+                  description: 'Must not be greater than 50 characters.'
+                  example: g
+                  nullable: true
+  /api/v1/health:
+    get:
+      summary: ''
+      operationId: getApiV1Health
+      description: ''
+      parameters: []
+      responses:
+        200:
+          description: ''
+          content:
+            application/json:
+              schema:
+                type: object
+                example:
+                  success: true
+                  message: 'Mufasah Device Tracking API is running'
+                  version: 1.0.0
+                  timestamp: '2025-11-23T17:28:01+00:00'
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: 'Mufasah Device Tracking API is running'
+                  version:
+                    type: string
+                    example: 1.0.0
+                  timestamp:
+                    type: string
+                    example: '2025-11-23T17:28:01+00:00'
+      tags:
+        - 'Other Endpoints'
+  /api/v1/auth/forgot-password:
+    post:
+      summary: 'Send password reset link to email.'
+      operationId: sendPasswordResetLinkToEmail
+      description: ''
+      parameters: []
+      responses: {  }
+      tags:
+        - 'Password Reset'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email:
+                  type: string
+                  description: 'Must be a valid email address. The <code>email</code> of an existing record in the users table.'
+                  example: gbailey@example.net
+                  nullable: false
+              required:
+                - email
+      security: []
+  /api/v1/auth/reset-password:
+    post:
+      summary: 'Reset password with token.'
+      operationId: resetPasswordWithToken
+      description: ''
+      parameters: []
+      responses: {  }
+      tags:
+        - 'Password Reset'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                token:
+                  type: string
+                  description: ''
+                  example: architecto
+                  nullable: false
+                email:
+                  type: string
+                  description: 'Must be a valid email address. The <code>email</code> of an existing record in the users table.'
+                  example: zbailey@example.net
+                  nullable: false
+                password:
+                  type: string
+                  description: ''
+                  example: '|]|{+-'
+                  nullable: false
+              required:
+                - token
+                - email
+                - password
+      security: []
