@@ -1,11 +1,13 @@
 <?php
 
 use App\Enums\InventoryStatus;
+use App\Models\Brand;
 use App\Models\Branch;
 use App\Models\Device;
 use App\Models\DeviceCategory;
 use App\Models\InventoryBatch;
 use App\Models\InventoryReceipt;
+use App\Models\ProductModel;
 use App\Models\User;
 
 beforeEach(function () {
@@ -121,6 +123,49 @@ describe('Inventory Index', function () {
 });
 
 describe('Product Options', function () {
+    it('uses the in-stock batch selling price ahead of the catalog default price', function () {
+        $this->storeAdmin->update(['branch_id' => $this->branch->id]);
+
+        $brand = Brand::create([
+            'category_id' => $this->category->id,
+            'name' => 'Apple',
+            'is_active' => true,
+        ]);
+        $productModel = ProductModel::create([
+            'brand_id' => $brand->id,
+            'name' => 'iPhone 15',
+            'base_price' => 750000,
+            'is_active' => true,
+        ]);
+        $batch = InventoryBatch::create([
+            'batch_number' => 'BATCH-2026-00000',
+            'branch_id' => $this->branch->id,
+            'category_id' => $this->category->id,
+            'brand' => 'Apple',
+            'model' => 'iPhone 15',
+            'quantity_received' => 1,
+            'buying_price' => 400000,
+            'target_selling_price' => 500000,
+            'purchase_date' => now(),
+        ]);
+        Device::factory()->create([
+            'category_id' => $this->category->id,
+            'branch_id' => $this->branch->id,
+            'inventory_batch_id' => $batch->id,
+            'brand_id' => $brand->id,
+            'product_model_id' => $productModel->id,
+            'brand' => 'Apple',
+            'model' => 'iPhone 15',
+            'inventory_status' => InventoryStatus::IN_STOCK,
+        ]);
+
+        $this->actingAs($this->storeAdmin)
+            ->getJson("/api/v1/admin/inventory/product-options?category_id={$this->category->id}&brand=Apple&model=iPhone%2015")
+            ->assertSuccessful()
+            ->assertJsonPath('data.selling_price', 500000)
+            ->assertJsonPath('data.price_tiers.0.selling_price', '500000.00');
+    });
+
     it('uses branch-scoped FIFO batch target price', function () {
         $otherBranch = Branch::create([
             'name' => 'Other Branch',

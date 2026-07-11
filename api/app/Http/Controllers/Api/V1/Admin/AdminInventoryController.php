@@ -265,47 +265,24 @@ class AdminInventoryController extends BaseController
             ->when($model, fn ($q) => $q->where('model', $model))
             ->count();
 
-        // Get selling price with multiple fallback strategies
-        $sellingPrice = null;
-
-        // Strategy 1: prefer the latest matching in-stock batch target price.
+        // A batch owns the selling price of devices received into it. Return the
+        // FIFO tiers so the POS can explain mixed-batch prices before checkout.
+        $priceTiers = collect();
         if ($brand && $model) {
-            $fifoDevice = $this->applyFifoOrder((clone $baseQuery)
+            $priceTiers = $this->applyFifoOrder((clone $baseQuery)
                 ->where('brand', $brand)
                 ->where('model', $model)
-                ->with('inventoryBatch:id,target_selling_price'))
-                ->first();
-
-            if ($fifoDevice?->inventoryBatch?->target_selling_price !== null) {
-                $sellingPrice = $fifoDevice->inventoryBatch->target_selling_price;
-            }
+                ->with('inventoryBatch:id,batch_number,target_selling_price'))
+                ->get()
+                ->groupBy('inventory_batch_id')
+                ->map(fn ($devices) => [
+                    'batch_id' => $devices->first()->inventory_batch_id,
+                    'batch_number' => $devices->first()->inventoryBatch?->batch_number,
+                    'available_quantity' => $devices->count(),
+                    'selling_price' => $devices->first()->inventoryBatch?->target_selling_price,
+                ])->values();
         }
-
-        // Strategy 2: Try to get from device's product_model relationship
-        $firstDevice = (clone $baseQuery)
-            ->when($brand, fn ($q) => $q->where('brand', $brand))
-            ->when($model, fn ($q) => $q->where('model', $model))
-            ->whereNotNull('product_model_id')
-            ->with('productModel:id,base_price,brand_id')
-            ->first();
-
-        if (! $sellingPrice && $firstDevice?->productModel?->base_price) {
-            $sellingPrice = $firstDevice->productModel->base_price;
-        }
-
-        // Strategy 3: If no price found, try to find ProductModel by brand name and model name
-        if (! $sellingPrice && $brand && $model) {
-            $productModel = ProductModel::query()
-                ->with('brand:id,name')
-                ->where('name', $model)
-                ->where('is_active', true)
-                ->whereHas('brand', function ($q) use ($brand) {
-                    $q->where('name', $brand);
-                })
-                ->first();
-
-            $sellingPrice = $productModel?->base_price;
-        }
+        $sellingPrice = $priceTiers->first()['selling_price'] ?? null;
 
         return $this->success([
             'brands' => $brands,
@@ -314,6 +291,7 @@ class AdminInventoryController extends BaseController
             'has_colors' => $hasColors,
             'available_count' => $availableCount,
             'selling_price' => $sellingPrice ? round($sellingPrice, 2) : null,
+            'price_tiers' => $priceTiers,
         ]);
     }
 
@@ -360,6 +338,22 @@ class AdminInventoryController extends BaseController
         ]);
 
         return $this->success(new InventoryBatchResource($batch));
+    }
+
+    public function updateBatchSellingPrice(Request $request, InventoryBatch $batch): JsonResponse
+    {
+        $this->authorizeInventoryBranch($request, $batch->branch_id);
+        $validated = $request->validate(['selling_price' => 'required|numeric|min:0']);
+        $inStock = $batch->devices()->where('inventory_status', InventoryStatus::IN_STOCK)->count();
+        if ($inStock === 0) {
+            return $this->error('This batch has no in-stock devices to reprice.', 422);
+        }
+        $oldPrice = $batch->target_selling_price;
+        $batch->update(['target_selling_price' => $validated['selling_price']]);
+        $this->logActivity($batch, $request->user(), 'batch_selling_price_updated', 'Batch selling price updated', [
+            'old_price' => $oldPrice, 'new_price' => $validated['selling_price'], 'affected_in_stock_devices' => $inStock,
+        ]);
+        return $this->success(new InventoryBatchResource($batch->fresh()), 'Selling price updated for future sales of in-stock devices.');
     }
 
     public function receipts(Request $request): JsonResponse

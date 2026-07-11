@@ -5,6 +5,10 @@ namespace App\Http\Controllers\Api\V1\Admin;
 use App\Http\Controllers\Api\V1\BaseController;
 use App\Models\Brand;
 use App\Models\ProductModel;
+use App\Models\InventoryBatch;
+use App\Models\ActivityLog;
+use App\Enums\InventoryStatus;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
@@ -261,7 +265,22 @@ class AdminProductCatalogController extends BaseController
             'sort_order' => 'integer|min:0',
         ]);
 
-        $productModel->update($validated);
+        $oldPrice = $productModel->base_price;
+        DB::transaction(function () use ($productModel, $validated, $request, $oldPrice) {
+            $productModel->update($validated);
+            if (array_key_exists('base_price', $validated) && (string) $oldPrice !== (string) $productModel->base_price) {
+                $brand = $productModel->brand()->first();
+                $batches = InventoryBatch::query()->where('category_id', $brand->category_id)
+                    ->where('brand', $brand->name)->where('model', $productModel->name)
+                    ->whereHas('devices', fn ($q) => $q->where('inventory_status', InventoryStatus::IN_STOCK))->get();
+                foreach ($batches as $batch) {
+                    $oldBatchPrice = $batch->target_selling_price;
+                    $affected = $batch->devices()->where('inventory_status', InventoryStatus::IN_STOCK)->count();
+                    $batch->update(['target_selling_price' => $productModel->base_price]);
+                    ActivityLog::create(['log_name' => 'price_management', 'description' => 'Catalog price cascaded to batch', 'subject_type' => InventoryBatch::class, 'subject_id' => $batch->id, 'causer_type' => get_class($request->user()), 'causer_id' => $request->user()->id, 'event' => 'catalog_price_cascade', 'properties' => ['old_price' => $oldBatchPrice, 'new_price' => $productModel->base_price, 'affected_in_stock_devices' => $affected]]);
+                }
+            }
+        });
         $productModel->load(['brand:id,name,category_id', 'brand.category:id,name']);
 
         return $this->success($productModel, 'Product model updated successfully');

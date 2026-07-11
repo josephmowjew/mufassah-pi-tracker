@@ -157,6 +157,7 @@ export interface ProductOptions {
   has_colors: boolean
   available_count: number
   selling_price: number | null
+  price_tiers?: Array<{ batch_id: number | null; batch_number: string | null; available_quantity: number; selling_price: number | string | null }>
 }
 
 // Location types

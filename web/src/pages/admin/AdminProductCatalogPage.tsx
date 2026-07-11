@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Search, Plus, Loader2, Edit2, Trash2, ChevronRight, Package, Layers } from 'lucide-react'
 import { Authorize } from '@/components/auth/Authorize'
+import ConfirmDialog from '@/components/ui/ConfirmDialog'
 import { PERMISSIONS } from '@/stores/auth-store'
 import apiClient from '@/api/client'
 import { toast } from 'sonner'
@@ -50,6 +51,7 @@ export default function AdminProductCatalogPage() {
     available_colors: '',
     is_active: true,
   })
+  const [showPriceCascadeConfirm, setShowPriceCascadeConfirm] = useState(false)
 
   // Fetch categories
   const { data: categories } = useQuery({
@@ -257,10 +259,20 @@ export default function AdminProductCatalogPage() {
   const handleModelSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (editingModel) {
+      if (modelForm.base_price !== (editingModel.base_price?.toString() || '')) {
+        setShowPriceCascadeConfirm(true)
+        return
+      }
       updateModelMutation.mutate({ id: editingModel.id, data: modelForm })
     } else {
       createModelMutation.mutate(modelForm)
     }
+  }
+
+  const confirmCatalogPriceUpdate = () => {
+    if (!editingModel) return
+    updateModelMutation.mutate({ id: editingModel.id, data: modelForm })
+    setShowPriceCascadeConfirm(false)
   }
 
   const selectedBrand = brands?.find(b => b.id === selectedBrandId)
@@ -602,7 +614,7 @@ export default function AdminProductCatalogPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Base Price (MWK)</label>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Default Selling Price (MWK)</label>
                   <input
                     type="number"
                     value={modelForm.base_price}
@@ -612,6 +624,7 @@ export default function AdminProductCatalogPage() {
                     step="0.01"
                     className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
+                  <p className="mt-1 text-xs text-amber-700">Changing this updates matching in-stock batches; completed and reserved sales stay unchanged.</p>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Available Colors</label>
@@ -667,6 +680,17 @@ export default function AdminProductCatalogPage() {
           </div>
         )}
       </div>
+      <ConfirmDialog
+        isOpen={showPriceCascadeConfirm}
+        onClose={() => setShowPriceCascadeConfirm(false)}
+        onConfirm={confirmCatalogPriceUpdate}
+        title="Update default selling price?"
+        message={`This will set the default price to MWK ${Number(modelForm.base_price || 0).toLocaleString()} and update all matching in-stock batches. Completed and reserved sales will not change.`}
+        confirmText="Update in-stock batches"
+        cancelText="Keep current prices"
+        variant="warning"
+        isLoading={updateModelMutation.isPending}
+      />
     </Authorize>
   )
 }

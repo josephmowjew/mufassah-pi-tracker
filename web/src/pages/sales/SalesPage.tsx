@@ -934,6 +934,9 @@ export default function SalesPage() {
                             </span>
                           </div>
                         )}
+                        {(productOptions?.price_tiers?.length || 0) > 1 && (
+                          <p className="mt-1 text-xs text-amber-700">This stock spans batches: {productOptions?.price_tiers?.map(t => `${t.available_quantity} at ${formatMoney(t.selling_price)}`).join(', ')}. The final price is calculated per batch at checkout.</p>
+                        )}
 
                         {/* Quantity Selector */}
                         <div>

@@ -528,6 +528,9 @@ export default function CustomerServiceNewSalePage() {
                     </span>
                   </div>
                 )}
+                {(productOptions?.price_tiers?.length || 0) > 1 && (
+                  <p className="mt-1 text-xs text-amber-700">Stock spans multiple batches; the final selling price is calculated per batch at checkout.</p>
+                )}
 
                 {/* Quantity Selector */}
                 <div>

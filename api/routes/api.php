@@ -463,6 +463,7 @@ Route::middleware('auth:sanctum')->group(function () {
                 Route::post('/', [AdminInventoryController::class, 'store'])->name('store');
                 Route::post('/bulk', [AdminInventoryController::class, 'bulkStore'])->name('bulk');
                 Route::post('/receipts', [AdminInventoryController::class, 'storeReceipt'])->name('receipts.store');
+                Route::put('/batches/{batch}/selling-price', [AdminInventoryController::class, 'updateBatchSellingPrice'])->name('batches.selling-price');
                 Route::put('/{device}/status', [AdminInventoryController::class, 'updateStatus'])->name('status');
                 Route::post('/{device}/faulty', [AdminInventoryController::class, 'markFaulty'])->name('faulty');
             });

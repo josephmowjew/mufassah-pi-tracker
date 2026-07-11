@@ -130,13 +130,20 @@ class AdminSaleController extends BaseController
             'items.*.quantity' => 'required_with:items.*.category_id|integer|min:1|max:100',
             // Common fields
             'items.*.subscription_plan_id' => 'nullable|exists:subscription_plans,id',
-            'items.*.unit_price' => 'required|numeric|min:0',
+            'items.*.unit_price' => 'nullable|numeric|min:0',
+            'items.*.price_override' => 'nullable|numeric|min:0',
+            'items.*.price_override_reason' => 'required_with:items.*.price_override|string|max:500',
             'items.*.discount' => 'nullable|numeric|min:0',
             'items.*.tax' => 'nullable|numeric|min:0',
         ]);
 
         return DB::transaction(function () use ($validated, $request) {
             $user = $request->user();
+            foreach ($validated['items'] as $item) {
+                if (isset($item['price_override']) && ! $user->can('manage-inventory')) {
+                    throw ValidationException::withMessages(['items' => ['Only inventory managers may override a selling price.']]);
+                }
+            }
             $branchId = $this->resolveSaleBranchId($request, $validated);
 
             // Get active shift for customer service users
@@ -172,16 +179,7 @@ class AdminSaleController extends BaseController
 
             // Create sale items and update devices
             foreach ($validated['items'] as $itemData) {
-                $unitPrice = round((float) $itemData['unit_price'], 2);
                 $discount = round((float) ($itemData['discount'] ?? 0), 2);
-                $tax = round((float) ($itemData['tax'] ?? 0), 2);
-                $totalPrice = round(($unitPrice - $discount) + $tax, 2);
-
-                if ($discount > $unitPrice) {
-                    throw ValidationException::withMessages([
-                        'items' => ['Discount cannot be greater than the unit price.'],
-                    ]);
-                }
 
                 // Determine if using legacy (device_id) or new (product specs) format
                 if (isset($itemData['device_id'])) {
@@ -199,6 +197,10 @@ class AdminSaleController extends BaseController
                             'items' => ["Device {$device->serial_number} does not belong to the sale branch."],
                         ]);
                     }
+                    $unitPrice = $this->resolveSellingPrice($device, $itemData);
+                    if ($discount > $unitPrice) throw ValidationException::withMessages(['items' => ['Discount cannot be greater than the unit price.']]);
+                    $tax = $sale->vat_applicable ? round($unitPrice * 0.175, 2) : 0;
+                    $totalPrice = round(($unitPrice - $discount) + $tax, 2);
 
                     $costPrice = round((float) ($device->purchase_price ?? 0), 2);
                     $saleItem = SaleItem::create([
@@ -257,6 +259,10 @@ class AdminSaleController extends BaseController
 
                     // Create a sale item for each device
                     foreach ($devices as $device) {
+                        $unitPrice = $this->resolveSellingPrice($device, $itemData);
+                        if ($discount > $unitPrice) throw ValidationException::withMessages(['items' => ['Discount cannot be greater than the unit price.']]);
+                        $tax = $sale->vat_applicable ? round($unitPrice * 0.175, 2) : 0;
+                        $totalPrice = round(($unitPrice - $discount) + $tax, 2);
                         $colorText = $device->color ? " - {$device->color}" : '';
                         $costPrice = round((float) ($device->purchase_price ?? 0), 2);
                         $saleItem = SaleItem::create([
@@ -274,6 +280,9 @@ class AdminSaleController extends BaseController
                         ]);
 
                         $this->applySaleDeviceState($device, $sale, $saleItem, $shouldComplete, $user);
+                        if (isset($itemData['price_override'])) {
+                            $this->logActivity($sale, $user, 'sale_price_overridden', 'Sale price overridden', ['device_id' => $device->id, 'batch_price' => $device->inventoryBatch?->target_selling_price, 'override_price' => $unitPrice, 'reason' => $itemData['price_override_reason']]);
+                        }
                     }
                 }
             }
@@ -681,6 +690,21 @@ class AdminSaleController extends BaseController
         }
 
         return (int) $user->branch_id;
+    }
+
+    /** The batch price is authoritative unless an inventory manager supplied a one-off override. */
+    private function resolveSellingPrice(Device $device, array $itemData): float
+    {
+        if (array_key_exists('price_override', $itemData) && $itemData['price_override'] !== null) {
+            return round((float) $itemData['price_override'], 2);
+        }
+
+        $device->loadMissing('inventoryBatch');
+        if ($device->inventoryBatch?->target_selling_price !== null) {
+            return round((float) $device->inventoryBatch->target_selling_price, 2);
+        }
+
+        return round((float) ($itemData['unit_price'] ?? 0), 2);
     }
 
     private function resolveSaleReadBranchId(Request $request, ?int $requestedBranchId): ?int

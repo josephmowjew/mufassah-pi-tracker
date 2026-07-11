@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Search, Package, Plus, Loader2, LayoutGrid, List, Layers } from 'lucide-react'
 import { Authorize } from '@/components/auth/Authorize'
+import ConfirmDialog from '@/components/ui/ConfirmDialog'
 import { PERMISSIONS } from '@/stores/auth-store'
 import apiClient from '@/api/client'
 import { toast } from 'sonner'
@@ -64,6 +65,8 @@ export default function AdminInventoryPage() {
   const [selectedBatch, setSelectedBatch] = useState<InventoryBatch | null>(null)
   const [newStatus, setNewStatus] = useState('')
   const [statusNotes, setStatusNotes] = useState('')
+  const [batchSellingPrice, setBatchSellingPrice] = useState('')
+  const [showBatchPriceConfirm, setShowBatchPriceConfirm] = useState(false)
 
   // View mode with localStorage persistence
   const [viewMode, setViewMode] = useState<ViewMode>(() => {
@@ -158,6 +161,22 @@ export default function AdminInventoryPage() {
   })
 
   const batchForModal = selectedBatchDetails || selectedBatch
+
+  const updateBatchPriceMutation = useMutation({
+    mutationFn: async ({ id, selling_price }: { id: number; selling_price: number }) => apiClient.put(`/admin/inventory/batches/${id}/selling-price`, { selling_price }),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['inventory-batches'] }); queryClient.invalidateQueries({ queryKey: ['inventory-batch'] }); setBatchSellingPrice(''); setShowBatchPriceConfirm(false); toast.success('Batch selling price updated for future sales') },
+    onError: (error: Error & { response?: { data?: { message?: string } } }) => toast.error(error.response?.data?.message || 'Failed to update batch selling price'),
+  })
+
+  const updateBatchSellingPrice = () => {
+    if (!batchForModal || !batchSellingPrice) return
+    setShowBatchPriceConfirm(true)
+  }
+
+  const confirmBatchSellingPrice = () => {
+    if (!batchForModal || !batchSellingPrice) return
+    updateBatchPriceMutation.mutate({ id: batchForModal.id, selling_price: Number(batchSellingPrice) })
+  }
 
   // Update inventory status mutation
   const updateStatusMutation = useMutation({
@@ -581,8 +600,10 @@ export default function AdminInventoryPage() {
                     <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
                       <dt className="text-slate-500">Buying Price</dt>
                       <dd className="text-slate-900">{formatMoney(batchForModal.buying_price)}</dd>
-                      <dt className="text-slate-500">Target Price</dt>
-                      <dd className="text-slate-900">{formatMoney(batchForModal.target_selling_price)}</dd>
+                      <dt className="text-slate-500">Selling Price for This Batch</dt>
+                      <dd className="text-slate-900 flex items-center gap-2">{formatMoney(batchForModal.target_selling_price)}
+                        <Authorize permission={PERMISSIONS.MANAGE_INVENTORY}><button onClick={() => setBatchSellingPrice(String(batchForModal.target_selling_price))} className="text-xs text-blue-600">Edit</button></Authorize>
+                      </dd>
                       <dt className="text-slate-500">Expected Revenue</dt>
                       <dd className="text-slate-900">{formatMoney(Number(batchForModal.target_selling_price) * batchForModal.quantity_received)}</dd>
                       <dt className="text-slate-500">Expected Profit</dt>
@@ -596,6 +617,12 @@ export default function AdminInventoryPage() {
                     </dl>
                   </div>
                 </div>
+                {batchSellingPrice && (
+                  <div className="mt-4 flex items-end gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4">
+                    <label className="flex-1 text-sm font-medium text-slate-700">New selling price (MWK)<input type="number" min="0" step="0.01" value={batchSellingPrice} onChange={(e) => setBatchSellingPrice(e.target.value)} className="mt-1 w-full rounded border border-slate-300 px-3 py-2" /></label>
+                    <button onClick={() => setBatchSellingPrice('')} className="px-3 py-2 text-slate-600">Cancel</button><button onClick={updateBatchSellingPrice} className="px-3 py-2 rounded bg-blue-600 text-white">Save price</button>
+                  </div>
+                )}
 
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                   <div className="p-3 bg-slate-50 rounded-lg">
@@ -728,6 +755,17 @@ export default function AdminInventoryPage() {
             </div>
           </div>
         )}
+        <ConfirmDialog
+          isOpen={showBatchPriceConfirm}
+          onClose={() => setShowBatchPriceConfirm(false)}
+          onConfirm={confirmBatchSellingPrice}
+          title="Update this batch's selling price?"
+          message={batchForModal ? `The price will change from ${formatMoney(batchForModal.target_selling_price)} to ${formatMoney(batchSellingPrice)} for ${batchForModal.summary.in_stock} in-stock devices. Completed and reserved sales stay unchanged.` : ''}
+          confirmText="Update batch price"
+          cancelText="Keep current price"
+          variant="warning"
+          isLoading={updateBatchPriceMutation.isPending}
+        />
       </div>
     </Authorize>
   )
