@@ -11,10 +11,11 @@ return [
     */
 
     // Company information that appears on receipts
+    'company_name' => env('RECEIPT_COMPANY_NAME', 'Mufasah Electronics'),
     'address' => env('RECEIPT_COMPANY_ADDRESS', '123 Business Street'),
     'phone' => env('RECEIPT_COMPANY_PHONE', '+1 234 567 890'),
     'email' => env('RECEIPT_COMPANY_EMAIL', 'info@mufassah.com'),
-    'tax_id' => env('RECEIPT_TAX_ID', 'TAX-123456789'),
+    'tpin' => env('RECEIPT_TPIN', '70474293'),
     'logo' => env('RECEIPT_LOGO_URL'),
 
     // Receipt formatting

@@ -58,12 +58,13 @@ export default function ReceiptModal({ sale, onClose, onPrint }: ReceiptModalPro
           </div>
 
           {/* Receipt Content - Thermal Printer Style */}
-          <div id="receipt-content" className="p-6 font-mono text-sm bg-white">
+          <div id="receipt-content" className="p-6 font-mono text-sm font-semibold bg-white">
             {/* Company Header */}
             <div className="text-center mb-4 pb-4 border-b-2 border-dashed border-slate-300">
               <h3 className="text-lg font-bold text-slate-900 uppercase tracking-wide">
-                Mufassah Device Tracking
+                Mufasah Electronics
               </h3>
+              <p className="text-xs text-slate-500 mt-1">T-PIN: 70474293</p>
               <p className="text-xs text-slate-500 mt-1">Device Sales Receipt</p>
             </div>
 

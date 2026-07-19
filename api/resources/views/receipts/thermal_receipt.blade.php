@@ -19,6 +19,7 @@
             padding: 3mm;
             background: #fff;
             color: #000;
+            font-weight: 600;
         }
 
         .receipt {
@@ -42,6 +43,7 @@
         .company-info {
             font-size: 12px;
             margin-bottom: 3px;
+            font-weight: bold;
         }
 
         .receipt-info {
@@ -152,6 +154,9 @@
             @endif
             @if($company['phone'])
                 <div class="company-info">{{ $company['phone'] }}</div>
+            @endif
+            @if($company['tpin'])
+                <div class="company-info">T-PIN: {{ $company['tpin'] }}</div>
             @endif
         </div>
 

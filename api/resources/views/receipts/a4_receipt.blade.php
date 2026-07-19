@@ -15,8 +15,9 @@
             font-family: 'Arial', sans-serif;
             font-size: 14px;
             line-height: 1.5;
-            color: #333;
+            color: #1f2937;
             background: #f5f5f5;
+            font-weight: 600;
         }
 
         .receipt-container {
@@ -49,7 +50,7 @@
 
         .company-details {
             font-size: 13px;
-            color: #666;
+            color: #374151;
             line-height: 1.6;
         }
 
@@ -70,7 +71,7 @@
 
         .receipt-number {
             font-size: 18px;
-            color: #666;
+            color: #374151;
         }
 
         .info-grid {
@@ -98,7 +99,7 @@
         .info-box p {
             font-size: 13px;
             margin-bottom: 5px;
-            color: #666;
+            color: #374151;
         }
 
         .info-box strong {
@@ -132,6 +133,7 @@
             padding: 12px 10px;
             border-bottom: 1px solid #eee;
             font-size: 13px;
+            font-weight: 600;
         }
 
         .items-table td:last-child {
@@ -166,6 +168,7 @@
             padding: 8px 0;
             border-bottom: 1px solid #ddd;
             font-size: 14px;
+            font-weight: 600;
         }
 
         .total-row:last-child {
@@ -209,7 +212,7 @@
 
         .payment-item label {
             font-size: 12px;
-            color: #666;
+            color: #374151;
             margin-bottom: 3px;
         }
 
@@ -235,7 +238,7 @@
 
         .code-item p {
             font-size: 12px;
-            color: #666;
+            color: #374151;
             margin-bottom: 10px;
         }
 
@@ -263,13 +266,13 @@
 
         .footer p {
             font-size: 13px;
-            color: #666;
+            color: #374151;
             margin-bottom: 8px;
         }
 
         .footer .return-policy {
             font-size: 12px;
-            color: #999;
+            color: #4b5563;
             line-height: 1.6;
             margin-top: 15px;
             padding-top: 15px;
@@ -336,8 +339,8 @@
                     @if($company['email'])
                         <p><strong>Email:</strong> {{ $company['email'] }}</p>
                     @endif
-                    @if($company['tax_id'])
-                        <p><strong>Tax ID:</strong> {{ $company['tax_id'] }}</p>
+                    @if($company['tpin'])
+                        <p><strong>T-PIN:</strong> {{ $company['tpin'] }}</p>
                     @endif
                 </div>
             </div>

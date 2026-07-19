@@ -73,11 +73,11 @@ class ReceiptService
     protected function getCompanyInfo(): array
     {
         return [
-            'name' => config('app.name', 'Mufassah Device Tracking'),
+            'name' => config('receipt.company_name', 'Mufasah Electronics'),
             'address' => config('receipt.address', '123 Business Street'),
             'phone' => config('receipt.phone', '+1 234 567 890'),
             'email' => config('receipt.email', 'info@mufassah.com'),
-            'tax_id' => config('receipt.tax_id', 'TAX-123456789'),
+            'tpin' => config('receipt.tpin', '70474293'),
             'logo' => config('receipt.logo'),
         ];
     }

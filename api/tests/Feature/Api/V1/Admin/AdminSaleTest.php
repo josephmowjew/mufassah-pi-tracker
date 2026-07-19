@@ -338,6 +338,31 @@ describe('Admin Sales', function () {
             ->assertForbidden();
     });
 
+    it('renders Mufasah Electronics and its T-PIN on every receipt format', function () {
+        $sale = Sale::create([
+            'sale_number' => 'SALE-2026-TPIN-01',
+            'customer_id' => $this->customer->id,
+            'branch_id' => $this->branch->id,
+            'sold_by_id' => $this->admin->id,
+            'payment_method' => PaymentMethod::Cash,
+            'payment_status' => PaymentStatus::Completed,
+            'status' => SaleStatus::COMPLETED,
+            'sale_date' => now(),
+            'subtotal' => 100,
+            'tax_amount' => 0,
+            'discount_amount' => 0,
+            'total_amount' => 100,
+        ]);
+
+        foreach (['a4', 'thermal'] as $format) {
+            $this->actingAs($this->admin)
+                ->get("/api/v1/admin/sales/{$sale->id}/receipt?format={$format}")
+                ->assertOk()
+                ->assertSeeText('Mufasah Electronics')
+                ->assertSeeText('T-PIN: 70474293');
+        }
+    });
+
     it('allocates product-spec sales only from the seller branch', function () {
         $otherBranch = Branch::create([
             'name' => 'Other Branch',
