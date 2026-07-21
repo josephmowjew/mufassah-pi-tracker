@@ -17,7 +17,7 @@
             line-height: 1.5;
             color: #1f2937;
             background: #f5f5f5;
-            font-weight: 600;
+            font-weight: bold;
         }
 
         .receipt-container {
@@ -133,7 +133,6 @@
             padding: 12px 10px;
             border-bottom: 1px solid #eee;
             font-size: 13px;
-            font-weight: 600;
         }
 
         .items-table td:last-child {
@@ -168,7 +167,6 @@
             padding: 8px 0;
             border-bottom: 1px solid #ddd;
             font-size: 14px;
-            font-weight: 600;
         }
 
         .total-row:last-child {
@@ -214,6 +212,7 @@
             font-size: 12px;
             color: #374151;
             margin-bottom: 3px;
+            font-weight: bold;
         }
 
         .payment-item span {

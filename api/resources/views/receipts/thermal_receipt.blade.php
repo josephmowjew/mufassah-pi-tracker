@@ -19,7 +19,7 @@
             padding: 3mm;
             background: #fff;
             color: #000;
-            font-weight: 600;
+            font-weight: bold;
         }
 
         .receipt {
