@@ -30,6 +30,7 @@ use App\Http\Controllers\Api\V1\Iot\IotLocationController;
 use App\Http\Controllers\Api\V1\IotModuleController;
 use App\Http\Controllers\Api\V1\NotificationController;
 use App\Http\Controllers\Api\V1\PaymentController;
+use App\Http\Controllers\Api\V1\PublicBranchController;
 use App\Http\Controllers\Api\V1\SubscriptionController;
 use App\Http\Controllers\Api\V1\SubscriptionPlanController;
 use App\Http\Controllers\Api\V1\TheftReportController;
@@ -91,6 +92,9 @@ Route::prefix('auth')->name('auth.')->group(function () {
         ->middleware('signed')
         ->name('verification.verify');
 });
+
+Route::get('/public/branches', [PublicBranchController::class, 'index'])
+    ->name('public.branches.index');
 
 // =============================================================================
 // PROTECTED ROUTES (Authentication required)

@@ -9,11 +9,11 @@ import AuthLayout from '@/components/layout/AuthLayout'
 import DashboardLayout from '@/components/layout/DashboardLayout'
 import AdminLayout from '@/components/layout/AdminLayout'
 import CustomerServiceLayout from '@/components/layout/CustomerServiceLayout'
+import PublicLayout from '@/components/layout/PublicLayout'
 
 // Auth guards
 import ProtectedRoute from '@/components/auth/ProtectedRoute'
 import GuestRoute from '@/components/auth/GuestRoute'
-import RoleBasedRedirect from '@/components/auth/RoleBasedRedirect'
 
 // Error boundary
 import { ErrorBoundary } from '@/components/ErrorBoundary'
@@ -32,6 +32,9 @@ const RegisterPage = lazy(() => import('@/pages/auth/RegisterPage'))
 const ForgotPasswordPage = lazy(() => import('@/pages/auth/ForgotPasswordPage'))
 const ResetPasswordPage = lazy(() => import('@/pages/auth/ResetPasswordPage'))
 const VerifyEmailPage = lazy(() => import('@/pages/auth/VerifyEmailPage'))
+const HomePage = lazy(() => import('@/pages/public/HomePage'))
+const AboutPage = lazy(() => import('@/pages/public/AboutPage'))
+const VacanciesPage = lazy(() => import('@/pages/public/VacanciesPage'))
 
 const DashboardPage = lazy(() => import('@/pages/dashboard/DashboardPage'))
 const DevicesPage = lazy(() => import('@/pages/devices/DevicesPage'))
@@ -120,8 +123,12 @@ function App() {
         <ErrorBoundary>
           <Suspense fallback={<LoadingSpinner fullScreen />}>
             <Routes>
-            {/* Root redirect - role-based */}
-            <Route path="/" element={<RoleBasedRedirect />} />
+            {/* Public marketing routes */}
+            <Route element={<PublicLayout />}>
+              <Route path="/" element={<HomePage />} />
+              <Route path="/about" element={<AboutPage />} />
+              <Route path="/vacancies" element={<VacanciesPage />} />
+            </Route>
 
             {/* Auth routes */}
             <Route element={<GuestRoute />}>
