@@ -6,7 +6,6 @@ use App\Http\Controllers\Controller;
 use App\Http\Resources\NotificationResource;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 
 /**
  * @group Notifications
@@ -18,7 +17,7 @@ class NotificationController extends Controller
     /**
      * Get all notifications for the authenticated user.
      */
-    public function index(Request $request): AnonymousResourceCollection
+    public function index(Request $request): JsonResponse
     {
         $notifications = $request->user()
             ->notifications()

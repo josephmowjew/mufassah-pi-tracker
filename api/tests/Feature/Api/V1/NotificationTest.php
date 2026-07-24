@@ -296,15 +296,17 @@ describe('Notification Data Structure', function () {
         $response->assertSuccessful()
             ->assertJsonStructure([
                 'data' => [
-                    '*' => [
-                        'id',
-                        'type',
-                        'title',
-                        'message',
-                        'data',
-                        'read_at',
-                        'is_read',
-                        'created_at',
+                    'notifications' => [
+                        '*' => [
+                            'id',
+                            'type',
+                            'title',
+                            'message',
+                            'data',
+                            'read_at',
+                            'is_read',
+                            'created_at',
+                        ],
                     ],
                 ],
                 'meta' => ['current_page', 'total'],

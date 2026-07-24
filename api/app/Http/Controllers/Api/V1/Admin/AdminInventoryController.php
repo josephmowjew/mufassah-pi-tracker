@@ -12,6 +12,7 @@ use App\Http\Resources\InventoryBatchResource;
 use App\Http\Resources\InventoryReceiptResource;
 use App\Models\ActivityLog;
 use App\Models\Device;
+use App\Models\Brand;
 use App\Models\InventoryBatch;
 use App\Models\InventoryReceipt;
 use App\Models\ProductModel;
@@ -412,6 +413,7 @@ class AdminInventoryController extends BaseController
 
         $device = Device::create([
             ...$validated,
+            ...$this->catalogIdsForInventoryLine($validated),
             'unique_device_code' => $this->generateDeviceCode(),
             'status' => DeviceStatus::INACTIVE,
             'inventory_status' => InventoryStatus::IN_STOCK,
@@ -769,6 +771,7 @@ class AdminInventoryController extends BaseController
         ]);
 
         $devices = [];
+        $catalogIds = $this->catalogIdsForInventoryLine($line);
         for ($i = 0; $i < $quantity; $i++) {
             $serialNumber = $autoGenerate
                 ? $this->generateSerialNumber($line['brand'], $line['model'])
@@ -776,6 +779,7 @@ class AdminInventoryController extends BaseController
 
             $devices[] = Device::create([
                 'category_id' => $line['category_id'],
+                ...$catalogIds,
                 'branch_id' => $branchId,
                 'iot_module_id' => $line['iot_module_id'] ?? null,
                 'brand' => $line['brand'],
@@ -795,6 +799,24 @@ class AdminInventoryController extends BaseController
         }
 
         return [$batch, $devices];
+    }
+
+    /** @return array{brand_id: int|null, product_model_id: int|null} */
+    private function catalogIdsForInventoryLine(array $line): array
+    {
+        $brand = Brand::query()
+            ->where('category_id', $line['category_id'])
+            ->where('name', $line['brand'])
+            ->first();
+
+        $model = $brand
+            ? ProductModel::query()->where('brand_id', $brand->id)->where('name', $line['model'])->first()
+            : null;
+
+        return [
+            'brand_id' => $brand?->id,
+            'product_model_id' => $model?->id,
+        ];
     }
 
     private function isUniqueConstraintViolation(QueryException $e): bool

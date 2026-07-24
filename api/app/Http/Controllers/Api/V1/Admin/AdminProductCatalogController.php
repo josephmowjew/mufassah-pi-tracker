@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\V1\Admin;
 
 use App\Http\Controllers\Api\V1\BaseController;
 use App\Models\Brand;
+use App\Models\Device;
 use App\Models\ProductModel;
 use App\Models\InventoryBatch;
 use App\Models\ActivityLog;
@@ -50,7 +51,7 @@ class AdminProductCatalogController extends BaseController
 
         // Include devices count
         if ($request->boolean('with_devices_count')) {
-            $query->withCount('devices');
+            $query->addSelect(['devices_count' => $this->brandInventoryCountQuery()]);
         }
 
         $brands = $query->ordered()->get();
@@ -98,7 +99,11 @@ class AdminProductCatalogController extends BaseController
         $brand->load(['category:id,name', 'productModels' => function ($query) {
             $query->ordered();
         }]);
-        $brand->loadCount(['productModels', 'devices']);
+        $brand->loadCount('productModels');
+        $brand->setAttribute('devices_count', Device::query()
+            ->where('category_id', $brand->category_id)
+            ->where('brand', $brand->name)
+            ->count());
 
         return $this->success($brand);
     }
@@ -183,7 +188,7 @@ class AdminProductCatalogController extends BaseController
 
         // Include devices count
         if ($request->boolean('with_devices_count')) {
-            $query->withCount('devices');
+            $query->addSelect(['devices_count' => $this->modelInventoryCountQuery()]);
         }
 
         $models = $query->ordered()->get();
@@ -233,7 +238,11 @@ class AdminProductCatalogController extends BaseController
     public function modelShow(ProductModel $productModel): JsonResponse
     {
         $productModel->load(['brand:id,name,category_id', 'brand.category:id,name']);
-        $productModel->loadCount('devices');
+        $productModel->setAttribute('devices_count', Device::query()
+            ->where('category_id', $productModel->brand->category_id)
+            ->where('brand', $productModel->brand->name)
+            ->where('model', $productModel->name)
+            ->count());
 
         return $this->success($productModel);
     }
@@ -383,5 +392,29 @@ class AdminProductCatalogController extends BaseController
             ->get(['id', 'name', 'slug', 'base_price', 'available_colors']);
 
         return $this->success($models);
+    }
+
+    /**
+     * Count the same text-based product identity used by the inventory ledger.
+     *
+     * Inventory records pre-date catalog foreign keys, and the intake workflow
+     * keeps the human-readable brand/model values for sales and reporting.
+     */
+    private function brandInventoryCountQuery()
+    {
+        return Device::query()
+            ->selectRaw('COUNT(*)')
+            ->whereColumn('devices.category_id', 'brands.category_id')
+            ->whereColumn('devices.brand', 'brands.name');
+    }
+
+    private function modelInventoryCountQuery()
+    {
+        return Device::query()
+            ->selectRaw('COUNT(*)')
+            ->join('brands as catalog_brands', 'catalog_brands.id', '=', 'product_models.brand_id')
+            ->whereColumn('devices.category_id', 'catalog_brands.category_id')
+            ->whereColumn('devices.brand', 'catalog_brands.name')
+            ->whereColumn('devices.model', 'product_models.name');
     }
 }
