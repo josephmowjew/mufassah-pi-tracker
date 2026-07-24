@@ -28,6 +28,7 @@ import {
   Clock,
   ArrowLeftRight,
   Building2,
+  BriefcaseBusiness,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -55,6 +56,7 @@ const adminNavigation: NavItem[] = [
   { name: 'Sales', href: '/admin/sales', icon: ShoppingCart },
   { name: 'Shifts', href: '/admin/shifts', icon: Clock, allowedRoles: [ROLES.SUPER_ADMIN, ROLES.STORE_ADMIN] },
   { name: 'Communications', href: '/admin/communications', icon: Bell, allowedRoles: [ROLES.SUPER_ADMIN, ROLES.STORE_ADMIN] },
+  { name: 'Vacancies', href: '/admin/vacancies', icon: BriefcaseBusiness, allowedRoles: [ROLES.SUPER_ADMIN, ROLES.STORE_ADMIN] },
   { name: 'Theft Reports', href: '/admin/theft-reports', icon: AlertTriangle },
   { name: 'Community', href: '/admin/community', icon: Radio },
   { name: 'Subscriptions', href: '/admin/subscriptions', icon: CreditCard },
@@ -204,7 +206,8 @@ export default function AdminLayout() {
           <div className="flex items-center gap-2">
             {/* Notifications */}
             <NavLink
-              to="/notifications"
+              to="/admin/notifications"
+              aria-label="Open notifications"
               className="relative p-2.5 text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
             >
               <Bell className="h-5 w-5" />

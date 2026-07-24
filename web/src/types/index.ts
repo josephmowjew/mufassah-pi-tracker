@@ -42,6 +42,21 @@ export interface Branch {
   updated_at: string
 }
 
+export interface Vacancy {
+  id: number
+  title: string
+  location: string | null
+  employment_type: string
+  description: string
+  application_email: string | null
+  closing_date: string | null
+  sort_order: number
+  is_published: boolean
+  published_at: string | null
+  created_at: string | null
+  updated_at: string | null
+}
+
 // Device types
 export type DeviceStatusValue = 'active' | 'inactive' | 'stolen' | 'recovered'
 

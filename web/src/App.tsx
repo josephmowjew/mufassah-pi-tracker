@@ -1,6 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
 import { Suspense, lazy } from 'react'
 import { Toaster } from 'sonner'
 
@@ -71,6 +70,7 @@ const AdminCategoriesPage = lazy(() => import('@/pages/admin/AdminCategoriesPage
 const AdminShiftsPage = lazy(() => import('@/pages/admin/AdminShiftsPage'))
 const AdminCommunicationsPage = lazy(() => import('@/pages/admin/AdminCommunicationsPage'))
 const AdminCommunityPage = lazy(() => import('@/pages/admin/AdminCommunityPage'))
+const AdminVacanciesPage = lazy(() => import('@/pages/admin/AdminVacanciesPage'))
 
 // Management pages (reusable, permission-based)
 const DeviceManagementPage = lazy(() => import('@/pages/management/DeviceManagementPage'))
@@ -186,6 +186,8 @@ function App() {
                 <Route path="/admin/sales" element={<SalesPage />} />
                 <Route path="/admin/shifts" element={<AdminShiftsPage />} />
                 <Route path="/admin/communications" element={<AdminCommunicationsPage />} />
+                <Route path="/admin/notifications" element={<NotificationsPage />} />
+                <Route path="/admin/vacancies" element={<AdminVacanciesPage />} />
                 <Route path="/admin/theft-reports" element={<AdminTheftReportsPage />} />
                 <Route path="/admin/subscriptions" element={<AdminSubscriptionsPage />} />
                 <Route path="/admin/reports" element={<AdminReportsPage />} />
@@ -229,7 +231,6 @@ function App() {
         }}
         richColors
       />
-      <ReactQueryDevtools initialIsOpen={false} />
     </QueryClientProvider>
   )
 }

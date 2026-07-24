@@ -1,12 +1,15 @@
 import { useQuery } from '@tanstack/react-query'
-import { ArrowRight, ArrowUpRight, Check, Mail, Sparkles } from 'lucide-react'
-import { getPublicBranches } from '@/api/public'
-import { openRoles } from './content'
+import { ArrowRight, ArrowUpRight, BriefcaseBusiness, Check, Mail } from 'lucide-react'
+import { getPublicBranches, getPublicVacancies } from '@/api/public'
 
 export default function VacanciesPage() {
   const { data: branches = [] } = useQuery({
     queryKey: ['public-branches'],
     queryFn: getPublicBranches,
+  })
+  const { data: openRoles = [], isLoading: vacanciesLoading } = useQuery({
+    queryKey: ['public-vacancies'],
+    queryFn: getPublicVacancies,
   })
   const applicationEmail = branches.find((branch) => branch.email)?.email
   const applicationHref = applicationEmail
@@ -18,9 +21,9 @@ export default function VacanciesPage() {
       <section className="marketing-careers-hero">
         <div className="marketing-container marketing-careers-grid">
           <div>
-            <p className="marketing-eyebrow marketing-eyebrow-light"><Sparkles size={16} /> Careers at Mufasah</p>
-            <h1>Do work that makes technology feel more human.</h1>
-            <p>Join a curious, customer-focused team helping people choose, use, and protect the devices that power everyday life.</p>
+            <p className="marketing-eyebrow marketing-eyebrow-light">Careers at Mufasah</p>
+            <h1>Do work that makes home entertainment feel more human.</h1>
+            <p>Join a curious, customer-focused team helping people choose televisions, sound systems, and entertainment setups with confidence.</p>
             <a href="#vacancies" className="marketing-button marketing-button-light">See open roles <ArrowRight size={18} /></a>
           </div>
           <div className="marketing-careers-art" aria-hidden="true">
@@ -54,22 +57,41 @@ export default function VacanciesPage() {
         <div className="marketing-container">
           <div className="marketing-vacancies-heading">
             <div><p className="marketing-kicker">Current opportunities</p><h2>Find your place at Mufasah.</h2></div>
-            <p>{openRoles.length} open roles</p>
+            <p>{vacanciesLoading ? 'Checking openings' : openRoles.length > 0 ? `${openRoles.length} open ${openRoles.length === 1 ? 'role' : 'roles'}` : 'No current openings'}</p>
           </div>
-          <div className="marketing-role-list">
-            {openRoles.map(({ title, location, type, description, icon: Icon }) => (
-              <article key={title}>
-                <div className="marketing-role-icon"><Icon /></div>
-                <div className="marketing-role-main">
-                  <div><h3>{title}</h3><p>{description}</p></div>
-                  <div className="marketing-role-meta"><span>{location}</span><span>{type}</span></div>
-                </div>
-                <a href={`${applicationHref}${applicationEmail ? `&body=${encodeURIComponent(`Hello Mufasah team,\n\nI would like to apply for the ${title} role.`)}` : ''}`} aria-label={`Apply for ${title}`}>
-                  Apply <ArrowUpRight />
-                </a>
-              </article>
-            ))}
-          </div>
+          {vacanciesLoading ? (
+            <div className="marketing-empty-role">
+              <span><BriefcaseBusiness /></span>
+              <div><h3>Checking current opportunities.</h3><p>Please give us a moment while we load the latest vacancies.</p></div>
+            </div>
+          ) : openRoles.length > 0 ? (
+            <div className="marketing-role-list">
+              {openRoles.map(({ id, title, location, employment_type, description, application_email }) => (
+                <article key={id}>
+                  <div className="marketing-role-icon"><BriefcaseBusiness /></div>
+                  <div className="marketing-role-main">
+                    <div><h3>{title}</h3><p>{description}</p></div>
+                    <div className="marketing-role-meta">
+                      {location && <span>{location}</span>}
+                      <span>{employment_type}</span>
+                    </div>
+                  </div>
+                  <a href={`${application_email ? `mailto:${application_email}?subject=${encodeURIComponent(`Application for ${title}`)}` : applicationHref}${(application_email || applicationEmail) ? `&body=${encodeURIComponent(`Hello Mufasah team,\n\nI would like to apply for the ${title} role.`)}` : ''}`} aria-label={`Apply for ${title}`}>
+                    Apply <ArrowUpRight />
+                  </a>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <div className="marketing-empty-role">
+              <span><BriefcaseBusiness /></span>
+              <div>
+                <h3>No open roles right now.</h3>
+                <p>We are not actively hiring today, but we are always interested in meeting thoughtful people who care about customers and great home entertainment.</p>
+              </div>
+              <a href={applicationHref}>Introduce yourself <ArrowUpRight /></a>
+            </div>
+          )}
         </div>
       </section>
 

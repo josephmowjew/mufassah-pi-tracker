@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { ArrowRight, ArrowUpRight, Check, MapPin, ShieldCheck, Sparkles } from 'lucide-react'
+import { ArrowRight, ArrowUpRight, Check, MapPin, ShieldCheck } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { getPublicBranches } from '@/api/public'
 import { productHighlights, values } from './content'
@@ -15,10 +15,10 @@ export default function HomePage() {
       <section className="marketing-hero">
         <div className="marketing-container marketing-hero-grid">
           <div className="marketing-hero-copy">
-            <p className="marketing-eyebrow"><Sparkles size={16} /> Technology, thoughtfully selected</p>
-            <h1>Electronics that fit the way you live.</h1>
+            <p className="marketing-eyebrow">Home entertainment, thoughtfully selected</p>
+            <h1>Bring every story to life.</h1>
             <p className="marketing-lead">
-              Discover dependable devices, expert local advice, and support that continues long after you leave the store.
+              Discover brilliant televisions, immersive home theatre, powerful Bluetooth sound, and expert local advice.
             </p>
             <div className="marketing-actions">
               <a href="#products" className="marketing-button marketing-button-dark">
@@ -31,11 +31,11 @@ export default function HomePage() {
             <div className="marketing-proof">
               <div><Check size={15} /> Curated quality</div>
               <div><Check size={15} /> Local support</div>
-              <div><Check size={15} /> Device protection</div>
+              <div><Check size={15} /> After-sales support</div>
             </div>
           </div>
           <div className="marketing-hero-visual">
-            <img src="/images/mufasah-electronics-hero.png" alt="A curated collection of modern electronics" />
+            <img src="/images/mufasah-electronics-hero.png" alt="A television, home-theatre system, soundbar, and Bluetooth speaker" />
             <div className="marketing-floating-card">
               <span><ShieldCheck size={19} /></span>
               <div><small>Beyond the purchase</small><strong>Protection that stays with you</strong></div>
@@ -46,12 +46,12 @@ export default function HomePage() {
 
       <section className="marketing-marquee" aria-label="Mufasah service promise">
         <div>
-          <span>Smartphones</span><i />
-          <span>Computing</span><i />
-          <span>Audio</span><i />
-          <span>Wearables</span><i />
-          <span>Accessories</span><i />
-          <span>Device protection</span>
+          <span>Televisions</span><i />
+          <span>Home theatres</span><i />
+          <span>Bluetooth speakers</span><i />
+          <span>Soundbars</span><i />
+          <span>TV accessories</span><i />
+          <span>Audio accessories</span>
         </div>
       </section>
 
@@ -60,7 +60,7 @@ export default function HomePage() {
           <div className="marketing-section-heading">
             <div>
               <p className="marketing-kicker">Explore the collection</p>
-              <h2>Technology for every part of your day.</h2>
+              <h2>Everything you need for a better night in.</h2>
             </div>
             <p>Curated categories, clear advice, and products selected for real everyday use.</p>
           </div>
@@ -84,7 +84,7 @@ export default function HomePage() {
         <div className="marketing-container marketing-values-layout">
           <div className="marketing-values-intro">
             <p className="marketing-kicker">The Mufasah difference</p>
-            <h2>The right technology should feel simple.</h2>
+            <h2>Great home entertainment should feel simple.</h2>
             <p>Our job is to make every step—from choosing to setting up—clear, useful, and human.</p>
             <Link to="/about" className="marketing-inline-link">Meet Mufasah <ArrowRight size={17} /></Link>
           </div>
@@ -104,7 +104,7 @@ export default function HomePage() {
           <div className="marketing-contact-panel">
             <div className="marketing-contact-copy">
               <p className="marketing-kicker">Closer than you think</p>
-              <h2>Let’s find the right device together.</h2>
+              <h2>Let’s build the right setup together.</h2>
               <p>Call or email a Mufasah branch for product advice, availability, and support.</p>
             </div>
             <div className="marketing-branch-list">
@@ -133,7 +133,7 @@ export default function HomePage() {
 
       <section className="marketing-cta-strip">
         <div className="marketing-container">
-          <div><p>Already part of Mufasah?</p><h2>Your devices, protected and connected.</h2></div>
+          <div><p>Already part of Mufasah?</p><h2>Your electronics, protected and connected.</h2></div>
           <Link to="/login" className="marketing-button marketing-button-light">Open customer portal <ArrowRight size={18} /></Link>
         </div>
       </section>

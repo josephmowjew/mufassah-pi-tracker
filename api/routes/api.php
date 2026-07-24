@@ -12,6 +12,7 @@ use App\Http\Controllers\Api\V1\Admin\AdminShiftController;
 use App\Http\Controllers\Api\V1\Admin\AdminUserController;
 use App\Http\Controllers\Api\V1\Admin\BranchController;
 use App\Http\Controllers\Api\V1\Admin\CommunicationSettingsController;
+use App\Http\Controllers\Api\V1\Admin\VacancyController;
 use App\Http\Controllers\Api\V1\Auth\AuthController;
 use App\Http\Controllers\Api\V1\Auth\EmailVerificationController;
 use App\Http\Controllers\Api\V1\Auth\PasswordResetController;
@@ -31,6 +32,7 @@ use App\Http\Controllers\Api\V1\IotModuleController;
 use App\Http\Controllers\Api\V1\NotificationController;
 use App\Http\Controllers\Api\V1\PaymentController;
 use App\Http\Controllers\Api\V1\PublicBranchController;
+use App\Http\Controllers\Api\V1\PublicVacancyController;
 use App\Http\Controllers\Api\V1\SubscriptionController;
 use App\Http\Controllers\Api\V1\SubscriptionPlanController;
 use App\Http\Controllers\Api\V1\TheftReportController;
@@ -95,6 +97,8 @@ Route::prefix('auth')->name('auth.')->group(function () {
 
 Route::get('/public/branches', [PublicBranchController::class, 'index'])
     ->name('public.branches.index');
+Route::get('/public/vacancies', [PublicVacancyController::class, 'index'])
+    ->name('public.vacancies.index');
 
 // =============================================================================
 // PROTECTED ROUTES (Authentication required)
@@ -537,6 +541,9 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::put('/', [CommunicationSettingsController::class, 'update'])->name('update');
             Route::post('/test-email', [CommunicationSettingsController::class, 'sendTestEmail'])->name('test-email');
         });
+
+        // Careers management
+        Route::apiResource('vacancies', VacancyController::class);
 
         // Community management (Admin)
         Route::prefix('community')->name('community.')->group(function () {
