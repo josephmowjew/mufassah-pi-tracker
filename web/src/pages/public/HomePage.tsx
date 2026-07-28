@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { ArrowRight, ArrowUpRight, Check, MapPin, ShieldCheck } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { getPublicBranches } from '@/api/public'
-import { productHighlights, values } from './content'
+import { productHighlights, publicContact, values } from './content'
 
 export default function HomePage() {
   const { data: branches = [], isLoading } = useQuery({
@@ -119,11 +119,11 @@ export default function HomePage() {
                     <h3>{branch.name}</h3>
                     <p>{[branch.address, branch.city].filter(Boolean).join(', ')}</p>
                     <div>
-                      {branch.phone && <a href={`tel:${branch.phone}`}>{branch.phone}</a>}
-                      {branch.email && <a href={`mailto:${branch.email}`}>{branch.email}</a>}
+                      <a href={`tel:${publicContact.phone}`}>{publicContact.phone}</a>
+                      <a href={`mailto:${publicContact.email}`}>{publicContact.email}</a>
                     </div>
                   </div>
-                  {branch.phone && <a className="marketing-branch-action" href={`tel:${branch.phone}`} aria-label={`Call ${branch.name}`}><ArrowUpRight /></a>}
+                  <a className="marketing-branch-action" href={`tel:${publicContact.phone}`} aria-label={`Call ${branch.name}`}><ArrowUpRight /></a>
                 </article>
               ))}
             </div>

@@ -1,17 +1,14 @@
 import { useQuery } from '@tanstack/react-query'
 import { ArrowRight, ArrowUpRight, BriefcaseBusiness, Check, Mail } from 'lucide-react'
-import { getPublicBranches, getPublicVacancies } from '@/api/public'
+import { getPublicVacancies } from '@/api/public'
+import { publicContact } from './content'
 
 export default function VacanciesPage() {
-  const { data: branches = [] } = useQuery({
-    queryKey: ['public-branches'],
-    queryFn: getPublicBranches,
-  })
   const { data: openRoles = [], isLoading: vacanciesLoading } = useQuery({
     queryKey: ['public-vacancies'],
     queryFn: getPublicVacancies,
   })
-  const applicationEmail = branches.find((branch) => branch.email)?.email
+  const applicationEmail = publicContact.email
   const applicationHref = applicationEmail
     ? `mailto:${applicationEmail}?subject=${encodeURIComponent('Application to join Mufasah Electronics')}`
     : '#vacancies'

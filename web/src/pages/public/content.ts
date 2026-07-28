@@ -16,6 +16,11 @@ export interface ProductHighlight {
   tone: 'light' | 'dark' | 'teal'
 }
 
+export const publicContact = {
+  email: 'elijahpchitedze@gmail.com',
+  phone: '+265999053843',
+}
+
 export const productHighlights: ProductHighlight[] = [
   {
     name: 'Televisions',

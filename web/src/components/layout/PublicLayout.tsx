@@ -1,8 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
 import { ArrowUpRight, Mail, Menu, Phone, X } from 'lucide-react'
-import { useQuery } from '@tanstack/react-query'
-import { getPublicBranches } from '@/api/public'
+import { publicContact } from '@/pages/public/content'
 
 const links = [
   { to: '/', label: 'Home' },
@@ -31,12 +30,6 @@ export default function PublicLayout() {
   const [headerScrolled, setHeaderScrolled] = useState(false)
   const headerRef = useRef<HTMLElement>(null)
   const location = useLocation()
-  const { data: branches = [] } = useQuery({
-    queryKey: ['public-branches'],
-    queryFn: getPublicBranches,
-  })
-  const contactBranch = branches.find((branch) => branch.phone || branch.email)
-
   useEffect(() => {
     setMenuOpen(false)
     const metadata = routeMetadata[location.pathname] ?? routeMetadata['/']
@@ -150,7 +143,7 @@ export default function PublicLayout() {
           <div className="marketing-nav-actions">
             <Link to="/login" className="marketing-login">Portal login</Link>
             <a
-              href={contactBranch?.phone ? `tel:${contactBranch.phone}` : '#contact'}
+              href={`tel:${publicContact.phone}`}
               className="marketing-button marketing-button-small marketing-button-dark"
             >
               Talk to us <ArrowUpRight size={15} />
@@ -176,7 +169,7 @@ export default function PublicLayout() {
             ))}
             <Link to="/login">Portal login</Link>
             <a
-              href={contactBranch?.phone ? `tel:${contactBranch.phone}` : '/#contact'}
+              href={`tel:${publicContact.phone}`}
               className="marketing-mobile-contact"
             >
               Talk to a branch <ArrowUpRight size={16} />
@@ -212,8 +205,8 @@ export default function PublicLayout() {
               </div>
               <div>
                 <span>Connect</span>
-                {contactBranch?.phone && <a href={`tel:${contactBranch.phone}`}><Phone size={15} /> {contactBranch.phone}</a>}
-                {contactBranch?.email && <a href={`mailto:${contactBranch.email}`}><Mail size={15} /> {contactBranch.email}</a>}
+                <a href={`tel:${publicContact.phone}`}><Phone size={15} /> {publicContact.phone}</a>
+                <a href={`mailto:${publicContact.email}`}><Mail size={15} /> {publicContact.email}</a>
                 <Link to="/login">Customer portal</Link>
               </div>
             </div>
