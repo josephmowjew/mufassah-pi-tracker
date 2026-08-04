@@ -7,6 +7,7 @@ import { PERMISSIONS } from '@/stores/auth-store'
 import apiClient from '@/api/client'
 import { toast } from 'sonner'
 import type { Device, GroupedInventoryItem, InventoryBatch } from '@/types'
+import ActionChallengePinModal, { type ActionChallengeInfo } from '@/components/admin/ActionChallengePinModal'
 import StockViewTable from '@/components/inventory/StockViewTable'
 import SerialViewTable from '@/components/inventory/SerialViewTable'
 import ProductDetailsModal from '@/components/inventory/ProductDetailsModal'
@@ -67,6 +68,13 @@ export default function AdminInventoryPage() {
   const [statusNotes, setStatusNotes] = useState('')
   const [batchSellingPrice, setBatchSellingPrice] = useState('')
   const [showBatchPriceConfirm, setShowBatchPriceConfirm] = useState(false)
+  const [administrativeSaleDevice, setAdministrativeSaleDevice] = useState<Device | null>(null)
+  const [administrativeSaleBatch, setAdministrativeSaleBatch] = useState<InventoryBatch | null>(null)
+  const [administrativeSaleAmount, setAdministrativeSaleAmount] = useState('')
+  const [administrativeSaleReason, setAdministrativeSaleReason] = useState('')
+  const [administrativeSaleNotes, setAdministrativeSaleNotes] = useState('')
+  const [saleChallenge, setSaleChallenge] = useState<ActionChallengeInfo | null>(null)
+  const [saleChallengeError, setSaleChallengeError] = useState<string | null>(null)
 
   // View mode with localStorage persistence
   const [viewMode, setViewMode] = useState<ViewMode>(() => {
@@ -177,6 +185,86 @@ export default function AdminInventoryPage() {
     if (!batchForModal || !batchSellingPrice) return
     updateBatchPriceMutation.mutate({ id: batchForModal.id, selling_price: Number(batchSellingPrice) })
   }
+
+  const openAdministrativeSale = (device: Device, batch: InventoryBatch | null = null) => {
+    const deviceCost = device.purchase_price ?? batch?.buying_price
+    if (deviceCost === null || deviceCost === undefined) {
+      toast.error('This device has no resolvable cost and cannot be sold administratively')
+      setAdministrativeSaleDevice(null)
+      setAdministrativeSaleBatch(null)
+      return
+    }
+
+    setAdministrativeSaleDevice(device)
+    setAdministrativeSaleBatch(batch)
+    setAdministrativeSaleAmount(batch?.target_selling_price === null || batch?.target_selling_price === undefined
+      ? ''
+      : String(batch.target_selling_price))
+    setAdministrativeSaleReason('')
+    setAdministrativeSaleNotes('')
+    setSaleChallengeError(null)
+  }
+
+  const saleCost = Number(administrativeSaleDevice?.purchase_price ?? administrativeSaleBatch?.buying_price ?? 0)
+  const saleAmount = Number(administrativeSaleAmount || 0)
+  const projectedSaleProfit = saleAmount - saleCost
+
+  const requestAdministrativeSaleMutation = useMutation({
+    mutationFn: async ({ deviceId, amount, reason, notes }: { deviceId: number; amount: number; reason: string; notes?: string }) => {
+      const response = await apiClient.post<{ success: boolean; data: ActionChallengeInfo }>(`/admin/inventory/${deviceId}/administrative-sale/request`, {
+        selling_price: amount,
+        reason,
+        notes: notes || undefined,
+      })
+      return response.data.data
+    },
+    onSuccess: (challenge) => {
+      setSaleChallenge(challenge)
+      setSaleChallengeError(null)
+      setAdministrativeSaleDevice(null)
+      toast.success('Verification PIN sent to your verified email')
+    },
+    onError: (error: Error & { response?: { data?: { message?: string } } }) => {
+      toast.error(error.response?.data?.message || 'Unable to request administrative sale')
+    },
+  })
+
+  const verifyAdministrativeSaleMutation = useMutation({
+    mutationFn: async ({ challengeId, pin }: { challengeId: number; pin: string }) => {
+      const response = await apiClient.post(`/admin/action-challenges/${challengeId}/verify`, { pin })
+      return response.data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-inventory'] })
+      queryClient.invalidateQueries({ queryKey: ['inventory-grouped'] })
+      queryClient.invalidateQueries({ queryKey: ['inventory-stats'] })
+      queryClient.invalidateQueries({ queryKey: ['inventory-batches'] })
+      queryClient.invalidateQueries({ queryKey: ['inventory-batch'] })
+      queryClient.invalidateQueries({ queryKey: ['stock-movements'] })
+      setSaleChallenge(null)
+      setSaleChallengeError(null)
+      setAdministrativeSaleBatch(null)
+      toast.success('Administrative sale recorded with profit/loss tracking')
+    },
+    onError: (error: Error & { response?: { data?: { message?: string } } }) => {
+      setSaleChallengeError(error.response?.data?.message || 'Invalid or expired PIN')
+    },
+  })
+
+  const resendAdministrativeSaleMutation = useMutation({
+    mutationFn: async (challengeId: number) => {
+      const response = await apiClient.post<{ success: boolean; data: ActionChallengeInfo }>(`/admin/action-challenges/${challengeId}/resend`)
+      return response.data.data
+    },
+    onSuccess: (challenge) => {
+      setSaleChallenge(challenge)
+      setSaleChallengeError(null)
+      toast.success('A new PIN was sent')
+    },
+    onError: (error: Error & { response?: { data?: { message?: string } } }) => {
+      setSaleChallengeError(error.response?.data?.message || 'Unable to resend PIN')
+    },
+  })
 
   // Update inventory status mutation
   const updateStatusMutation = useMutation({
@@ -409,6 +497,7 @@ export default function AdminInventoryPage() {
               devices={devices}
               isLoading={isLoading}
               onChangeStatus={handleOpenStatusModal}
+              onAdministrativeSale={(device) => openAdministrativeSale(device)}
               meta={meta}
               onPageChange={setPage}
             />
@@ -608,10 +697,14 @@ export default function AdminInventoryPage() {
                       <dd className="text-slate-900">{formatMoney(Number(batchForModal.target_selling_price) * batchForModal.quantity_received)}</dd>
                       <dt className="text-slate-500">Expected Profit</dt>
                       <dd className="text-blue-700 font-medium">{formatMoney(batchForModal.summary.expected_gross_profit)}</dd>
-                      <dt className="text-slate-500">Realized Revenue</dt>
-                      <dd className="text-slate-900">{formatMoney(batchForModal.summary.realized_revenue)}</dd>
-                      <dt className="text-slate-500">Realized Profit</dt>
-                      <dd className="text-emerald-700 font-medium">{formatMoney(batchForModal.summary.realized_gross_profit)}</dd>
+                      <dt className="text-slate-500">POS Revenue</dt>
+                      <dd className="text-slate-900">{formatMoney(batchForModal.summary.pos_revenue ?? batchForModal.summary.realized_revenue)}</dd>
+                      <dt className="text-slate-500">Administrative Sale Value</dt>
+                      <dd className="text-violet-700 font-medium">{formatMoney(batchForModal.summary.administrative_sale_value)}</dd>
+                      <dt className="text-slate-500">Combined Realized Value</dt>
+                      <dd className="text-slate-900">{formatMoney(batchForModal.summary.combined_inventory_realized_value ?? batchForModal.summary.realized_revenue)}</dd>
+                      <dt className="text-slate-500">Combined Profit/Loss</dt>
+                      <dd className={`font-medium ${(batchForModal.summary.combined_gross_profit_loss ?? batchForModal.summary.realized_gross_profit) < 0 ? 'text-red-700' : 'text-emerald-700'}`}>{formatMoney(batchForModal.summary.combined_gross_profit_loss ?? batchForModal.summary.realized_gross_profit)}</dd>
                       <dt className="text-slate-500">Margin</dt>
                       <dd className="text-slate-900">{batchForModal.summary.margin === null ? '-' : `${batchForModal.summary.margin}%`}</dd>
                     </dl>
@@ -630,12 +723,16 @@ export default function AdminInventoryPage() {
                     <p className="font-semibold">{formatMoney(batchForModal.summary.total_cost)}</p>
                   </div>
                   <div className="p-3 bg-slate-50 rounded-lg">
-                    <p className="text-xs text-slate-500">Revenue</p>
-                    <p className="font-semibold">{formatMoney(batchForModal.summary.realized_revenue)}</p>
+                    <p className="text-xs text-slate-500">POS Revenue</p>
+                    <p className="font-semibold">{formatMoney(batchForModal.summary.pos_revenue ?? batchForModal.summary.realized_revenue)}</p>
                   </div>
-                  <div className="p-3 bg-emerald-50 rounded-lg">
-                    <p className="text-xs text-emerald-700">Realized Profit</p>
-                    <p className="font-semibold text-emerald-700">{formatMoney(batchForModal.summary.realized_gross_profit)}</p>
+                  <div className="p-3 bg-violet-50 rounded-lg">
+                    <p className="text-xs text-violet-700">Admin Sale Value</p>
+                    <p className="font-semibold text-violet-700">{formatMoney(batchForModal.summary.administrative_sale_value)}</p>
+                  </div>
+                  <div className={`p-3 rounded-lg ${(batchForModal.summary.combined_gross_profit_loss ?? batchForModal.summary.realized_gross_profit) < 0 ? 'bg-red-50' : 'bg-emerald-50'}`}>
+                    <p className={`text-xs ${(batchForModal.summary.combined_gross_profit_loss ?? batchForModal.summary.realized_gross_profit) < 0 ? 'text-red-700' : 'text-emerald-700'}`}>Combined Profit/Loss</p>
+                    <p className={`font-semibold ${(batchForModal.summary.combined_gross_profit_loss ?? batchForModal.summary.realized_gross_profit) < 0 ? 'text-red-700' : 'text-emerald-700'}`}>{formatMoney(batchForModal.summary.combined_gross_profit_loss ?? batchForModal.summary.realized_gross_profit)}</p>
                   </div>
                   <div className="p-3 bg-blue-50 rounded-lg">
                     <p className="text-xs text-blue-700">Expected Profit</p>
@@ -658,6 +755,7 @@ export default function AdminInventoryPage() {
                           <th className="text-left px-4 py-3 text-xs font-medium text-slate-500 uppercase">Sold At</th>
                           <th className="text-right px-4 py-3 text-xs font-medium text-slate-500 uppercase">Cost</th>
                           <th className="text-left px-4 py-3 text-xs font-medium text-slate-500 uppercase">Code</th>
+                          <th className="text-right px-4 py-3 text-xs font-medium text-slate-500 uppercase">Actions</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-200">
@@ -672,6 +770,18 @@ export default function AdminInventoryPage() {
                               <td className="px-4 py-3 text-sm text-slate-600">{formatDate(device.sold_at)}</td>
                               <td className="px-4 py-3 text-sm text-right text-slate-600">{formatMoney(device.purchase_price)}</td>
                               <td className="px-4 py-3 text-sm text-slate-500">{device.unique_device_code || device.device_code || '-'}</td>
+                              <td className="px-4 py-3 text-right">
+                                <Authorize permission={PERMISSIONS.MANAGE_INVENTORY}>
+                                  {(['in_stock', 'returned'].includes(typeof device.inventory_status === 'string' ? device.inventory_status : device.inventory_status?.value || '')) && (
+                                    <button
+                                      onClick={(event) => { event.stopPropagation(); openAdministrativeSale(device, batchForModal) }}
+                                      className="rounded-lg bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-700 hover:bg-blue-100"
+                                    >
+                                      Administrative Sale
+                                    </button>
+                                  )}
+                                </Authorize>
+                              </td>
                             </tr>
                           )
                         })}
@@ -754,6 +864,70 @@ export default function AdminInventoryPage() {
               </form>
             </div>
           </div>
+        )}
+
+        {administrativeSaleDevice && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/60 p-4">
+            <div className="w-full max-w-lg overflow-hidden rounded-2xl bg-white shadow-2xl">
+              <div className="border-b border-slate-200 p-5">
+                <h2 className="text-lg font-semibold text-slate-900">Administrative Sale</h2>
+                <p className="mt-1 text-sm text-slate-500">{administrativeSaleDevice.brand} {administrativeSaleDevice.model} · {administrativeSaleDevice.serial_number}</p>
+              </div>
+              <form
+                className="space-y-4 p-5"
+                onSubmit={(event) => {
+                  event.preventDefault()
+                  requestAdministrativeSaleMutation.mutate({
+                    deviceId: administrativeSaleDevice.id,
+                    amount: saleAmount,
+                    reason: administrativeSaleReason,
+                    notes: administrativeSaleNotes || undefined,
+                  })
+                }}
+              >
+                  <div className="grid grid-cols-2 gap-3">
+                  <div className="rounded-lg bg-slate-50 p-3"><p className="text-xs text-slate-500">Unit cost</p><p className="font-semibold text-slate-900">{formatMoney(saleCost)}</p><p className="mt-1 text-xs text-slate-500">Device cost or batch buying price</p></div>
+                  <div className="rounded-lg bg-blue-50 p-3"><p className="text-xs text-blue-700">{administrativeSaleBatch ? 'Batch target' : 'Pricing source'}</p><p className="font-semibold text-blue-800">{administrativeSaleBatch ? formatMoney(administrativeSaleBatch.target_selling_price) : 'Manual amount'}</p><p className="mt-1 text-xs text-blue-700">{administrativeSaleBatch ? 'Used as the default amount' : 'Enter the actual sale amount below'}</p></div>
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-slate-700">Actual sale amount (MWK)</label>
+                  <input type="number" min="0" step="0.01" value={administrativeSaleAmount} onChange={(event) => setAdministrativeSaleAmount(event.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-2 focus:border-blue-500 focus:outline-none" required />
+                </div>
+                <div className={`rounded-lg p-3 ${projectedSaleProfit < 0 ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-700'}`}>
+                  <p className="text-xs font-medium">Projected {projectedSaleProfit < 0 ? 'loss' : 'profit'}</p>
+                  <p className="text-lg font-semibold">{formatMoney(Math.abs(projectedSaleProfit))}{projectedSaleProfit < 0 ? ' loss' : ''}</p>
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-slate-700">Reason <span className="text-red-500">*</span></label>
+                  <input value={administrativeSaleReason} onChange={(event) => setAdministrativeSaleReason(event.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-2 focus:border-blue-500 focus:outline-none" placeholder="Why is this being recorded outside POS?" required />
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-slate-700">Notes</label>
+                  <textarea value={administrativeSaleNotes} onChange={(event) => setAdministrativeSaleNotes(event.target.value)} rows={2} className="w-full rounded-lg border border-slate-300 px-3 py-2 focus:border-blue-500 focus:outline-none" placeholder="Optional supporting notes" />
+                </div>
+                <div className="flex justify-end gap-2 pt-1">
+                  <button type="button" onClick={() => setAdministrativeSaleDevice(null)} className="rounded-lg px-4 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-100">Cancel</button>
+                  <button type="submit" disabled={!administrativeSaleReason.trim() || !administrativeSaleAmount || requestAdministrativeSaleMutation.isPending} className="rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50">
+                    {requestAdministrativeSaleMutation.isPending ? 'Sending PIN...' : 'Send approval PIN'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {saleChallenge && (
+          <ActionChallengePinModal
+            challenge={saleChallenge}
+            title="Confirm administrative sale"
+            description="This will mark the device sold and create an inventory financial movement without creating a POS sale or payment."
+            error={saleChallengeError}
+            isVerifying={verifyAdministrativeSaleMutation.isPending}
+            isResending={resendAdministrativeSaleMutation.isPending}
+            onVerify={(pin) => verifyAdministrativeSaleMutation.mutate({ challengeId: saleChallenge.challenge_id, pin })}
+            onResend={() => resendAdministrativeSaleMutation.mutate(saleChallenge.challenge_id)}
+            onClose={() => { setSaleChallenge(null); setSaleChallengeError(null) }}
+          />
         )}
         <ConfirmDialog
           isOpen={showBatchPriceConfirm}

@@ -483,6 +483,12 @@ export interface InventoryBatchSummary {
   total_cost: number
   realized_revenue: number
   realized_gross_profit: number
+  pos_revenue?: number
+  pos_gross_profit?: number
+  administrative_sale_value?: number
+  administrative_sale_profit?: number
+  combined_inventory_realized_value?: number
+  combined_gross_profit_loss?: number
   expected_gross_profit: number
   margin: number | null
 }
@@ -511,6 +517,22 @@ export interface InventoryBatch {
   updated_at: string
 }
 
+export interface InventoryActionChallenge {
+  challenge_id: number
+  action: 'administrative_sale' | 'device_deletion' | string
+  masked_email: string
+  expires_at: string
+  attempts_remaining: number
+  financial?: {
+    unit_cost: number
+    unit_price: number
+    total_cost: number
+    total_amount: number
+    profit_amount: number
+    pricing_source: string
+  }
+}
+
 export interface InventoryReceipt {
   id: number
   receipt_number: string
@@ -531,6 +553,12 @@ export interface InventoryReceipt {
     expected_gross_profit: number
     realized_revenue: number
     realized_gross_profit: number
+    pos_revenue?: number
+    pos_gross_profit?: number
+    administrative_sale_value?: number
+    administrative_sale_profit?: number
+    combined_inventory_realized_value?: number
+    combined_gross_profit_loss?: number
     margin: number | null
   }
   branch?: Branch
@@ -553,6 +581,7 @@ export type InventoryMovementType =
   | 'faulty'
   | 'returned'
   | 'write_off'
+  | 'administrative_sale'
 
 export type StockTransferRequestStatus = 'pending' | 'approved' | 'rejected' | 'cancelled'
 export interface StockTransferRequest {
@@ -594,6 +623,11 @@ export interface InventoryMovement {
   model: string | null
   color: string | null
   quantity: number
+  unit_cost: number | string | null
+  unit_price: number | string | null
+  total_cost: number | string | null
+  total_amount: number | string | null
+  profit_amount: number | string | null
   previous_status: InventoryStatusValue | string | null
   new_status: InventoryStatusValue | string | null
   previous_owner_id: number | null
@@ -624,6 +658,8 @@ export interface InventoryMovementSummary {
   by_type: Partial<Record<InventoryMovementType, number>>
   by_branch: Record<string, number>
   by_product: Array<{ product: string; quantity: number }>
+  administrative_sale_value?: number
+  administrative_sale_profit?: number
 }
 
 // Sale types

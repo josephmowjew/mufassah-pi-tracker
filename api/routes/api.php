@@ -7,11 +7,12 @@ use App\Http\Controllers\Api\V1\Admin\AdminInventoryController;
 use App\Http\Controllers\Api\V1\Admin\AdminProductCatalogController;
 use App\Http\Controllers\Api\V1\Admin\AdminReportController;
 use App\Http\Controllers\Api\V1\Admin\AdminSaleController;
-use App\Http\Controllers\Api\V1\Admin\AdminStockMovementController;
 use App\Http\Controllers\Api\V1\Admin\AdminShiftController;
+use App\Http\Controllers\Api\V1\Admin\AdminStockMovementController;
 use App\Http\Controllers\Api\V1\Admin\AdminUserController;
 use App\Http\Controllers\Api\V1\Admin\BranchController;
 use App\Http\Controllers\Api\V1\Admin\CommunicationSettingsController;
+use App\Http\Controllers\Api\V1\Admin\InventoryDispositionController;
 use App\Http\Controllers\Api\V1\Admin\VacancyController;
 use App\Http\Controllers\Api\V1\Auth\AuthController;
 use App\Http\Controllers\Api\V1\Auth\EmailVerificationController;
@@ -401,6 +402,18 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::put('/devices/{device}', [AdminDeviceController::class, 'update'])->name('devices.update');
         Route::put('/devices/{device}/status', [AdminDeviceController::class, 'updateStatus'])->name('devices.status');
         Route::delete('/devices/{device}', [AdminDeviceController::class, 'destroy'])->name('devices.destroy');
+        Route::post('/devices/{device}/delete/request', [InventoryDispositionController::class, 'requestDeviceDeletion'])
+            ->middleware(['permission:delete-devices', 'throttle:6,1'])
+            ->name('devices.delete.request');
+
+        Route::prefix('action-challenges')->name('action-challenges.')->group(function () {
+            Route::post('/{challenge}/verify', [InventoryDispositionController::class, 'verify'])
+                ->middleware('throttle:10,1')
+                ->name('verify');
+            Route::post('/{challenge}/resend', [InventoryDispositionController::class, 'resend'])
+                ->middleware('throttle:3,1')
+                ->name('resend');
+        });
 
         // Device Category management
         Route::get('/device-categories', [DeviceCategoryController::class, 'index'])
@@ -474,6 +487,9 @@ Route::middleware('auth:sanctum')->group(function () {
                 Route::put('/batches/{batch}/selling-price', [AdminInventoryController::class, 'updateBatchSellingPrice'])->name('batches.selling-price');
                 Route::put('/{device}/status', [AdminInventoryController::class, 'updateStatus'])->name('status');
                 Route::post('/{device}/faulty', [AdminInventoryController::class, 'markFaulty'])->name('faulty');
+                Route::post('/{device}/administrative-sale/request', [InventoryDispositionController::class, 'requestAdministrativeSale'])
+                    ->middleware('throttle:6,1')
+                    ->name('administrative-sale.request');
             });
         });
 

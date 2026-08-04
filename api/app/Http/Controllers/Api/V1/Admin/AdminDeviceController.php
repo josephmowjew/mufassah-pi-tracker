@@ -129,20 +129,9 @@ class AdminDeviceController extends BaseController
      */
     public function destroy(Device $device): JsonResponse
     {
-        // Store device info for response
-        $deviceName = "{$device->brand} {$device->model}";
-
-        // Delete related records first
-        $device->locations()->delete();
-        $device->geofences()->delete();
-
-        // Unlink IoT module if any
-        if ($device->iot_module_id) {
-            $device->iotModule?->update(['device_id' => null]);
-        }
-
-        $device->delete();
-
-        return $this->success(null, "Device '{$deviceName}' has been deleted successfully");
+        // Keep the legacy route as a hard stop so an old client cannot bypass
+        // step-up verification. Actual deletion is performed by
+        // InventoryDispositionController after a verified challenge.
+        return $this->error('Device deletion requires PIN verification. Request a deletion challenge first.', 403);
     }
 }

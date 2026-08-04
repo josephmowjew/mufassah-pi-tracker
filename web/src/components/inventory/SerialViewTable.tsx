@@ -7,6 +7,7 @@ interface SerialViewTableProps {
   devices: Device[]
   isLoading?: boolean
   onChangeStatus: (device: Device) => void
+  onAdministrativeSale?: (device: Device) => void
   meta?: {
     current_page: number
     last_page: number
@@ -16,7 +17,7 @@ interface SerialViewTableProps {
   onPageChange: (page: number) => void
 }
 
-export default function SerialViewTable({ devices, isLoading, onChangeStatus, meta, onPageChange }: SerialViewTableProps) {
+export default function SerialViewTable({ devices, isLoading, onChangeStatus, onAdministrativeSale, meta, onPageChange }: SerialViewTableProps) {
   const getInventoryStatusBadge = (device: Device) => {
     const status = device.inventory_status
     const statusValue = typeof status === 'string' ? status : status?.value || 'in_stock'
@@ -116,12 +117,22 @@ export default function SerialViewTable({ devices, isLoading, onChangeStatus, me
                 </td>
                 <td className="px-6 py-4 text-right">
                   <Authorize permission={PERMISSIONS.MANAGE_INVENTORY}>
-                    <button
-                      onClick={() => onChangeStatus(device)}
-                      className="text-blue-600 hover:text-blue-800 text-sm font-medium"
-                    >
-                      Change Status
-                    </button>
+                    <div className="flex flex-col items-end gap-1.5">
+                      <button
+                        onClick={() => onChangeStatus(device)}
+                        className="text-blue-600 hover:text-blue-800 text-sm font-medium"
+                      >
+                        Change Status
+                      </button>
+                      {onAdministrativeSale && ['in_stock', 'returned'].includes(typeof device.inventory_status === 'string' ? device.inventory_status : device.inventory_status?.value || '') && (
+                        <button
+                          onClick={() => onAdministrativeSale(device)}
+                          className="text-violet-700 hover:text-violet-900 text-xs font-medium"
+                        >
+                          Administrative Sale
+                        </button>
+                      )}
+                    </div>
                   </Authorize>
                 </td>
               </tr>

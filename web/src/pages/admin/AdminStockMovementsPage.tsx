@@ -22,6 +22,7 @@ const movementTypes = [
   'faulty',
   'returned',
   'write_off',
+  'administrative_sale',
 ]
 
 const statusOptions: InventoryStatusValue[] = ['in_stock', 'reserved', 'returned', 'faulty']
@@ -34,6 +35,11 @@ const label = (value: string | null | undefined) => {
 const formatDate = (value: string | null | undefined) => {
   if (!value) return '-'
   return new Date(value).toLocaleString()
+}
+
+const formatMoney = (value: number | string | null | undefined) => {
+  if (value === null || value === undefined) return '-'
+  return `MWK ${Number(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }
 
 const extractErrors = (error: unknown) => {
@@ -248,6 +254,7 @@ export default function AdminStockMovementsPage() {
           <div className="grid grid-cols-2 gap-4 lg:grid-cols-6">
             <SummaryTile label="Received" value={summary.by_type.receipt || 0} tone="emerald" />
             <SummaryTile label="Sold" value={summary.by_type.sale || 0} tone="blue" />
+            <SummaryTile label="Admin Sales" value={summary.by_type.administrative_sale || 0} tone="indigo" />
             <SummaryTile label="Transfers" value={summary.by_type.transfer || 0} tone="indigo" />
             <SummaryTile label="Reserved" value={summary.by_type.reservation || 0} tone="amber" />
             <SummaryTile label="Adjusted" value={(summary.by_type.adjustment_in || 0) + (summary.by_type.adjustment_out || 0)} tone="slate" />
@@ -316,6 +323,8 @@ export default function AdminStockMovementsPage() {
                     <th className="px-4 py-3 text-left text-xs font-medium uppercase text-slate-500">From</th>
                     <th className="px-4 py-3 text-left text-xs font-medium uppercase text-slate-500">To/Branch</th>
                     <th className="px-4 py-3 text-right text-xs font-medium uppercase text-slate-500">Qty</th>
+                    <th className="px-4 py-3 text-right text-xs font-medium uppercase text-slate-500">Amount</th>
+                    <th className="px-4 py-3 text-right text-xs font-medium uppercase text-slate-500">Profit/Loss</th>
                     <th className="px-4 py-3 text-left text-xs font-medium uppercase text-slate-500">Reference</th>
                     <th className="px-4 py-3 text-right text-xs font-medium uppercase text-slate-500">Action</th>
                   </tr>
@@ -331,6 +340,8 @@ export default function AdminStockMovementsPage() {
                       <td className="whitespace-nowrap px-4 py-3 text-sm text-slate-600">{movement.from_branch?.name || '-'}</td>
                       <td className="whitespace-nowrap px-4 py-3 text-sm text-slate-600">{movement.to_branch?.name || movement.branch?.name || '-'}</td>
                       <td className="px-4 py-3 text-right text-sm text-slate-700">{movement.quantity}</td>
+                      <td className="whitespace-nowrap px-4 py-3 text-right text-sm text-slate-700">{formatMoney(movement.total_amount)}</td>
+                      <td className={`whitespace-nowrap px-4 py-3 text-right text-sm font-medium ${Number(movement.profit_amount || 0) < 0 ? 'text-red-700' : 'text-emerald-700'}`}>{formatMoney(movement.profit_amount)}</td>
                       <td className="whitespace-nowrap px-4 py-3 text-sm text-slate-600">{movement.sale?.sale_number || movement.receipt?.receipt_number || movement.batch?.batch_number || '-'}</td>
                       <td className="px-4 py-3 text-right">
                         <button onClick={() => setSelectedMovement(movement)} className="inline-flex rounded-md p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-800">
@@ -409,6 +420,12 @@ export default function AdminStockMovementsPage() {
                 <Detail label="Batch" value={detail.batch?.batch_number || '-'} />
                 <Detail label="Receipt" value={detail.receipt?.receipt_number || '-'} />
                 <Detail label="Sale" value={detail.sale?.sale_number || '-'} />
+                <Detail label="Unit Cost" value={formatMoney(detail.unit_cost)} />
+                <Detail label="Unit Price" value={formatMoney(detail.unit_price)} />
+                <Detail label="Total Cost" value={formatMoney(detail.total_cost)} />
+                <Detail label="Total Amount" value={formatMoney(detail.total_amount)} />
+                <Detail label="Profit/Loss" value={formatMoney(detail.profit_amount)} />
+                {detail.movement_type === 'administrative_sale' && <Detail label="Pricing Source" value={typeof detail.metadata?.pricing_source === 'string' ? detail.metadata.pricing_source : '-'} />}
                 <Detail label="Created By" value={detail.created_by?.name || '-'} />
                 <Detail label="Backfilled" value={detail.is_backfilled ? 'Yes' : 'No'} />
                 <div className="sm:col-span-2">
@@ -455,6 +472,8 @@ function SummaryTile({ label, value, tone }: { label: string; value: number; ton
 function MovementBadge({ type }: { type: string }) {
   const tone = type === 'sale'
     ? 'bg-blue-100 text-blue-700'
+    : type === 'administrative_sale'
+      ? 'bg-violet-100 text-violet-700'
     : type === 'receipt'
       ? 'bg-emerald-100 text-emerald-700'
       : type === 'transfer'

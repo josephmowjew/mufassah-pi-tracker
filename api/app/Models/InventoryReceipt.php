@@ -71,6 +71,10 @@ class InventoryReceipt extends Model
         $expectedProfit = round($expectedRevenue - $totalCost, 2);
         $realizedRevenue = round($batches->sum(fn (InventoryBatch $batch) => $batch->summary()['realized_revenue']), 2);
         $realizedProfit = round($batches->sum(fn (InventoryBatch $batch) => $batch->summary()['realized_gross_profit']), 2);
+        $posRevenue = round($batches->sum(fn (InventoryBatch $batch) => $batch->summary()['pos_revenue']), 2);
+        $posProfit = round($batches->sum(fn (InventoryBatch $batch) => $batch->summary()['pos_gross_profit']), 2);
+        $administrativeSaleValue = round($batches->sum(fn (InventoryBatch $batch) => $batch->summary()['administrative_sale_value']), 2);
+        $administrativeSaleProfit = round($batches->sum(fn (InventoryBatch $batch) => $batch->summary()['administrative_sale_profit']), 2);
 
         return [
             'lines' => $batches->count(),
@@ -80,6 +84,12 @@ class InventoryReceipt extends Model
             'expected_gross_profit' => $expectedProfit,
             'realized_revenue' => $realizedRevenue,
             'realized_gross_profit' => $realizedProfit,
+            'pos_revenue' => $posRevenue,
+            'pos_gross_profit' => $posProfit,
+            'administrative_sale_value' => $administrativeSaleValue,
+            'administrative_sale_profit' => $administrativeSaleProfit,
+            'combined_inventory_realized_value' => $realizedRevenue,
+            'combined_gross_profit_loss' => $realizedProfit,
             'margin' => $realizedRevenue > 0 ? round(($realizedProfit / $realizedRevenue) * 100, 2) : null,
         ];
     }

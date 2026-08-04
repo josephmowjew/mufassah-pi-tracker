@@ -119,6 +119,48 @@ class InventoryMovementService
         ]);
     }
 
+    public function recordAdministrativeSale(
+        Device $device,
+        User $user,
+        float|string $unitCost,
+        float|string $unitPrice,
+        string $reason,
+        ?string $notes = null,
+        ?string $pricingSource = null,
+        ?string $challengeId = null,
+        ?string $previousStatus = null,
+    ): InventoryMovement {
+        $quantity = 1;
+        $unitCost = round((float) $unitCost, 2);
+        $unitPrice = round((float) $unitPrice, 2);
+        $totalCost = round($unitCost * $quantity, 2);
+        $totalAmount = round($unitPrice * $quantity, 2);
+
+        return $this->recordDeviceMovement($device, [
+            'movement_type' => InventoryMovement::TYPE_ADMINISTRATIVE_SALE,
+            'branch_id' => $device->branch_id,
+            'previous_status' => $previousStatus ?? $device->inventory_status?->value,
+            'new_status' => InventoryStatus::SOLD->value,
+            'previous_owner_id' => $device->owner_id,
+            'new_owner_id' => null,
+            'reference_type' => Device::class,
+            'reference_id' => $device->id,
+            'reason' => $reason,
+            'notes' => $notes,
+            'created_by_id' => $user->id,
+            'unit_cost' => $unitCost,
+            'unit_price' => $unitPrice,
+            'total_cost' => $totalCost,
+            'total_amount' => $totalAmount,
+            'profit_amount' => round($totalAmount - $totalCost, 2),
+            'metadata' => [
+                'pricing_source' => $pricingSource,
+                'challenge_id' => $challengeId,
+                'action' => InventoryMovement::TYPE_ADMINISTRATIVE_SALE,
+            ],
+        ]);
+    }
+
     public function recordTransfer(Device $device, int $fromBranchId, int $toBranchId, ?User $user = null, ?string $reason = null, ?string $notes = null): InventoryMovement
     {
         return $this->recordDeviceMovement($device, [

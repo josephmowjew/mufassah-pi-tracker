@@ -11,17 +11,30 @@ class InventoryMovement extends Model
     use HasFactory;
 
     public const TYPE_RECEIPT = 'receipt';
+
     public const TYPE_RESERVATION = 'reservation';
+
     public const TYPE_RESERVATION_CANCELLED = 'reservation_cancelled';
+
     public const TYPE_SALE = 'sale';
+
     public const TYPE_SALE_CANCELLED = 'sale_cancelled';
+
     public const TYPE_REFUND = 'refund';
+
     public const TYPE_TRANSFER = 'transfer';
+
     public const TYPE_ADJUSTMENT_IN = 'adjustment_in';
+
     public const TYPE_ADJUSTMENT_OUT = 'adjustment_out';
+
     public const TYPE_FAULTY = 'faulty';
+
     public const TYPE_RETURNED = 'returned';
+
     public const TYPE_WRITE_OFF = 'write_off';
+
+    public const TYPE_ADMINISTRATIVE_SALE = 'administrative_sale';
 
     protected $fillable = [
         'movement_number',
@@ -39,6 +52,11 @@ class InventoryMovement extends Model
         'model',
         'color',
         'quantity',
+        'unit_cost',
+        'unit_price',
+        'total_cost',
+        'total_amount',
+        'profit_amount',
         'previous_status',
         'new_status',
         'previous_owner_id',
@@ -58,6 +76,11 @@ class InventoryMovement extends Model
     {
         return [
             'quantity' => 'integer',
+            'unit_cost' => 'decimal:2',
+            'unit_price' => 'decimal:2',
+            'total_cost' => 'decimal:2',
+            'total_amount' => 'decimal:2',
+            'profit_amount' => 'decimal:2',
             'is_backfilled' => 'boolean',
             'metadata' => 'array',
         ];
@@ -140,6 +163,7 @@ class InventoryMovement extends Model
             self::TYPE_FAULTY,
             self::TYPE_RETURNED,
             self::TYPE_WRITE_OFF,
+            self::TYPE_ADMINISTRATIVE_SALE,
         ];
     }
 }

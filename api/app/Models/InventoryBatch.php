@@ -73,7 +73,8 @@ class InventoryBatch extends Model
 
     public function summary(): array
     {
-        $devices = $this->relationLoaded('devices') ? $this->devices : $this->devices()->with('sale.items')->get();
+        $devices = $this->relationLoaded('devices') ? $this->devices : $this->devices()->get();
+        $devices->loadMissing('sale.items');
 
         $inStock = $devices->where('inventory_status', InventoryStatus::IN_STOCK)->count();
         $reserved = $devices->where('inventory_status', InventoryStatus::RESERVED)->count();
@@ -91,7 +92,16 @@ class InventoryBatch extends Model
             ->unique('id');
 
         $realizedRevenue = round((float) $completedSaleItems->sum('total_price'), 2);
-        $realizedProfit = round((float) $completedSaleItems->sum('profit_amount'), 2);
+        $posRevenue = $realizedRevenue;
+        $posProfit = round((float) $completedSaleItems->sum('profit_amount'), 2);
+        $administrativeSales = InventoryMovement::query()
+            ->where('inventory_batch_id', $this->id)
+            ->where('movement_type', InventoryMovement::TYPE_ADMINISTRATIVE_SALE)
+            ->get(['total_amount', 'profit_amount']);
+        $administrativeSaleValue = round((float) $administrativeSales->sum('total_amount'), 2);
+        $administrativeSaleProfit = round((float) $administrativeSales->sum('profit_amount'), 2);
+        $realizedRevenue = round($posRevenue + $administrativeSaleValue, 2);
+        $realizedProfit = round($posProfit + $administrativeSaleProfit, 2);
         $totalCost = round((float) $this->buying_price * $this->quantity_received, 2);
         $expectedProfit = round(((float) $this->target_selling_price - (float) $this->buying_price) * $this->quantity_received, 2);
         $margin = $realizedRevenue > 0 ? round(($realizedProfit / $realizedRevenue) * 100, 2) : null;
@@ -105,6 +115,12 @@ class InventoryBatch extends Model
             'total_cost' => $totalCost,
             'realized_revenue' => $realizedRevenue,
             'realized_gross_profit' => $realizedProfit,
+            'pos_revenue' => $posRevenue,
+            'pos_gross_profit' => $posProfit,
+            'administrative_sale_value' => $administrativeSaleValue,
+            'administrative_sale_profit' => $administrativeSaleProfit,
+            'combined_inventory_realized_value' => $realizedRevenue,
+            'combined_gross_profit_loss' => $realizedProfit,
             'expected_gross_profit' => $expectedProfit,
             'margin' => $margin,
         ];

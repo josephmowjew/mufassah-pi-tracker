@@ -11,8 +11,8 @@ use App\Http\Resources\DeviceResource;
 use App\Http\Resources\InventoryBatchResource;
 use App\Http\Resources\InventoryReceiptResource;
 use App\Models\ActivityLog;
-use App\Models\Device;
 use App\Models\Brand;
+use App\Models\Device;
 use App\Models\InventoryBatch;
 use App\Models\InventoryReceipt;
 use App\Models\ProductModel;
@@ -26,9 +26,7 @@ use Illuminate\Validation\Rule;
 
 class AdminInventoryController extends BaseController
 {
-    public function __construct(private readonly InventoryMovementService $movementService)
-    {
-    }
+    public function __construct(private readonly InventoryMovementService $movementService) {}
 
     /**
      * List all devices in inventory with filtering.
@@ -354,6 +352,7 @@ class AdminInventoryController extends BaseController
         $this->logActivity($batch, $request->user(), 'batch_selling_price_updated', 'Batch selling price updated', [
             'old_price' => $oldPrice, 'new_price' => $validated['selling_price'], 'affected_in_stock_devices' => $inStock,
         ]);
+
         return $this->success(new InventoryBatchResource($batch->fresh()), 'Selling price updated for future sales of in-stock devices.');
     }
 
@@ -553,7 +552,14 @@ class AdminInventoryController extends BaseController
         $this->authorizeInventoryBranch($request, $device->branch_id);
 
         $validated = $request->validate([
-            'inventory_status' => ['required', Rule::enum(InventoryStatus::class)],
+            // A sale is a financial disposition and must go through the
+            // PIN-protected administrative-sale endpoint.
+            'inventory_status' => ['required', Rule::in([
+                InventoryStatus::IN_STOCK->value,
+                InventoryStatus::RESERVED->value,
+                InventoryStatus::RETURNED->value,
+                InventoryStatus::FAULTY->value,
+            ])],
             'notes' => 'nullable|string|max:500',
         ]);
 

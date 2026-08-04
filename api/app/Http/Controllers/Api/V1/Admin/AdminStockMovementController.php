@@ -57,12 +57,16 @@ class AdminStockMovementController extends BaseController
             ])
             ->values();
 
+        $administrativeSales = $movements->where('movement_type', InventoryMovement::TYPE_ADMINISTRATIVE_SALE);
+
         return $this->success([
             'total_movements' => $movements->count(),
             'total_quantity' => $movements->sum('quantity'),
             'by_type' => $byType,
             'by_branch' => $byBranch,
             'by_product' => $byProduct,
+            'administrative_sale_value' => round((float) $administrativeSales->sum('total_amount'), 2),
+            'administrative_sale_profit' => round((float) $administrativeSales->sum('profit_amount'), 2),
         ]);
     }
 
@@ -158,7 +162,14 @@ class AdminStockMovementController extends BaseController
         $validated = $request->validate([
             'device_ids' => 'required|array|min:1|max:100',
             'device_ids.*' => 'required|integer|exists:devices,id',
-            'inventory_status' => ['required', Rule::enum(InventoryStatus::class)],
+            // Never allow the generic adjustment endpoint to silently create
+            // a sold device. Administrative sales have a separate PIN flow.
+            'inventory_status' => ['required', Rule::in([
+                InventoryStatus::IN_STOCK->value,
+                InventoryStatus::RESERVED->value,
+                InventoryStatus::RETURNED->value,
+                InventoryStatus::FAULTY->value,
+            ])],
             'reason' => 'required|string|max:255',
             'notes' => 'nullable|string|max:1000',
         ]);

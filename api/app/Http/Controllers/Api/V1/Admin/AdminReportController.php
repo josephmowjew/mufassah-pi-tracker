@@ -11,7 +11,9 @@ use App\Http\Controllers\Controller;
 use App\Models\Branch;
 use App\Models\Device;
 use App\Models\InventoryBatch;
+use App\Models\InventoryMovement;
 use App\Models\Payment;
+use App\Models\SaleItem;
 use App\Models\Subscription;
 use App\Models\TheftReport;
 use App\Models\User;
@@ -259,6 +261,23 @@ class AdminReportController extends Controller
             ->whereIn('inventory_status', [InventoryStatus::IN_STOCK, InventoryStatus::RESERVED, InventoryStatus::RETURNED])
             ->sum('purchase_price'), 2);
 
+        $administrativeSaleScope = InventoryMovement::query()
+            ->where('movement_type', InventoryMovement::TYPE_ADMINISTRATIVE_SALE)
+            ->when($branchId, fn ($q) => $q->where('branch_id', $branchId))
+            ->when($from, fn ($q) => $q->where('created_at', '>=', $from))
+            ->when($to, fn ($q) => $q->where('created_at', '<=', $to));
+        $administrativeSaleValue = round((float) (clone $administrativeSaleScope)->sum('total_amount'), 2);
+        $administrativeSaleProfit = round((float) (clone $administrativeSaleScope)->sum('profit_amount'), 2);
+
+        $posSaleItemScope = SaleItem::query()->whereHas('sale', function ($q) use ($branchId, $from, $to) {
+            $q->where('status', \App\Enums\SaleStatus::COMPLETED)
+                ->when($branchId, fn ($saleQuery) => $saleQuery->where('branch_id', $branchId))
+                ->when($from, fn ($saleQuery) => $saleQuery->where('sale_date', '>=', $from))
+                ->when($to, fn ($saleQuery) => $saleQuery->where('sale_date', '<=', $to));
+        });
+        $posRevenue = round((float) (clone $posSaleItemScope)->sum('total_price'), 2);
+        $posProfit = round((float) (clone $posSaleItemScope)->sum('profit_amount'), 2);
+
         $byBranch = Branch::query()
             ->when($branchId, fn ($q) => $q->whereKey($branchId))
             ->withCount([
@@ -365,6 +384,12 @@ class AdminReportController extends Controller
                     'total_cost' => $summary['total_cost'],
                     'realized_revenue' => $summary['realized_revenue'],
                     'realized_gross_profit' => $summary['realized_gross_profit'],
+                    'pos_revenue' => $summary['pos_revenue'],
+                    'pos_gross_profit' => $summary['pos_gross_profit'],
+                    'administrative_sale_value' => $summary['administrative_sale_value'],
+                    'administrative_sale_profit' => $summary['administrative_sale_profit'],
+                    'combined_inventory_realized_value' => $summary['combined_inventory_realized_value'],
+                    'combined_gross_profit_loss' => $summary['combined_gross_profit_loss'],
                 ];
             });
 
@@ -386,6 +411,12 @@ class AdminReportController extends Controller
                     'received_in_range' => $totalReceived,
                     'sold_in_range' => $totalSold,
                     'stock_value' => $stockValue,
+                    'pos_revenue' => $posRevenue,
+                    'pos_gross_profit' => $posProfit,
+                    'administrative_sale_value' => $administrativeSaleValue,
+                    'administrative_sale_profit' => $administrativeSaleProfit,
+                    'combined_inventory_realized_value' => round($posRevenue + $administrativeSaleValue, 2),
+                    'combined_gross_profit_loss' => round($posProfit + $administrativeSaleProfit, 2),
                 ],
                 'by_branch' => $byBranch,
                 'by_product' => $byProduct,

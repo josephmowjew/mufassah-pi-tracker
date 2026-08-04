@@ -75,6 +75,12 @@ interface StockData {
     received_in_range: number
     sold_in_range: number
     stock_value: number
+    pos_revenue?: number
+    pos_gross_profit?: number
+    administrative_sale_value?: number
+    administrative_sale_profit?: number
+    combined_inventory_realized_value?: number
+    combined_gross_profit_loss?: number
   }
   by_branch: Array<{
     branch_id: number
@@ -117,6 +123,12 @@ interface StockData {
     total_cost: number
     realized_revenue: number
     realized_gross_profit: number
+    pos_revenue?: number
+    pos_gross_profit?: number
+    administrative_sale_value?: number
+    administrative_sale_profit?: number
+    combined_inventory_realized_value?: number
+    combined_gross_profit_loss?: number
   }>
 }
 
@@ -353,6 +365,34 @@ export default function AdminReportsPage() {
                 </div>
               </div>
 
+              <div>
+                <div className="flex items-center gap-2 mb-3">
+                  <TrendingUp className="h-4 w-4 text-slate-500" />
+                  <h3 className="text-sm font-semibold text-slate-700">Inventory Realization</h3>
+                  <span className="text-xs text-slate-400">POS and administrative sales</span>
+                </div>
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                  <div className="p-4 bg-emerald-50 rounded-xl">
+                    <p className="text-xs text-emerald-600 font-medium">POS Revenue</p>
+                    <p className="text-lg font-bold text-emerald-700">{formatCurrency(stockData?.summary.pos_revenue || 0)}</p>
+                  </div>
+                  <div className="p-4 bg-violet-50 rounded-xl">
+                    <p className="text-xs text-violet-600 font-medium">Administrative Sale Value</p>
+                    <p className="text-lg font-bold text-violet-700">{formatCurrency(stockData?.summary.administrative_sale_value || 0)}</p>
+                  </div>
+                  <div className="p-4 bg-blue-50 rounded-xl">
+                    <p className="text-xs text-blue-600 font-medium">Combined Realized Value</p>
+                    <p className="text-lg font-bold text-blue-700">{formatCurrency(stockData?.summary.combined_inventory_realized_value || 0)}</p>
+                  </div>
+                  <div className={`p-4 rounded-xl ${(stockData?.summary.combined_gross_profit_loss || 0) < 0 ? 'bg-red-50' : 'bg-teal-50'}`}>
+                    <p className={`text-xs font-medium ${(stockData?.summary.combined_gross_profit_loss || 0) < 0 ? 'text-red-600' : 'text-teal-600'}`}>Combined Gross Profit/Loss</p>
+                    <p className={`text-lg font-bold ${(stockData?.summary.combined_gross_profit_loss || 0) < 0 ? 'text-red-700' : 'text-teal-700'}`}>
+                      {formatCurrency(stockData?.summary.combined_gross_profit_loss || 0)}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
               <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
                 <div>
                   <div className="flex items-center gap-2 mb-3">
@@ -440,7 +480,9 @@ export default function AdminReportsPage() {
                         <th className="px-3 py-2 text-right font-medium text-slate-500">Received</th>
                         <th className="px-3 py-2 text-right font-medium text-slate-500">In Stock</th>
                         <th className="px-3 py-2 text-right font-medium text-slate-500">Sold</th>
-                        <th className="px-3 py-2 text-right font-medium text-slate-500">Profit</th>
+                        <th className="px-3 py-2 text-right font-medium text-slate-500">POS Revenue</th>
+                        <th className="px-3 py-2 text-right font-medium text-slate-500">Admin Sale</th>
+                        <th className="px-3 py-2 text-right font-medium text-slate-500">Combined P/L</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
@@ -455,11 +497,15 @@ export default function AdminReportsPage() {
                           <td className="px-3 py-2 text-right text-slate-700">{batch.quantity_received}</td>
                           <td className="px-3 py-2 text-right text-slate-700">{batch.in_stock}</td>
                           <td className="px-3 py-2 text-right text-slate-700">{batch.sold}</td>
-                          <td className="px-3 py-2 text-right text-slate-700">{formatCurrency(batch.realized_gross_profit)}</td>
+                          <td className="px-3 py-2 text-right text-slate-700">{formatCurrency(batch.pos_revenue || 0)}</td>
+                          <td className="px-3 py-2 text-right text-violet-700">{formatCurrency(batch.administrative_sale_value || 0)}</td>
+                          <td className={`px-3 py-2 text-right font-medium ${(batch.combined_gross_profit_loss || 0) < 0 ? 'text-red-700' : 'text-teal-700'}`}>
+                            {formatCurrency(batch.combined_gross_profit_loss || 0)}
+                          </td>
                         </tr>
                       )) : (
                         <tr>
-                          <td colSpan={7} className="px-3 py-8 text-center text-slate-400">No batches received in this range</td>
+                          <td colSpan={9} className="px-3 py-8 text-center text-slate-400">No batches received in this range</td>
                         </tr>
                       )}
                     </tbody>

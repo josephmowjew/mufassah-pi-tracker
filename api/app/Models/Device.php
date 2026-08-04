@@ -165,6 +165,11 @@ class Device extends Model
         return $this->belongsTo(InventoryBatch::class);
     }
 
+    public function inventoryMovements(): HasMany
+    {
+        return $this->hasMany(InventoryMovement::class);
+    }
+
     /**
      * Get the ownership history for the device.
      */
