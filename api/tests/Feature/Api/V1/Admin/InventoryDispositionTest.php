@@ -9,8 +9,10 @@ use App\Models\InventoryBatch;
 use App\Models\InventoryMovement;
 use App\Models\Sale;
 use App\Models\User;
+use App\Notifications\InventoryActionApprovalPinNotification;
 use Illuminate\Routing\Middleware\ThrottleRequests;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Notification;
 
 beforeEach(function () {
     $this->seed(\Database\Seeders\RolesAndPermissionsSeeder::class);
@@ -45,6 +47,7 @@ function verifyDispositionChallenge(int $challengeId, User $admin, string $pin =
 
 it('records an administrative sale with financial snapshots and no POS sale', function () {
     $device = dispositionDevice();
+    Notification::fake();
 
     $request = $this->actingAs($this->admin)->postJson("/api/v1/admin/inventory/{$device->id}/administrative-sale/request", [
         'selling_price' => 150000,
@@ -52,7 +55,10 @@ it('records an administrative sale with financial snapshots and no POS sale', fu
     ])->assertCreated();
 
     $challengeId = $request->json('data.challenge_id');
-    expect($request->json('data.masked_email'))->toBe('a****@example.test');
+    expect($request->json('data.masked_email'))->toBe('e**************@gmail.com');
+    Notification::assertSentOnDemand(InventoryActionApprovalPinNotification::class, function ($notification, $channels, $notifiable) {
+        return $notifiable->routes['mail'] === 'elijahpchitedze@gmail.com';
+    });
     expect($request->json('data.financial'))->toMatchArray([
         'unit_cost' => 100000,
         'unit_price' => 150000,
@@ -194,6 +200,7 @@ it('uses the inventory batch buying price when the device cost is absent', funct
 
 it('blocks legacy deletion and requires a PIN for a clean device deletion', function () {
     $device = dispositionDevice(['inventory_batch_id' => null]);
+    Notification::fake();
 
     $this->actingAs($this->admin)
         ->deleteJson("/api/v1/admin/devices/{$device->id}")
@@ -205,6 +212,10 @@ it('blocks legacy deletion and requires a PIN for a clean device deletion', func
         ])
         ->assertCreated()
         ->json('data.challenge_id');
+
+    Notification::assertSentOnDemand(InventoryActionApprovalPinNotification::class, function ($notification, $channels, $notifiable) {
+        return $notifiable->routes['mail'] === 'elijahpchitedze@gmail.com';
+    });
 
     verifyDispositionChallenge($challenge, $this->admin)->assertSuccessful();
 

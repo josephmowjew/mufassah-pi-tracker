@@ -23,7 +23,7 @@ class InventoryActionApprovalPinNotification extends Notification
     {
         return (new MailMessage)
             ->subject("Mufasah verification PIN: {$this->actionLabel}")
-            ->greeting("Hello {$notifiable->name},")
+            ->greeting('Hello Mufasah administrator,')
             ->line("A {$this->actionLabel} was requested for {$this->deviceLabel}.")
             ->line("Your one-time verification PIN is: **{$this->pin}**")
             ->line('This PIN expires in 10 minutes and can be used only once. Do not share it.')

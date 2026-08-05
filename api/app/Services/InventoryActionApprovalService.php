@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Notifications\InventoryActionApprovalPinNotification;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Notification;
 use Illuminate\Validation\ValidationException;
 
 class InventoryActionApprovalService
@@ -19,8 +20,9 @@ class InventoryActionApprovalService
     public const RESEND_COOLDOWN_SECONDS = 60;
 
     /**
-     * Create a one-time challenge and deliver the PIN to the initiating admin.
-     * The PIN is never persisted or included in the response.
+     * Create a one-time challenge and deliver the PIN to the protected
+     * administrator mailbox. The PIN is never persisted or included in the
+     * response.
      */
     public function create(User $user, string $action, array $payload, Device $device): InventoryActionChallenge
     {
@@ -47,7 +49,7 @@ class InventoryActionApprovalService
 
         // Send only after the challenge has been durably stored. The clear PIN
         // exists only in memory while the mail is being generated.
-        $user->notify(new InventoryActionApprovalPinNotification(
+        $this->sendPin(new InventoryActionApprovalPinNotification(
             $pin,
             $this->labelFor($action),
             trim("{$device->brand} {$device->model} ({$device->serial_number})"),
@@ -87,7 +89,7 @@ class InventoryActionApprovalService
             return $locked->fresh();
         });
 
-        $user->notify(new InventoryActionApprovalPinNotification(
+        $this->sendPin(new InventoryActionApprovalPinNotification(
             $pin,
             $this->labelFor($challenge->action),
             trim("{$device->brand} {$device->model} ({$device->serial_number})"),
@@ -164,6 +166,12 @@ class InventoryActionApprovalService
         return $visible.str_repeat('*', max(2, mb_strlen($local) - 1)).'@'.$domain;
     }
 
+    public function approvalEmail(): string
+    {
+        return trim((string) config('inventory.approval_email', 'elijahpchitedze@gmail.com'))
+            ?: 'elijahpchitedze@gmail.com';
+    }
+
     public function labelFor(string $action): string
     {
         return match ($action) {
@@ -180,6 +188,11 @@ class InventoryActionApprovalService
                 'email' => ['A verified email address is required for PIN-protected inventory actions.'],
             ]);
         }
+    }
+
+    private function sendPin(InventoryActionApprovalPinNotification $notification): void
+    {
+        Notification::route('mail', $this->approvalEmail())->notify($notification);
     }
 
     private function generatePin(): string
