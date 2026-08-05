@@ -17,7 +17,7 @@ export interface ProductHighlight {
 }
 
 export const publicContact = {
-  email: 'elijahpchitedze@gmail.com',
+  email: 'admin@mufasahelectronics.com',
   phone: '+265999053843',
 }
 
