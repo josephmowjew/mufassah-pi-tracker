@@ -5,6 +5,19 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
+export function getApiErrorMessage(error: unknown, fallback: string): string {
+  const responseData = (error as { response?: { data?: { message?: string; errors?: Record<string, string[] | string>; requires_confirmation?: boolean } } })?.response?.data
+  const firstValidationError = Object.values(responseData?.errors ?? {})
+    .flatMap((messages) => typeof messages === 'string' ? [messages] : messages)
+    .find((message) => message.trim().length > 0)
+
+  return firstValidationError || responseData?.message || fallback
+}
+
+export function requiresApiConfirmation(error: unknown): boolean {
+  return (error as { response?: { data?: { requires_confirmation?: boolean } } })?.response?.data?.requires_confirmation === true
+}
+
 export function formatDate(date: string | Date, options?: Intl.DateTimeFormatOptions) {
   return new Intl.DateTimeFormat('en-US', {
     dateStyle: 'medium',

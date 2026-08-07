@@ -8,6 +8,7 @@ import apiClient from '@/api/client'
 import { toast } from 'sonner'
 import type { Device } from '@/types'
 import ActionChallengePinModal, { type ActionChallengeInfo } from '@/components/admin/ActionChallengePinModal'
+import { getApiErrorMessage, requiresApiConfirmation } from '@/lib/utils'
 
 interface PaginatedResponse {
   data: Device[]
@@ -32,6 +33,7 @@ export default function AdminDevicesPage() {
   const [deleteNotes, setDeleteNotes] = useState('')
   const [deleteChallenge, setDeleteChallenge] = useState<ActionChallengeInfo | null>(null)
   const [deleteChallengeError, setDeleteChallengeError] = useState<string | null>(null)
+  const [deleteWarning, setDeleteWarning] = useState<string | null>(null)
   const [newStatus, setNewStatus] = useState('')
   const [editForm, setEditForm] = useState({
     brand: '',
@@ -91,17 +93,27 @@ export default function AdminDevicesPage() {
   })
 
   const requestDeleteMutation = useMutation({
-    mutationFn: async ({ deviceId, reason, notes }: { deviceId: number; reason: string; notes?: string }) => {
-      const response = await apiClient.post<{ success: boolean; data: ActionChallengeInfo }>(`/admin/devices/${deviceId}/delete/request`, { reason, notes: notes || undefined })
+    mutationFn: async ({ deviceId, reason, notes, confirmHistoryLoss }: { deviceId: number; reason: string; notes?: string; confirmHistoryLoss?: boolean }) => {
+      const response = await apiClient.post<{ success: boolean; data: ActionChallengeInfo }>(`/admin/devices/${deviceId}/delete/request`, {
+        reason,
+        notes: notes || undefined,
+        confirm_history_loss: confirmHistoryLoss || undefined,
+      })
       return response.data.data
     },
     onSuccess: (challenge) => {
       setDeleteChallenge(challenge)
       setDeleteChallengeError(null)
-      toast.success('Verification PIN sent to your verified email')
+      setDeleteWarning(null)
+      toast.success('Verification PIN sent to the admin approval mailbox')
     },
-    onError: (error: Error & { response?: { data?: { message?: string } } }) => {
-      toast.error(error.response?.data?.message || 'Unable to request device deletion')
+    onError: (error) => {
+      if (requiresApiConfirmation(error)) {
+        setDeleteWarning(getApiErrorMessage(error, 'This device has inventory history. Confirm if you still want to delete it.'))
+        return
+      }
+      setDeleteWarning(null)
+      toast.error(getApiErrorMessage(error, 'Unable to request device deletion'))
     },
   })
 
@@ -119,8 +131,8 @@ export default function AdminDevicesPage() {
       setDeleteReason('')
       setDeleteNotes('')
     },
-    onError: (error: Error & { response?: { data?: { message?: string } } }) => {
-      setDeleteChallengeError(error.response?.data?.message || 'Invalid or expired PIN')
+    onError: (error) => {
+      setDeleteChallengeError(getApiErrorMessage(error, 'Invalid or expired PIN'))
     },
   })
 
@@ -134,8 +146,8 @@ export default function AdminDevicesPage() {
       setDeleteChallengeError(null)
       toast.success('A new PIN was sent')
     },
-    onError: (error: Error & { response?: { data?: { message?: string } } }) => {
-      setDeleteChallengeError(error.response?.data?.message || 'Unable to resend PIN')
+    onError: (error) => {
+      setDeleteChallengeError(getApiErrorMessage(error, 'Unable to resend PIN'))
     },
   })
 
@@ -336,7 +348,7 @@ export default function AdminDevicesPage() {
                             </Authorize>
                             <Authorize permission={PERMISSIONS.DELETE_DEVICES}>
                               <button
-                                onClick={() => setDeleteDevice(device)}
+                                onClick={() => { setDeleteDevice(device); setDeleteWarning(null) }}
                                 className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                                 title="Delete device"
                               >
@@ -649,7 +661,7 @@ export default function AdminDevicesPage() {
         <>
           <div
             className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-40"
-            onClick={() => setDeleteDevice(null)}
+            onClick={() => { setDeleteDevice(null); setDeleteWarning(null) }}
           />
           <div className="fixed inset-x-4 top-[20%] md:inset-x-auto md:left-1/2 md:-translate-x-1/2 md:w-full md:max-w-md bg-white rounded-2xl shadow-xl z-50 overflow-hidden">
             <div className="p-5 border-b border-slate-200">
@@ -676,19 +688,32 @@ export default function AdminDevicesPage() {
                 <label className="mb-1 block text-sm font-medium text-slate-700">Notes</label>
                 <textarea value={deleteNotes} onChange={(event) => setDeleteNotes(event.target.value)} rows={2} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" placeholder="Optional context" />
               </div>
+              {deleteWarning && (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                  <div className="flex items-start gap-2">
+                    <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0 text-amber-600" />
+                    <div>
+                      <p className="font-semibold">Confirm deletion of tracked inventory</p>
+                      <p className="mt-1">{deleteWarning}</p>
+                      <p className="mt-2">Proceeding will permanently delete this device after PIN verification. This cannot be undone.</p>
+                    </div>
+                  </div>
+                  <button type="button" onClick={() => setDeleteWarning(null)} className="mt-3 text-xs font-semibold text-amber-800 underline">Go back and review</button>
+                </div>
+              )}
               <div className="flex gap-2">
                 <button
-                  onClick={() => { setDeleteDevice(null); setDeleteReason(''); setDeleteNotes('') }}
+                  onClick={() => { setDeleteDevice(null); setDeleteWarning(null); setDeleteReason(''); setDeleteNotes('') }}
                   className="flex-1 px-4 py-2.5 bg-slate-100 text-slate-600 text-sm font-medium rounded-lg hover:bg-slate-200 transition-colors"
                 >
                   Cancel
                 </button>
                 <button
-                  onClick={() => requestDeleteMutation.mutate({ deviceId: deleteDevice.id, reason: deleteReason, notes: deleteNotes })}
+                  onClick={() => requestDeleteMutation.mutate({ deviceId: deleteDevice.id, reason: deleteReason, notes: deleteNotes, confirmHistoryLoss: Boolean(deleteWarning) })}
                   disabled={!deleteReason.trim() || requestDeleteMutation.isPending}
                   className="flex-1 px-4 py-2.5 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 >
-                  {requestDeleteMutation.isPending ? 'Sending PIN...' : 'Send PIN'}
+                  {requestDeleteMutation.isPending ? 'Sending PIN...' : deleteWarning ? 'Proceed & send PIN' : 'Send PIN'}
                 </button>
               </div>
             </div>
@@ -700,13 +725,13 @@ export default function AdminDevicesPage() {
         <ActionChallengePinModal
           challenge={deleteChallenge}
           title="Confirm device deletion"
-          description="Device deletion is irreversible. Enter the PIN sent to your verified email to continue."
+          description="Device deletion is irreversible. Enter the PIN sent to the administrator approval mailbox to continue."
           error={deleteChallengeError}
           isVerifying={verifyDeleteMutation.isPending}
           isResending={resendDeleteMutation.isPending}
           onVerify={(pin) => verifyDeleteMutation.mutate({ challengeId: deleteChallenge.challenge_id, pin })}
           onResend={() => resendDeleteMutation.mutate(deleteChallenge.challenge_id)}
-          onClose={() => { setDeleteChallenge(null); setDeleteChallengeError(null) }}
+          onClose={() => { setDeleteChallenge(null); setDeleteChallengeError(null); setDeleteWarning(null) }}
         />
       )}
 

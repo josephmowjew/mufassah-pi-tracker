@@ -9,6 +9,7 @@ use App\Http\Resources\InventoryMovementResource;
 use App\Models\ActivityLog;
 use App\Models\Device;
 use App\Models\InventoryActionChallenge;
+use App\Models\InventoryMovement;
 use App\Services\InventoryActionApprovalService;
 use App\Services\InventoryMovementService;
 use Illuminate\Http\JsonResponse;
@@ -65,28 +66,36 @@ class InventoryDispositionController extends BaseController
             'total_amount' => $unitPrice,
             'profit_amount' => round($unitPrice - $unitCost, 2),
             'pricing_source' => $pricingSource,
-        ]), 'A verification PIN was sent to your verified email address.', 201);
+        ]), 'A verification PIN was sent to the admin approval mailbox.', 201);
     }
 
     public function requestDeviceDeletion(Request $request, Device $device): JsonResponse
     {
         $this->authorizeInventoryBranch($request, $device);
-        $this->assertDeletable($device);
 
         $validated = $request->validate([
             'reason' => ['required', 'string', 'max:255'],
             'notes' => ['nullable', 'string', 'max:1000'],
+            'confirm_history_loss' => ['sometimes', 'boolean'],
         ]);
+        $confirmHistoryLoss = (bool) ($validated['confirm_history_loss'] ?? false);
+
+        if ($this->requiresDeletionConfirmation($device) && ! $confirmHistoryLoss) {
+            return $this->deletionConfirmationWarning();
+        }
+
+        $this->assertDeletable($device, $confirmHistoryLoss);
 
         $payload = [
             'device_id' => $device->id,
             'branch_id' => $device->branch_id,
             'reason' => $validated['reason'],
             'notes' => $validated['notes'] ?? null,
+            'confirm_history_loss' => $confirmHistoryLoss,
         ];
         $challenge = $this->approvalService->create($request->user(), InventoryActionChallenge::ACTION_DEVICE_DELETION, $payload, $device);
 
-        return $this->success($this->challengeData($challenge), 'A verification PIN was sent to your verified email address.', 201);
+        return $this->success($this->challengeData($challenge), 'A verification PIN was sent to the admin approval mailbox.', 201);
     }
 
     public function resend(Request $request, InventoryActionChallenge $challenge): JsonResponse
@@ -96,7 +105,7 @@ class InventoryDispositionController extends BaseController
         $this->authorizeInventoryBranch($request, $device);
         $challenge = $this->approvalService->resend($challenge, $request->user(), $device);
 
-        return $this->success($this->challengeData($challenge), 'A new verification PIN was sent to your verified email address.');
+        return $this->success($this->challengeData($challenge), 'A new verification PIN was sent to the admin approval mailbox.');
     }
 
     public function verify(Request $request, InventoryActionChallenge $challenge): JsonResponse
@@ -189,7 +198,7 @@ class InventoryDispositionController extends BaseController
     {
         $device = Device::query()->lockForUpdate()->findOrFail((int) $payload['device_id']);
         $this->authorizeInventoryBranch($request, $device);
-        $this->assertDeletable($device);
+        $this->assertDeletable($device, (bool) ($payload['confirm_history_loss'] ?? false));
 
         if ((int) ($payload['branch_id'] ?? 0) !== (int) $device->branch_id) {
             throw ValidationException::withMessages(['challenge' => ['The device branch changed after this PIN was requested. Request a new PIN.']]);
@@ -206,6 +215,7 @@ class InventoryDispositionController extends BaseController
         $this->logActivity(null, $request->user(), 'device_deleted', 'Device deleted after PIN verification', [
             'device_id' => $payload['device_id'],
             'reason' => $payload['reason'],
+            'confirm_history_loss' => (bool) ($payload['confirm_history_loss'] ?? false),
         ]);
 
         return ['device_id' => (int) $payload['device_id'], 'device_name' => $deviceName];
@@ -278,13 +288,55 @@ class InventoryDispositionController extends BaseController
         ]);
     }
 
-    private function assertDeletable(Device $device): void
+    private function requiresDeletionConfirmation(Device $device): bool
     {
-        if ($device->sale_id || $device->owner_id || $device->inventory_batch_id || $device->stock_transfer_request_id || $device->inventoryMovements()->exists()) {
+        return ! $this->hasProtectedDeletionHistory($device)
+            && ($device->inventory_batch_id !== null || $device->inventoryMovements()->exists());
+    }
+
+    private function deletionConfirmationWarning(): JsonResponse
+    {
+        return response()->json([
+            'success' => false,
+            'message' => 'This device has inventory history and requires explicit confirmation before deletion.',
+            'errors' => [
+                'device' => ['This device has inventory history. Proceeding will soft-delete the device while preserving the existing audit movements.'],
+            ],
+            'requires_confirmation' => true,
+        ], 409);
+    }
+
+    private function assertDeletable(Device $device, bool $allowInventoryBatch = false): void
+    {
+        if ($this->hasProtectedDeletionHistory($device)
+            || (! $allowInventoryBatch && ($device->inventory_batch_id || $device->inventoryMovements()->exists()))) {
             throw ValidationException::withMessages([
                 'device' => ['This device has ownership or inventory history and cannot be deleted. Use the appropriate inventory disposition instead.'],
             ]);
         }
+    }
+
+    private function hasProtectedDeletionHistory(Device $device): bool
+    {
+        if ($device->sale_id
+            || $device->owner_id
+            || $device->stock_transfer_request_id
+            || $device->inventory_status === InventoryStatus::SOLD
+            || $device->ownershipHistory()->exists()
+            || $device->warranties()->exists()) {
+            return true;
+        }
+
+        return $device->inventoryMovements()
+            ->whereIn('movement_type', [
+                InventoryMovement::TYPE_SALE,
+                InventoryMovement::TYPE_SALE_CANCELLED,
+                InventoryMovement::TYPE_RESERVATION,
+                InventoryMovement::TYPE_RESERVATION_CANCELLED,
+                InventoryMovement::TYPE_REFUND,
+                InventoryMovement::TYPE_ADMINISTRATIVE_SALE,
+            ])
+            ->exists();
     }
 
     private function logActivity(?Device $device, $user, string $event, string $description, array $properties): void

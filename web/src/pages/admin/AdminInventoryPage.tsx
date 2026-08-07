@@ -222,7 +222,7 @@ export default function AdminInventoryPage() {
       setSaleChallenge(challenge)
       setSaleChallengeError(null)
       setAdministrativeSaleDevice(null)
-      toast.success('Verification PIN sent to your verified email')
+      toast.success('Verification PIN sent to the admin approval mailbox')
     },
     onError: (error: Error & { response?: { data?: { message?: string } } }) => {
       toast.error(error.response?.data?.message || 'Unable to request administrative sale')

@@ -10,6 +10,7 @@ use App\Models\InventoryMovement;
 use App\Models\Sale;
 use App\Models\User;
 use App\Notifications\InventoryActionApprovalPinNotification;
+use App\Services\InventoryMovementService;
 use Illuminate\Routing\Middleware\ThrottleRequests;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Notification;
@@ -208,7 +209,8 @@ it('blocks legacy deletion and requires a PIN for a clean device deletion', func
 
     $challenge = $this->actingAs($this->admin)
         ->postJson("/api/v1/admin/devices/{$device->id}/delete/request", [
-            'reason' => 'Duplicate device record',
+            'reason' => 'OVERSTOCK',
+            'notes' => 'admin',
         ])
         ->assertCreated()
         ->json('data.challenge_id');
@@ -220,6 +222,43 @@ it('blocks legacy deletion and requires a PIN for a clean device deletion', func
     verifyDispositionChallenge($challenge, $this->admin)->assertSuccessful();
 
     expect(Device::withTrashed()->find($device->id)->deleted_at)->not->toBeNull();
+});
+
+it('warns before deleting tracked inventory and allows explicit PIN-confirmed override', function () {
+    $batch = InventoryBatch::create([
+        'batch_number' => 'BATCH-DSP-DELETE-00001',
+        'branch_id' => $this->branch->id,
+        'category_id' => $this->category->id,
+        'brand' => 'Tracked',
+        'model' => 'Inventory Device',
+        'quantity_received' => 1,
+        'buying_price' => 100000,
+        'target_selling_price' => 150000,
+    ]);
+    $device = dispositionDevice(['inventory_batch_id' => $batch->id]);
+    app(InventoryMovementService::class)->recordReceipt($device, $batch, null, $this->admin);
+
+    $this->actingAs($this->admin)
+        ->postJson("/api/v1/admin/devices/{$device->id}/delete/request", [
+            'reason' => 'OVERSTOCK',
+            'notes' => 'admin',
+        ])
+        ->assertStatus(409)
+        ->assertJsonPath('requires_confirmation', true)
+        ->assertJsonPath('errors.device.0', 'This device has inventory history. Proceeding will soft-delete the device while preserving the existing audit movements.');
+
+    $challenge = $this->actingAs($this->admin)
+        ->postJson("/api/v1/admin/devices/{$device->id}/delete/request", [
+            'reason' => 'OVERSTOCK',
+            'notes' => 'admin',
+            'confirm_history_loss' => true,
+        ])
+        ->assertCreated()
+        ->json('data.challenge_id');
+
+    verifyDispositionChallenge($challenge, $this->admin)->assertSuccessful();
+    expect(Device::withTrashed()->find($device->id)->deleted_at)->not->toBeNull()
+        ->and(InventoryMovement::where('movement_type', InventoryMovement::TYPE_RECEIPT)->where('device_id', $device->id)->exists())->toBeTrue();
 });
 
 it('enforces expiry, failed-attempt limits, and one-time replay protection', function () {
