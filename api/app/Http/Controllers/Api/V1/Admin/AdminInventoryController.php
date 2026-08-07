@@ -141,6 +141,10 @@ class AdminInventoryController extends BaseController
             $query->where('inventory_status', $request->inventory_status);
         }
 
+        if ($request->boolean('available_only')) {
+            $query->available()->whereNull('stock_transfer_request_id');
+        }
+
         // Filter by category
         if ($request->has('category_id')) {
             $query->where('category_id', $request->category_id);
@@ -175,6 +179,7 @@ class AdminInventoryController extends BaseController
                 'sold' => $group->where('inventory_status', InventoryStatus::SOLD)->count(),
                 'returned' => $group->where('inventory_status', InventoryStatus::RETURNED)->count(),
                 'faulty' => $group->where('inventory_status', InventoryStatus::FAULTY)->count(),
+                'available' => $group->whereIn('inventory_status', [InventoryStatus::IN_STOCK, InventoryStatus::RETURNED])->count(),
                 'total' => $group->count(),
                 'avg_price' => round($group->whereNotNull('purchase_price')->avg('purchase_price') ?? 0, 2),
                 'min_price' => $group->whereNotNull('purchase_price')->min('purchase_price'),

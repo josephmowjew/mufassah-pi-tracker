@@ -425,6 +425,7 @@ export interface GroupedInventoryItem {
   sold: number
   returned: number
   faulty: number
+  available?: number
   total: number
   avg_price: number
   min_price: number | null
@@ -592,15 +593,19 @@ export interface StockTransferRequest {
   to_branch_id: number
   requested_by_id: number
   decided_by_id: number | null
+  is_override: boolean
+  overridden_by_id: number | null
   reason: string
   notes: string | null
   decision_reason: string | null
   decided_at: string | null
+  overridden_at: string | null
   item_count?: number
   from_branch?: Branch
   to_branch?: Branch
   requested_by?: User
   decided_by?: User
+  overridden_by?: User
   items?: { id: number; device_id: number; device?: Device }[]
   created_at: string
   updated_at: string

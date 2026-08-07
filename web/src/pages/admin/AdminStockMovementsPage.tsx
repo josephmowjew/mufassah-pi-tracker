@@ -6,7 +6,7 @@ import { toast } from 'sonner'
 import apiClient, { type PaginatedResponse } from '@/api/client'
 import Authorize from '@/components/auth/Authorize'
 import { PERMISSIONS } from '@/stores/auth-store'
-import type { Branch, Device, InventoryMovement, InventoryMovementSummary, InventoryStatusValue, StockTransferRequest } from '@/types'
+import type { Branch, Device, GroupedInventoryItem, InventoryMovement, InventoryMovementSummary, InventoryStatusValue, StockTransferRequest } from '@/types'
 import { useAuthStore } from '@/stores/auth-store'
 
 const movementTypes = [
@@ -26,6 +26,7 @@ const movementTypes = [
 ]
 
 const statusOptions: InventoryStatusValue[] = ['in_stock', 'reserved', 'returned', 'faulty']
+type TransferSelectionMode = 'devices' | 'quantity'
 
 const label = (value: string | null | undefined) => {
   if (!value) return '-'
@@ -41,6 +42,12 @@ const formatMoney = (value: number | string | null | undefined) => {
   if (value === null || value === undefined) return '-'
   return `MWK ${Number(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }
+
+const transferProductKey = (product: Pick<GroupedInventoryItem, 'category_id' | 'brand' | 'model' | 'color'>) =>
+  [product.category_id, product.brand, product.model, product.color ?? ''].join('::')
+
+const transferProductLabel = (product: Pick<GroupedInventoryItem, 'brand' | 'model' | 'color'>) =>
+  product.brand + ' ' + product.model + (product.color ? ' - ' + product.color : '')
 
 const extractErrors = (error: unknown) => {
   const response = error as { response?: { data?: { errors?: Record<string, string[]>; message?: string } } }
@@ -62,12 +69,16 @@ export default function AdminStockMovementsPage() {
   const [selectedDeviceIds, setSelectedDeviceIds] = useState<number[]>([])
   const [sourceBranchId, setSourceBranchId] = useState('')
   const [destinationBranchId, setDestinationBranchId] = useState('')
+  const [transferSelectionMode, setTransferSelectionMode] = useState<TransferSelectionMode>('devices')
+  const [transferQuantities, setTransferQuantities] = useState<Record<string, string>>({})
+  const [quantityErrors, setQuantityErrors] = useState<Record<string, string>>({})
   const [adjustStatus, setAdjustStatus] = useState<InventoryStatusValue>('in_stock')
   const [reason, setReason] = useState('')
   const [notes, setNotes] = useState('')
   const [formErrors, setFormErrors] = useState<Record<string, string[]>>({})
   const [decisionTarget, setDecisionTarget] = useState<StockTransferRequest | null>(null)
   const [decisionReason, setDecisionReason] = useState('')
+  const [transferOverrideWarning, setTransferOverrideWarning] = useState<string | null>(null)
 
   const movementQuery = useMemo(() => {
     const params = new URLSearchParams({ page: page.toString(), per_page: '15' })
@@ -118,7 +129,7 @@ export default function AdminStockMovementsPage() {
   })
 
   const { data: availableDevices, isLoading: devicesLoading } = useQuery({
-    queryKey: ['stock-movement-devices', showTransferModal ? sourceBranchId : branchId],
+    queryKey: ['stock-movement-devices', showTransferModal ? sourceBranchId : branchId, transferSelectionMode],
     queryFn: async () => {
       const params = new URLSearchParams({ available_only: '1', per_page: '100' })
       const selectedBranchId = showTransferModal ? sourceBranchId : branchId
@@ -126,7 +137,19 @@ export default function AdminStockMovementsPage() {
       const response = await apiClient.get<{ success: boolean; data: Device[] }>(`/admin/inventory?${params}`)
       return response.data.data
     },
-    enabled: (showTransferModal && !!sourceBranchId) || showAdjustModal,
+    enabled: ((showTransferModal && !!sourceBranchId && transferSelectionMode === 'devices') || showAdjustModal),
+  })
+
+  const { data: transferQuantityOptions = [], isLoading: quantityOptionsLoading } = useQuery({
+    queryKey: ['stock-transfer-quantity-options', sourceBranchId],
+    queryFn: async () => {
+      const params = new URLSearchParams({ branch_id: sourceBranchId, available_only: '1' })
+      const response = await apiClient.get<{ success: boolean; data: { data: GroupedInventoryItem[]; total: number } }>(
+        `/admin/inventory/grouped?${params.toString()}`
+      )
+      return response.data.data.data
+    },
+    enabled: showTransferModal && !!sourceBranchId && transferSelectionMode === 'quantity',
   })
 
   const detailQuery = useQuery({
@@ -149,6 +172,7 @@ export default function AdminStockMovementsPage() {
     queryClient.invalidateQueries({ queryKey: ['stock-movements'] })
     queryClient.invalidateQueries({ queryKey: ['stock-movements-summary'] })
     queryClient.invalidateQueries({ queryKey: ['stock-movement-devices'] })
+    queryClient.invalidateQueries({ queryKey: ['stock-transfer-quantity-options'] })
     queryClient.invalidateQueries({ queryKey: ['inventory'] })
     queryClient.invalidateQueries({ queryKey: ['inventory-stats'] })
     queryClient.invalidateQueries({ queryKey: ['inventory-batches'] })
@@ -156,22 +180,109 @@ export default function AdminStockMovementsPage() {
     queryClient.invalidateQueries({ queryKey: ['stock-transfer-requests'] })
   }
 
+  const quantitySelections = useMemo(
+    () => transferQuantityOptions.flatMap((option) => {
+      const raw = transferQuantities[transferProductKey(option)]?.trim() || ''
+      return raw ? [{ option, quantity: Number(raw) }] : []
+    }),
+    [transferQuantities, transferQuantityOptions]
+  )
+
+  const validateQuantityTransfer = () => {
+    const nextErrors: Record<string, string> = {}
+    let totalQuantity = 0
+
+    transferQuantityOptions.forEach((option) => {
+      const key = transferProductKey(option)
+      const raw = transferQuantities[key]?.trim() || ''
+      if (!raw) return
+
+      const quantity = Number(raw)
+      const available = option.available ?? option.in_stock + option.returned
+      if (!/^\d+$/.test(raw)) {
+        nextErrors[key] = raw.startsWith('-') ? 'Quantity cannot be negative.' : 'Enter a whole number of devices.'
+      } else if (!Number.isInteger(quantity) || quantity < 1) {
+        nextErrors[key] = 'Quantity must be at least 1.'
+      } else if (quantity > available) {
+        nextErrors[key] = `Only ${available} available; enter ${available} or fewer.`
+      } else {
+        totalQuantity += quantity
+      }
+    })
+
+    if (totalQuantity > 100) {
+      nextErrors._total = 'The total quantity cannot exceed 100 devices per transfer.'
+    } else if (totalQuantity === 0 && Object.keys(nextErrors).length === 0) {
+      nextErrors._total = 'Enter a quantity for at least one product.'
+    }
+
+    setQuantityErrors(nextErrors)
+    setFormErrors((current) => {
+      const next = { ...current }
+      delete next.product_quantities
+      if (Object.keys(nextErrors).length > 0) {
+        next.product_quantities = [nextErrors._total || 'Correct the highlighted quantities.']
+      }
+      return next
+    })
+
+    return Object.keys(nextErrors).length === 0 && totalQuantity > 0
+  }
+
+  const submitTransfer = () => {
+    if (transferSelectionMode === 'quantity' && !validateQuantityTransfer()) return
+    if (transferSelectionMode === 'devices' && selectedDeviceIds.length === 0) {
+      setFormErrors((current) => ({ ...current, device_ids: ['Select at least one device to transfer.'] }))
+      return
+    }
+    transferMutation.mutate({})
+  }
+
   const transferMutation = useMutation({
-    mutationFn: async () => {
-      await apiClient.post('/admin/stock-movements/transfer-requests', {
-        device_ids: selectedDeviceIds,
+    mutationFn: async ({ override = false }: { override?: boolean } = {}) => {
+      const selection = transferSelectionMode === 'quantity'
+        ? {
+            product_quantities: quantitySelections.map(({ option, quantity }) => ({
+              category_id: option.category_id,
+              brand: option.brand,
+              model: option.model,
+              color: option.color,
+              quantity,
+            })),
+          }
+        : { device_ids: selectedDeviceIds }
+
+      return apiClient.post('/admin/stock-movements/transfer-requests', {
+        ...selection,
         from_branch_id: sourceBranchId ? Number(sourceBranchId) : undefined,
         to_branch_id: destinationBranchId ? Number(destinationBranchId) : undefined,
         reason,
         notes: notes || undefined,
+        override_destination_receipt: override || undefined,
       })
     },
-    onSuccess: () => {
-      toast.success('Stock transfer request submitted')
+    onSuccess: (response) => {
+      toast.success(response.data?.data?.is_override ? 'Stock transferred without destination receipt' : 'Stock transfer request submitted')
       closeActionModals()
       invalidateStockQueries()
     },
-    onError: (error) => setFormErrors(extractErrors(error)),
+    onError: (error) => {
+      const response = error as { response?: { data?: { requires_override?: boolean; warning?: string } } }
+      if (response.response?.data?.requires_override) {
+        setTransferOverrideWarning(response.response.data.warning || 'A super-admin override will transfer the stock immediately without a destination receiving step.')
+      } else {
+        setTransferOverrideWarning(null)
+      }
+      const errors = extractErrors(error)
+      const mappedQuantityErrors: Record<string, string> = {}
+      Object.entries(errors).forEach(([field, messages]) => {
+        const match = field.match(/^product_quantities\.(\d+)\.quantity$/)
+        const option = match ? quantitySelections[Number(match[1])]?.option : undefined
+        if (option && messages?.[0]) mappedQuantityErrors[transferProductKey(option)] = messages[0]
+      })
+      setQuantityErrors(mappedQuantityErrors)
+      setFormErrors(errors)
+    },
   })
 
   const decisionMutation = useMutation({
@@ -205,10 +316,14 @@ export default function AdminStockMovementsPage() {
     setSelectedDeviceIds([])
     setSourceBranchId('')
     setDestinationBranchId('')
+    setTransferSelectionMode('devices')
+    setTransferQuantities({})
+    setQuantityErrors({})
     setAdjustStatus('in_stock')
     setReason('')
     setNotes('')
     setFormErrors({})
+    setTransferOverrideWarning(null)
   }
 
   const toggleDevice = (deviceId: number) => {
@@ -264,14 +379,14 @@ export default function AdminStockMovementsPage() {
 
         <div className="rounded-lg border border-slate-200 bg-white">
           <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
-            <div><h2 className="font-semibold text-slate-900">Transfer Requests</h2><p className="text-sm text-slate-500">Requests only move stock after approval.</p></div>
+            <div><h2 className="font-semibold text-slate-900">Transfer Requests</h2><p className="text-sm text-slate-500">Standard requests move stock after destination approval; super-admin overrides complete immediately.</p></div>
             {transferRequests.filter((request) => request.status === 'pending').length > 0 && <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-800">{transferRequests.filter((request) => request.status === 'pending').length} pending</span>}
           </div>
           <div className="divide-y divide-slate-100">
             {transferRequests.length === 0 ? <p className="px-4 py-6 text-sm text-slate-500">No transfer requests.</p> : transferRequests.map((request) => {
               const canApprove = getUserRoles().includes('super_admin') || request.to_branch?.manager_id === user?.id
               const canCancel = request.requested_by_id === user?.id
-              return <div key={request.id} className="flex flex-wrap items-center gap-3 px-4 py-3 text-sm"><div className="min-w-48"><p className="font-medium text-slate-900">{request.request_number}</p><p className="text-slate-500">{request.from_branch?.name} to {request.to_branch?.name} · {request.item_count || 0} device(s)</p></div><p className="flex-1 text-slate-600">{request.reason}</p><RequestStatus status={request.status} />{request.status === 'pending' && canApprove && <><button onClick={() => decisionMutation.mutate({ request, action: 'approve' })} className="rounded-md bg-emerald-600 px-3 py-1.5 text-white hover:bg-emerald-700">Approve</button><button onClick={() => setDecisionTarget(request)} className="rounded-md border border-red-200 px-3 py-1.5 text-red-700 hover:bg-red-50">Reject</button></>}{request.status === 'pending' && canCancel && <button onClick={() => decisionMutation.mutate({ request, action: 'cancel' })} className="rounded-md border border-slate-200 px-3 py-1.5 text-slate-700">Cancel</button>}</div>
+              return <div key={request.id} className="flex flex-wrap items-center gap-3 px-4 py-3 text-sm"><div className="min-w-48"><p className="font-medium text-slate-900">{request.request_number}</p><p className="text-slate-500">{request.from_branch?.name} to {request.to_branch?.name} · {request.item_count || 0} device(s)</p></div><p className="flex-1 text-slate-600">{request.reason}</p><RequestStatus status={request.status} />{request.is_override && <span className="rounded-full bg-violet-100 px-2 py-1 text-xs font-medium text-violet-800">Super-admin override</span>}{request.status === 'pending' && canApprove && <><button onClick={() => decisionMutation.mutate({ request, action: 'approve' })} className="rounded-md bg-emerald-600 px-3 py-1.5 text-white hover:bg-emerald-700">Approve</button><button onClick={() => setDecisionTarget(request)} className="rounded-md border border-red-200 px-3 py-1.5 text-red-700 hover:bg-red-50">Reject</button></>}{request.status === 'pending' && canCancel && <button onClick={() => decisionMutation.mutate({ request, action: 'cancel' })} className="rounded-md border border-slate-200 px-3 py-1.5 text-slate-700">Cancel</button>}</div>
             })}
           </div>
         </div>
@@ -377,10 +492,16 @@ export default function AdminStockMovementsPage() {
             setSourceBranchId={(value) => {
               setSourceBranchId(value)
               setSelectedDeviceIds([])
+              setTransferQuantities({})
+              setQuantityErrors({})
+              setTransferOverrideWarning(null)
               setFormErrors((current) => ({ ...current, device_ids: [] }))
             }}
             destinationBranchId={destinationBranchId}
-            setDestinationBranchId={setDestinationBranchId}
+            setDestinationBranchId={(value) => {
+              setDestinationBranchId(value)
+              setTransferOverrideWarning(null)
+            }}
             adjustStatus={adjustStatus}
             setAdjustStatus={setAdjustStatus}
             reason={reason}
@@ -390,8 +511,29 @@ export default function AdminStockMovementsPage() {
             errors={formErrors}
             isTransfer={showTransferModal}
             isSubmitting={transferMutation.isPending || adjustMutation.isPending}
+            transferSelectionMode={transferSelectionMode}
+            setTransferSelectionMode={(mode) => {
+              setTransferSelectionMode(mode)
+              setSelectedDeviceIds([])
+              setTransferQuantities({})
+              setQuantityErrors({})
+              setFormErrors({})
+            }}
+            quantityOptions={transferQuantityOptions}
+            quantityOptionsLoading={quantityOptionsLoading}
+            transferQuantities={transferQuantities}
+            setTransferQuantity={(key, value) => {
+              setTransferQuantities((current) => ({ ...current, [key]: value }))
+              setQuantityErrors((current) => ({ ...current, [key]: '' }))
+              setFormErrors((current) => ({ ...current, product_quantities: [] }))
+              setTransferOverrideWarning(null)
+            }}
+            quantityErrors={quantityErrors}
+            overrideWarning={transferOverrideWarning}
+            onOverride={() => transferMutation.mutate({ override: true })}
+            onDismissOverrideWarning={() => setTransferOverrideWarning(null)}
             onClose={closeActionModals}
-            onSubmit={() => showTransferModal ? transferMutation.mutate() : adjustMutation.mutate()}
+            onSubmit={() => showTransferModal ? submitTransfer() : adjustMutation.mutate()}
           />
         )}
 
@@ -514,6 +656,16 @@ interface ActionModalProps {
   errors: Record<string, string[]>
   isTransfer: boolean
   isSubmitting: boolean
+  transferSelectionMode: TransferSelectionMode
+  setTransferSelectionMode: (mode: TransferSelectionMode) => void
+  quantityOptions: GroupedInventoryItem[]
+  quantityOptionsLoading: boolean
+  transferQuantities: Record<string, string>
+  setTransferQuantity: (key: string, value: string) => void
+  quantityErrors: Record<string, string>
+  overrideWarning: string | null
+  onOverride: () => void
+  onDismissOverrideWarning: () => void
   onClose: () => void
   onSubmit: () => void
 }
@@ -539,6 +691,16 @@ function ActionModal(props: ActionModalProps) {
     errors,
     isTransfer,
     isSubmitting,
+    transferSelectionMode,
+    setTransferSelectionMode,
+    quantityOptions,
+    quantityOptionsLoading,
+    transferQuantities,
+    setTransferQuantity,
+    quantityErrors,
+    overrideWarning,
+    onOverride,
+    onDismissOverrideWarning,
     onClose,
     onSubmit,
   } = props
@@ -556,7 +718,7 @@ function ActionModal(props: ActionModalProps) {
         <div className="space-y-5 p-6">
           {isTransfer ? (
             <div className="grid gap-4 sm:grid-cols-2">
-              <FieldError label="Source Branch" errors={errors.branch_id}>
+              <FieldError label="Source Branch" errors={errors.from_branch_id || errors.branch_id}>
                 <select value={sourceBranchId} onChange={(event) => setSourceBranchId(event.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm">
                   <option value="">Select source branch</option>
                   {branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
@@ -580,17 +742,77 @@ function ActionModal(props: ActionModalProps) {
           )}
 
           <FieldError label="Reason" errors={errors.reason}>
-            <input value={reason} onChange={(event) => setReason(event.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" />
+            <input
+              value={reason}
+              onChange={(event) => setReason(event.target.value)}
+              placeholder={isTransfer ? 'e.g. Restock the Lilongwe branch' : 'e.g. Damaged during inspection'}
+              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm placeholder:text-slate-400"
+            />
           </FieldError>
 
           <FieldError label="Notes" errors={errors.notes}>
-            <textarea value={notes} onChange={(event) => setNotes(event.target.value)} rows={3} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" />
+            <textarea
+              value={notes}
+              onChange={(event) => setNotes(event.target.value)}
+              rows={3}
+              placeholder="Optional details for the receiving branch"
+              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm placeholder:text-slate-400"
+            />
           </FieldError>
+
+          {isTransfer && (
+            <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+              <p className="mb-2 text-sm font-medium text-slate-700">How do you want to select stock?</p>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => setTransferSelectionMode('devices')}
+                  className={`rounded-md px-3 py-1.5 text-sm font-medium ${transferSelectionMode === 'devices' ? 'bg-blue-600 text-white' : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-100'}`}
+                >
+                  Select individual devices
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTransferSelectionMode('quantity')}
+                  className={`rounded-md px-3 py-1.5 text-sm font-medium ${transferSelectionMode === 'quantity' ? 'bg-blue-600 text-white' : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-100'}`}
+                >
+                  Select by quantity
+                </button>
+              </div>
+              <p className="mt-2 text-xs text-slate-500">
+                Quantity selection chooses available units from the selected source branch and validates the count again when submitted.
+              </p>
+            </div>
+          )}
+
+          {isTransfer && overrideWarning && (
+            <div className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
+              <div className="flex items-start gap-3">
+                <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
+                <div className="flex-1">
+                  <p className="font-semibold">Super-admin override required</p>
+                  <p className="mt-1">{overrideWarning}</p>
+                  <p className="mt-2">The devices will leave the source branch immediately, the transfer will be marked approved, and the destination will be responsible for the stock without a receiving confirmation.</p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button onClick={onDismissOverrideWarning} disabled={isSubmitting} className="rounded-md border border-amber-300 bg-white px-3 py-1.5 font-medium text-amber-900 hover:bg-amber-100 disabled:opacity-60">Choose another destination</button>
+                    <button onClick={onOverride} disabled={isSubmitting} className="inline-flex items-center gap-2 rounded-md bg-amber-600 px-3 py-1.5 font-medium text-white hover:bg-amber-700 disabled:opacity-60">
+                      {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
+                      Proceed without receipt
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
 
           <div>
             <div className="mb-2 flex items-center justify-between">
-              <p className="text-sm font-medium text-slate-700">Devices</p>
-              <p className="text-xs text-slate-500">{selectedDeviceIds.length} selected</p>
+              <p className="text-sm font-medium text-slate-700">{isTransfer && transferSelectionMode === 'quantity' ? 'Product quantities' : 'Devices'}</p>
+              <p className="text-xs text-slate-500">
+                {isTransfer && transferSelectionMode === 'quantity'
+                  ? `${Object.values(transferQuantities).reduce((total, value) => total + (Number(value) || 0), 0)} requested`
+                  : `${selectedDeviceIds.length} selected`}
+              </p>
             </div>
             {errors.device_ids?.length > 0 && (
               <div className="mb-2 flex items-start gap-2 rounded-lg bg-red-50 p-3 text-sm text-red-700">
@@ -598,8 +820,61 @@ function ActionModal(props: ActionModalProps) {
                 <span>{errors.device_ids[0]}</span>
               </div>
             )}
+            {isTransfer && transferSelectionMode === 'quantity' && errors.product_quantities?.length > 0 && (
+              <div className="mb-2 flex items-start gap-2 rounded-lg bg-red-50 p-3 text-sm text-red-700">
+                <AlertTriangle className="mt-0.5 h-4 w-4" />
+                <span>{errors.product_quantities[0]}</span>
+              </div>
+            )}
             <div className="max-h-72 overflow-y-auto rounded-lg border border-slate-200">
-              {devicesLoading ? (
+              {isTransfer && transferSelectionMode === 'quantity' ? (
+                quantityOptionsLoading ? (
+                  <div className="flex items-center justify-center py-10">
+                    <Loader2 className="h-6 w-6 animate-spin text-blue-500" />
+                  </div>
+                ) : !sourceBranchId ? (
+                  <p className="p-4 text-sm text-slate-500">Select a source branch to load available product quantities</p>
+                ) : quantityOptions.length === 0 ? (
+                  <p className="p-4 text-sm text-slate-500">No available products found for the selected branch</p>
+                ) : (
+                  <div className="divide-y divide-slate-200">
+                    {quantityOptions.map((option) => {
+                      const key = transferProductKey(option)
+                      const inputId = `transfer-quantity-${key.replace(/[^a-zA-Z0-9_-]/g, '-')}`
+                      const errorId = `${inputId}-error`
+                      const available = option.available ?? option.in_stock + option.returned
+                      return (
+                        <div key={key} className="flex items-center gap-3 px-4 py-3">
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-sm font-medium text-slate-900">{transferProductLabel(option)}</p>
+                            <p className="text-xs text-slate-500">{available} available in this branch ({option.in_stock} in stock, {option.returned} returned)</p>
+                            {quantityErrors[key] && <p id={errorId} className="mt-1 text-xs text-red-600">{quantityErrors[key]}</p>}
+                          </div>
+                          <div className="shrink-0 text-right">
+                            <label htmlFor={inputId} className="mb-1 block text-xs font-medium text-slate-600">
+                              Quantity to transfer
+                            </label>
+                            <input
+                              id={inputId}
+                              aria-label={`Quantity for ${transferProductLabel(option)}`}
+                              aria-describedby={quantityErrors[key] ? errorId : undefined}
+                              aria-invalid={Boolean(quantityErrors[key])}
+                              type="number"
+                              min={1}
+                              max={available}
+                              step={1}
+                              value={transferQuantities[key] ?? ''}
+                              onChange={(event) => setTransferQuantity(key, event.target.value)}
+                              placeholder="Enter quantity"
+                              className={`w-32 rounded-lg border px-3 py-2 text-right text-sm placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 ${quantityErrors[key] ? 'border-red-300 bg-red-50' : 'border-slate-200'}`}
+                            />
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )
+              ) : devicesLoading ? (
                 <div className="flex items-center justify-center py-10">
                   <Loader2 className="h-6 w-6 animate-spin text-blue-500" />
                 </div>

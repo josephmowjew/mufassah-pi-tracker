@@ -5,6 +5,7 @@ use App\Models\Branch;
 use App\Models\Device;
 use App\Models\DeviceCategory;
 use App\Models\InventoryMovement;
+use App\Models\StockTransferRequest;
 use App\Models\User;
 
 beforeEach(function () {
@@ -141,6 +142,105 @@ describe('Admin Stock Movements', function () {
         expect($device->stock_transfer_request_id)->not->toBeNull();
     });
 
+    it('creates a transfer from a requested product quantity', function () {
+        $devices = collect(range(1, 3))->map(fn () => Device::factory()->create([
+            'category_id' => $this->category->id,
+            'branch_id' => $this->branch->id,
+            'brand' => 'Samsung',
+            'model' => 'Galaxy S25',
+            'color' => 'Black',
+            'owner_id' => null,
+            'inventory_status' => InventoryStatus::IN_STOCK,
+        ]));
+
+        $response = $this->actingAs($this->storeAdmin)
+            ->postJson('/api/v1/admin/stock-movements/transfer-requests', [
+                'product_quantities' => [[
+                    'category_id' => $this->category->id,
+                    'brand' => 'Samsung',
+                    'model' => 'Galaxy S25',
+                    'color' => 'Black',
+                    'quantity' => 2,
+                ]],
+                'to_branch_id' => $this->otherBranch->id,
+                'reason' => 'Quantity-based restock',
+            ])
+            ->assertCreated()
+            ->assertJsonPath('data.item_count', 2);
+
+        $transfer = StockTransferRequest::findOrFail($response->json('data.id'));
+        $selectedIds = $transfer->items()->pluck('device_id');
+        expect($selectedIds)->toHaveCount(2);
+        expect($devices->pluck('id')->diff($selectedIds))->toHaveCount(1);
+        expect($devices->whereIn('id', $selectedIds)->every(fn ($device) => $device->fresh()->stock_transfer_request_id === $transfer->id))->toBeTrue();
+
+        $this->actingAs($this->destinationManager)
+            ->postJson("/api/v1/admin/stock-movements/transfer-requests/{$transfer->id}/approve")
+            ->assertSuccessful();
+
+        expect($devices->whereIn('id', $selectedIds)->every(fn ($device) => (int) $device->fresh()->branch_id === (int) $this->otherBranch->id))->toBeTrue();
+        expect($devices->whereNotIn('id', $selectedIds)->first()->fresh()->branch_id)->toBe($this->branch->id);
+    });
+
+    it('rejects zero or negative product transfer quantities with a clear validation error', function () {
+        $device = Device::factory()->create([
+            'category_id' => $this->category->id,
+            'branch_id' => $this->branch->id,
+            'brand' => 'LG',
+            'model' => 'OLED C4',
+            'color' => null,
+            'owner_id' => null,
+            'inventory_status' => InventoryStatus::IN_STOCK,
+        ]);
+
+        $response = $this->actingAs($this->storeAdmin)
+            ->postJson('/api/v1/admin/stock-movements/transfer-requests', [
+                'product_quantities' => [[
+                    'category_id' => $device->category_id,
+                    'brand' => $device->brand,
+                    'model' => $device->model,
+                    'quantity' => -1,
+                ]],
+                'to_branch_id' => $this->otherBranch->id,
+                'reason' => 'Invalid quantity',
+            ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('product_quantities.0.quantity');
+
+        expect($response->json('errors')['product_quantities.0.quantity'][0])->toBe('Quantity must be at least 1.');
+    });
+
+    it('rejects a product quantity above the available count', function () {
+        $device = Device::factory()->create([
+            'category_id' => $this->category->id,
+            'branch_id' => $this->branch->id,
+            'brand' => 'Sony',
+            'model' => 'Bravia 9',
+            'color' => 'Black',
+            'owner_id' => null,
+            'inventory_status' => InventoryStatus::IN_STOCK,
+        ]);
+
+        $response = $this->actingAs($this->storeAdmin)
+            ->postJson('/api/v1/admin/stock-movements/transfer-requests', [
+                'product_quantities' => [[
+                    'category_id' => $device->category_id,
+                    'brand' => $device->brand,
+                    'model' => $device->model,
+                    'color' => $device->color,
+                    'quantity' => 2,
+                ]],
+                'to_branch_id' => $this->otherBranch->id,
+                'reason' => 'Too many devices',
+            ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('product_quantities.0.quantity');
+
+        expect($response->json('errors')['product_quantities.0.quantity'][0])->toBe('Only 1 available for Sony Bravia 9 Black; you requested 2.');
+
+        expect($device->fresh()->stock_transfer_request_id)->toBeNull();
+    });
+
     it('holds stock until the destination manager approves a transfer request', function () {
         $device = Device::factory()->create(['category_id' => $this->category->id, 'branch_id' => $this->branch->id, 'owner_id' => null, 'inventory_status' => InventoryStatus::IN_STOCK]);
 
@@ -158,6 +258,115 @@ describe('Admin Stock Movements', function () {
         expect($device->fresh()->branch_id)->toBe($this->otherBranch->id);
         expect($device->fresh()->stock_transfer_request_id)->toBeNull();
         expect(InventoryMovement::where('movement_type', InventoryMovement::TYPE_TRANSFER)->exists())->toBeTrue();
+    });
+
+    it('allows a super admin to override destination receipt when no branch manager is assigned', function () {
+        $managerlessBranch = Branch::create([
+            'name' => 'Unstaffed Branch',
+            'code' => 'UNSTAFFED',
+            'is_active' => true,
+        ]);
+        $device = Device::factory()->create([
+            'category_id' => $this->category->id,
+            'branch_id' => $this->branch->id,
+            'owner_id' => null,
+            'inventory_status' => InventoryStatus::IN_STOCK,
+        ]);
+        $payload = [
+            'device_ids' => [$device->id],
+            'to_branch_id' => $managerlessBranch->id,
+            'reason' => 'Rebalance unstaffed branch',
+            'notes' => 'Super-admin direct transfer',
+        ];
+
+        $this->actingAs($this->admin)
+            ->postJson('/api/v1/admin/stock-movements/transfer-requests', $payload)
+            ->assertStatus(409)
+            ->assertJsonPath('requires_override', true)
+            ->assertJsonPath('data', null);
+
+        expect($device->fresh()->branch_id)->toBe($this->branch->id);
+        expect($device->fresh()->stock_transfer_request_id)->toBeNull();
+
+        $response = $this->actingAs($this->admin)
+            ->postJson('/api/v1/admin/stock-movements/transfer-requests', [
+                ...$payload,
+                'override_destination_receipt' => true,
+            ])
+            ->assertCreated()
+            ->assertJsonPath('data.status', StockTransferRequest::APPROVED)
+            ->assertJsonPath('data.is_override', true)
+            ->assertJsonPath('data.overridden_by_id', $this->admin->id);
+
+        $transferId = $response->json('data.id');
+        expect($device->fresh()->branch_id)->toBe($managerlessBranch->id);
+        expect($device->fresh()->stock_transfer_request_id)->toBeNull();
+        expect(StockTransferRequest::find($transferId)->overridden_at)->not->toBeNull();
+        expect(InventoryMovement::where('movement_type', InventoryMovement::TYPE_TRANSFER)
+            ->where('device_id', $device->id)
+            ->where('from_branch_id', $this->branch->id)
+            ->where('to_branch_id', $managerlessBranch->id)
+            ->exists())->toBeTrue();
+    });
+
+    it('does not allow a store admin to bypass destination receipt', function () {
+        $managerlessBranch = Branch::create([
+            'name' => 'Unstaffed Branch',
+            'code' => 'UNSTAFFED',
+            'is_active' => true,
+        ]);
+        $device = Device::factory()->create([
+            'category_id' => $this->category->id,
+            'branch_id' => $this->branch->id,
+            'owner_id' => null,
+            'inventory_status' => InventoryStatus::IN_STOCK,
+        ]);
+
+        $this->actingAs($this->storeAdmin)
+            ->postJson('/api/v1/admin/stock-movements/transfer-requests', [
+                'device_ids' => [$device->id],
+                'to_branch_id' => $managerlessBranch->id,
+                'reason' => 'Unauthorized direct transfer',
+                'override_destination_receipt' => true,
+            ])
+            ->assertForbidden();
+    });
+
+    it('allows a device to be transferred again after a completed transfer', function () {
+        $device = Device::factory()->create([
+            'category_id' => $this->category->id,
+            'branch_id' => $this->branch->id,
+            'owner_id' => null,
+            'inventory_status' => InventoryStatus::IN_STOCK,
+        ]);
+
+        $firstTransfer = $this->actingAs($this->storeAdmin)
+            ->postJson('/api/v1/admin/stock-movements/transfer-requests', [
+                'device_ids' => [$device->id],
+                'to_branch_id' => $this->otherBranch->id,
+                'reason' => 'Initial transfer',
+            ])
+            ->assertCreated()
+            ->json('data.id');
+
+        $this->actingAs($this->destinationManager)
+            ->postJson("/api/v1/admin/stock-movements/transfer-requests/{$firstTransfer}/approve")
+            ->assertSuccessful();
+
+        $this->actingAs($this->admin)
+            ->postJson('/api/v1/admin/stock-movements/transfer-requests', [
+                'device_ids' => [$device->id],
+                'from_branch_id' => $this->otherBranch->id,
+                'to_branch_id' => $this->branch->id,
+                'reason' => 'Return transfer',
+                'override_destination_receipt' => true,
+            ])
+            ->assertCreated()
+            ->assertJsonPath('data.is_override', true);
+
+        expect($device->fresh()->branch_id)->toBe($this->branch->id);
+        expect(StockTransferRequest::whereHas('items', fn ($query) => $query->where('device_id', $device->id))->count())->toBe(2);
+        expect(InventoryMovement::where('movement_type', InventoryMovement::TYPE_TRANSFER)->where('device_id', $device->id)->count())->toBe(2);
     });
 
     it('prevents store admins from transferring stock outside their source branch', function () {
