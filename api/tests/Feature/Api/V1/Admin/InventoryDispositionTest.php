@@ -228,6 +228,97 @@ it('uses the inventory batch buying price when the device cost is absent', funct
         ->assertJsonPath('data.summary.combined_inventory_realized_value', 120000);
 });
 
+it('deletes multiple devices with one PIN challenge and returns the complete result', function () {
+    $devices = [
+        dispositionDevice(['inventory_batch_id' => null]),
+        dispositionDevice(['inventory_batch_id' => null]),
+    ];
+    Notification::fake();
+
+    $challenge = $this->actingAs($this->admin)
+        ->postJson('/api/v1/admin/devices/bulk-delete/request', [
+            'device_ids' => collect($devices)->pluck('id')->all(),
+            'reason' => 'OVERSTOCK',
+            'notes' => 'Bulk cleanup',
+        ])
+        ->assertCreated()
+        ->assertJsonPath('data.device_count', 2)
+        ->json('data.challenge_id');
+
+    $result = verifyDispositionChallenge($challenge, $this->admin)
+        ->assertSuccessful()
+        ->assertJsonPath('data.deleted_count', 2);
+
+    expect($result->json('data.deleted_device_ids'))
+        ->toEqualCanonicalizing(collect($devices)->pluck('id')->all());
+
+    foreach ($devices as $device) {
+        expect(Device::withTrashed()->find($device->id)->deleted_at)->not->toBeNull();
+    }
+});
+
+it('warns for tracked devices in a bulk deletion and then deletes all after explicit confirmation', function () {
+    $batch = InventoryBatch::create([
+        'batch_number' => 'BATCH-DSP-BULK-DELETE-00001',
+        'branch_id' => $this->branch->id,
+        'category_id' => $this->category->id,
+        'brand' => 'Tracked',
+        'model' => 'Bulk Device',
+        'quantity_received' => 1,
+        'buying_price' => 100000,
+        'target_selling_price' => 150000,
+    ]);
+    $tracked = dispositionDevice(['inventory_batch_id' => $batch->id]);
+    app(InventoryMovementService::class)->recordReceipt($tracked, $batch, null, $this->admin);
+    $clean = dispositionDevice(['inventory_batch_id' => null]);
+    $deviceIds = [$tracked->id, $clean->id];
+
+    $this->actingAs($this->admin)
+        ->postJson('/api/v1/admin/devices/bulk-delete/request', [
+            'device_ids' => $deviceIds,
+            'reason' => 'OVERSTOCK',
+        ])
+        ->assertStatus(409)
+        ->assertJsonPath('requires_confirmation', true)
+        ->assertJsonPath('errors.device_ids.0', 'Some selected devices have inventory history. Proceeding will soft-delete them while preserving the existing audit movements.');
+
+    $challenge = $this->actingAs($this->admin)
+        ->postJson('/api/v1/admin/devices/bulk-delete/request', [
+            'device_ids' => $deviceIds,
+            'reason' => 'OVERSTOCK',
+            'confirm_history_loss' => true,
+        ])
+        ->assertCreated()
+        ->json('data.challenge_id');
+
+    verifyDispositionChallenge($challenge, $this->admin)->assertSuccessful();
+
+    expect(Device::withTrashed()->find($tracked->id)->deleted_at)->not->toBeNull()
+        ->and(Device::withTrashed()->find($clean->id)->deleted_at)->not->toBeNull();
+});
+
+it('keeps a bulk deletion atomic when a selected device becomes protected before PIN verification', function () {
+    $first = dispositionDevice(['inventory_batch_id' => null]);
+    $second = dispositionDevice(['inventory_batch_id' => null]);
+    $challenge = $this->actingAs($this->admin)
+        ->postJson('/api/v1/admin/devices/bulk-delete/request', [
+            'device_ids' => [$first->id, $second->id],
+            'reason' => 'Atomicity test',
+        ])
+        ->assertCreated()
+        ->json('data.challenge_id');
+
+    $second->update(['owner_id' => $this->admin->id]);
+
+    verifyDispositionChallenge($challenge, $this->admin)
+        ->assertStatus(422)
+        ->assertJsonValidationErrors('device');
+
+    expect(Device::find($first->id))->not->toBeNull()
+        ->and(Device::find($second->id))->not->toBeNull()
+        ->and(InventoryActionChallenge::find($challenge)->consumed_at)->toBeNull();
+});
+
 it('blocks legacy deletion and requires a PIN for a clean device deletion', function () {
     $device = dispositionDevice(['inventory_batch_id' => null]);
     Notification::fake();

@@ -402,6 +402,9 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::put('/devices/{device}', [AdminDeviceController::class, 'update'])->name('devices.update');
         Route::put('/devices/{device}/status', [AdminDeviceController::class, 'updateStatus'])->name('devices.status');
         Route::delete('/devices/{device}', [AdminDeviceController::class, 'destroy'])->name('devices.destroy');
+        Route::post('/devices/bulk-delete/request', [InventoryDispositionController::class, 'requestBulkDeviceDeletion'])
+            ->middleware(['permission:delete-devices', 'throttle:6,1'])
+            ->name('devices.bulk-delete.request');
         Route::post('/devices/{device}/delete/request', [InventoryDispositionController::class, 'requestDeviceDeletion'])
             ->middleware(['permission:delete-devices', 'throttle:6,1'])
             ->name('devices.delete.request');

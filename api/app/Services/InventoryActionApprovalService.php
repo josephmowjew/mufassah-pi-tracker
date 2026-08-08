@@ -24,7 +24,7 @@ class InventoryActionApprovalService
      * administrator mailbox. The PIN is never persisted or included in the
      * response.
      */
-    public function create(User $user, string $action, array $payload, Device $device): InventoryActionChallenge
+    public function create(User $user, string $action, array $payload, Device $device, ?string $targetLabel = null): InventoryActionChallenge
     {
         $this->ensureVerifiedEmail($user);
         $payload = $this->normalizePayload($payload);
@@ -32,7 +32,7 @@ class InventoryActionApprovalService
         $expiresAt = now()->addMinutes(self::EXPIRY_MINUTES);
 
         $challenge = DB::transaction(function () use ($user, $action, $payload, $pin, $expiresAt) {
-            $this->invalidatePendingChallenges($user, $action, $payload['device_id'] ?? null);
+            $this->invalidatePendingChallenges($user, $action, $this->payloadDeviceIds($payload));
 
             return InventoryActionChallenge::create([
                 'requested_by_id' => $user->id,
@@ -52,14 +52,14 @@ class InventoryActionApprovalService
         $this->sendPin(new InventoryActionApprovalPinNotification(
             $pin,
             $this->labelFor($action),
-            trim("{$device->brand} {$device->model} ({$device->serial_number})"),
+            $targetLabel ?: trim("{$device->brand} {$device->model} ({$device->serial_number})"),
             $expiresAt,
         ));
 
         return $challenge;
     }
 
-    public function resend(InventoryActionChallenge $challenge, User $user, Device $device): InventoryActionChallenge
+    public function resend(InventoryActionChallenge $challenge, User $user, Device $device, ?string $targetLabel = null): InventoryActionChallenge
     {
         $this->ensureVerifiedEmail($user);
 
@@ -92,7 +92,7 @@ class InventoryActionApprovalService
         $this->sendPin(new InventoryActionApprovalPinNotification(
             $pin,
             $this->labelFor($challenge->action),
-            trim("{$device->brand} {$device->model} ({$device->serial_number})"),
+            $targetLabel ?: trim("{$device->brand} {$device->model} ({$device->serial_number})"),
             $expiresAt,
         ));
 
@@ -200,8 +200,15 @@ class InventoryActionApprovalService
         return str_pad((string) random_int(0, 999999), 6, '0', STR_PAD_LEFT);
     }
 
-    private function invalidatePendingChallenges(User $user, string $action, ?int $deviceId): void
+    /**
+     * @param array<int, int>|null $deviceIds
+     */
+    private function invalidatePendingChallenges(User $user, string $action, ?array $deviceIds): void
     {
+        $deviceIds = $deviceIds === null
+            ? null
+            : array_values(array_unique(array_map('intval', $deviceIds)));
+
         $pending = InventoryActionChallenge::query()
             ->where('requested_by_id', $user->id)
             ->where('action', $action)
@@ -211,10 +218,30 @@ class InventoryActionApprovalService
 
         foreach ($pending as $challenge) {
             $payload = $challenge->payload ?? [];
-            if ($deviceId === null || (int) ($payload['device_id'] ?? 0) === $deviceId) {
+            $pendingDeviceIds = $this->payloadDeviceIds($payload) ?? [];
+            if ($deviceIds === null || array_intersect($deviceIds, $pendingDeviceIds) !== []) {
                 $challenge->update(['invalidated_at' => now()]);
             }
         }
+    }
+
+    /**
+     * Return the devices affected by a challenge payload. Supporting both
+     * shapes keeps existing single-device challenges backwards compatible.
+     *
+     * @return array<int, int>|null
+     */
+    private function payloadDeviceIds(array $payload): ?array
+    {
+        if (array_key_exists('device_ids', $payload)) {
+            return array_values(array_unique(array_map('intval', (array) $payload['device_ids'])));
+        }
+
+        if (array_key_exists('device_id', $payload)) {
+            return [(int) $payload['device_id']];
+        }
+
+        return null;
     }
 
     private function normalizePayload(array $payload): array

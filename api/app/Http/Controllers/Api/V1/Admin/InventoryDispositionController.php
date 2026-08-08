@@ -14,6 +14,7 @@ use App\Services\InventoryActionApprovalService;
 use App\Services\InventoryMovementService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Validation\ValidationException;
 
 class InventoryDispositionController extends BaseController
@@ -102,12 +103,79 @@ class InventoryDispositionController extends BaseController
         return $this->success($this->challengeData($challenge), 'A verification PIN was sent to the admin approval mailbox.', 201);
     }
 
+    public function requestBulkDeviceDeletion(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'device_ids' => ['required', 'array', 'min:2', 'max:50'],
+            'device_ids.*' => ['integer', 'distinct'],
+            'reason' => ['required', 'string', 'max:255'],
+            'notes' => ['nullable', 'string', 'max:1000'],
+            'confirm_history_loss' => ['sometimes', 'boolean'],
+        ]);
+        $confirmHistoryLoss = (bool) ($validated['confirm_history_loss'] ?? false);
+        $deviceIds = array_values(array_unique(array_map('intval', $validated['device_ids'])));
+
+        $devices = Device::query()
+            ->whereIn('id', $deviceIds)
+            ->orderBy('id')
+            ->get()
+            ->keyBy('id');
+
+        if ($devices->count() !== count($deviceIds)) {
+            throw ValidationException::withMessages([
+                'device_ids' => ['One or more selected devices no longer exist or have already been deleted. Refresh the list and try again.'],
+            ]);
+        }
+
+        foreach ($devices as $device) {
+            $this->authorizeInventoryBranch($request, $device);
+        }
+
+        $confirmationDevices = $devices->filter(fn (Device $device) => $this->requiresDeletionConfirmation($device));
+        if ($confirmationDevices->isNotEmpty() && ! $confirmHistoryLoss) {
+            return $this->deletionConfirmationWarning($confirmationDevices);
+        }
+
+        foreach ($devices as $device) {
+            $this->assertDeletable($device, $confirmHistoryLoss);
+        }
+
+        $payload = [
+            'device_ids' => $deviceIds,
+            'branch_ids' => $devices->mapWithKeys(fn (Device $device) => [(string) $device->id => $device->branch_id])->all(),
+            'reason' => $validated['reason'],
+            'notes' => $validated['notes'] ?? null,
+            'confirm_history_loss' => $confirmHistoryLoss,
+        ];
+        $firstDevice = $devices->firstOrFail();
+        $challenge = $this->approvalService->create(
+            $request->user(),
+            InventoryActionChallenge::ACTION_DEVICE_DELETION,
+            $payload,
+            $firstDevice,
+            count($deviceIds).' devices',
+        );
+
+        return $this->success($this->challengeData($challenge), 'A verification PIN was sent to the admin approval mailbox.', 201);
+    }
+
     public function resend(Request $request, InventoryActionChallenge $challenge): JsonResponse
     {
         $this->authorizeChallengeAction($request, $challenge);
-        $device = Device::findOrFail((int) ($challenge->payload['device_id'] ?? 0));
-        $this->authorizeInventoryBranch($request, $device);
-        $challenge = $this->approvalService->resend($challenge, $request->user(), $device);
+        $deviceIds = $this->challengeDeviceIds($challenge->payload ?? []);
+        $devices = Device::query()->whereIn('id', $deviceIds)->orderBy('id')->get();
+        if ($devices->count() !== count($deviceIds)) {
+            throw ValidationException::withMessages(['challenge' => ['One or more devices in this challenge no longer exist. Request a new deletion challenge.']]);
+        }
+        foreach ($devices as $device) {
+            $this->authorizeInventoryBranch($request, $device);
+        }
+        $challenge = $this->approvalService->resend(
+            $challenge,
+            $request->user(),
+            $devices->firstOrFail(),
+            count($deviceIds) > 1 ? count($deviceIds).' devices' : null,
+        );
 
         return $this->success($this->challengeData($challenge), 'A new verification PIN was sent to the admin approval mailbox.');
     }
@@ -200,6 +268,10 @@ class InventoryDispositionController extends BaseController
 
     private function executeDeviceDeletion(Request $request, array $payload): array
     {
+        if (array_key_exists('device_ids', $payload)) {
+            return $this->executeBulkDeviceDeletion($request, $payload);
+        }
+
         $device = Device::query()->lockForUpdate()->findOrFail((int) $payload['device_id']);
         $this->authorizeInventoryBranch($request, $device);
         $this->assertDeletable($device, (bool) ($payload['confirm_history_loss'] ?? false));
@@ -225,6 +297,65 @@ class InventoryDispositionController extends BaseController
         return ['device_id' => (int) $payload['device_id'], 'device_name' => $deviceName];
     }
 
+    private function executeBulkDeviceDeletion(Request $request, array $payload): array
+    {
+        $deviceIds = $this->challengeDeviceIds($payload);
+        $devices = Device::query()
+            ->whereIn('id', $deviceIds)
+            ->orderBy('id')
+            ->lockForUpdate()
+            ->get();
+
+        if ($devices->count() !== count($deviceIds)) {
+            throw ValidationException::withMessages([
+                'challenge' => ['One or more selected devices no longer exist. Request a new deletion challenge.'],
+            ]);
+        }
+
+        foreach ($devices as $device) {
+            $this->authorizeInventoryBranch($request, $device);
+            $this->assertDeletable($device, (bool) ($payload['confirm_history_loss'] ?? false));
+
+            $branchIds = $payload['branch_ids'] ?? null;
+            if (! is_array($branchIds) || ! array_key_exists((string) $device->id, $branchIds)) {
+                throw ValidationException::withMessages([
+                    'challenge' => ['The selected device locations could not be verified. Request a new PIN.'],
+                ]);
+            }
+            $storedBranchId = (int) $branchIds[(string) $device->id];
+            if ($storedBranchId !== (int) $device->branch_id) {
+                throw ValidationException::withMessages([
+                    'challenge' => ['A selected device changed branches after this PIN was requested. Request a new PIN.'],
+                ]);
+            }
+        }
+
+        $deletedDevices = [];
+        foreach ($devices as $device) {
+            $deviceName = trim("{$device->brand} {$device->model}");
+            $device->locations()->delete();
+            $device->geofences()->delete();
+            if ($device->iot_module_id) {
+                $device->iotModule?->update(['device_id' => null]);
+            }
+            $device->delete();
+
+            $this->logActivity(null, $request->user(), 'device_deleted', 'Device deleted after PIN verification', [
+                'device_id' => $device->id,
+                'reason' => $payload['reason'],
+                'confirm_history_loss' => (bool) ($payload['confirm_history_loss'] ?? false),
+                'bulk' => true,
+            ]);
+            $deletedDevices[] = ['device_id' => $device->id, 'device_name' => $deviceName];
+        }
+
+        return [
+            'deleted_count' => count($deletedDevices),
+            'deleted_device_ids' => $deviceIds,
+            'devices' => $deletedDevices,
+        ];
+    }
+
     private function challengeData(InventoryActionChallenge $challenge, ?array $financial = null): array
     {
         $challenge->loadMissing('requestedBy');
@@ -236,6 +367,9 @@ class InventoryDispositionController extends BaseController
             'expires_at' => $challenge->expires_at?->toIso8601String(),
             'attempts_remaining' => max(0, $challenge->max_attempts - $challenge->attempts),
         ];
+        if (isset($challenge->payload['device_ids']) && is_array($challenge->payload['device_ids'])) {
+            $data['device_count'] = count($challenge->payload['device_ids']);
+        }
         if ($financial !== null) {
             $data['financial'] = $financial;
         }
@@ -298,8 +432,22 @@ class InventoryDispositionController extends BaseController
             && ($device->inventory_batch_id !== null || $device->inventoryMovements()->exists());
     }
 
-    private function deletionConfirmationWarning(): JsonResponse
+    private function deletionConfirmationWarning(?Collection $devices = null): JsonResponse
     {
+        if ($devices !== null) {
+            $deviceNames = $devices->map(fn (Device $device) => trim("{$device->brand} {$device->model}") ?: "Device #{$device->id}")->values()->all();
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Some selected devices have inventory history and require explicit confirmation before deletion.',
+                'errors' => [
+                    'device_ids' => ['Some selected devices have inventory history. Proceeding will soft-delete them while preserving the existing audit movements.'],
+                ],
+                'requires_confirmation' => true,
+                'devices' => $deviceNames,
+            ], 409);
+        }
+
         return response()->json([
             'success' => false,
             'message' => 'This device has inventory history and requires explicit confirmation before deletion.',
@@ -308,6 +456,23 @@ class InventoryDispositionController extends BaseController
             ],
             'requires_confirmation' => true,
         ], 409);
+    }
+
+    /**
+     * @return array<int, int>
+     */
+    private function challengeDeviceIds(array $payload): array
+    {
+        $ids = array_key_exists('device_ids', $payload)
+            ? (array) $payload['device_ids']
+            : [(int) ($payload['device_id'] ?? 0)];
+
+        $ids = array_values(array_unique(array_filter(array_map('intval', $ids), fn (int $id) => $id > 0)));
+        if ($ids === []) {
+            throw ValidationException::withMessages(['challenge' => ['This challenge does not contain valid devices. Request a new deletion challenge.']]);
+        }
+
+        return $ids;
     }
 
     private function assertDeletable(Device $device, bool $allowInventoryBatch = false): void

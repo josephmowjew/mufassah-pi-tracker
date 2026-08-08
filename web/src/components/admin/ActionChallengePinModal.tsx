@@ -8,6 +8,7 @@ export interface ActionChallengeInfo {
   masked_email: string
   expires_at: string
   attempts_remaining: number
+  device_count?: number
   financial?: {
     unit_cost: number
     unit_price: number

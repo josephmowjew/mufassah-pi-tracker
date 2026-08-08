@@ -1,13 +1,14 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import { Search, Smartphone, MapPin, User, Loader2, Wifi, WifiOff, Eye, Calendar, Tag, Hash, Palette, DollarSign, Clock, Activity, Battery, Signal, SquarePen, Trash2, AlertTriangle, Link2, Unlink, Plus } from 'lucide-react'
+import { Search, Smartphone, MapPin, User, Loader2, Wifi, WifiOff, Eye, Calendar, Tag, Hash, Palette, DollarSign, Clock, Activity, Battery, Signal, SquarePen, Trash2, Link2, Unlink, Plus } from 'lucide-react'
 import { Authorize } from '@/components/auth/Authorize'
 import { PERMISSIONS } from '@/stores/auth-store'
 import apiClient from '@/api/client'
 import { toast } from 'sonner'
 import type { Device, IotModule } from '@/types'
 import ActionChallengePinModal, { type ActionChallengeInfo } from '@/components/admin/ActionChallengePinModal'
+import DeviceDeletionDialog from '@/components/admin/DeviceDeletionDialog'
 import { getApiErrorMessage, requiresApiConfirmation } from '@/lib/utils'
 
 interface PaginatedResponse {
@@ -26,9 +27,10 @@ export default function DeviceManagementPage() {
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
   const [selectedDevice, setSelectedDevice] = useState<Device | null>(null)
+  const [selectedDevices, setSelectedDevices] = useState<Device[]>([])
   const [statusDevice, setStatusDevice] = useState<Device | null>(null)
   const [editingDevice, setEditingDevice] = useState<Device | null>(null)
-  const [deleteDevice, setDeleteDevice] = useState<Device | null>(null)
+  const [deleteTargets, setDeleteTargets] = useState<Device[]>([])
   const [deleteReason, setDeleteReason] = useState('')
   const [deleteNotes, setDeleteNotes] = useState('')
   const [deleteChallenge, setDeleteChallenge] = useState<ActionChallengeInfo | null>(null)
@@ -96,23 +98,35 @@ export default function DeviceManagementPage() {
   })
 
   const requestDeleteMutation = useMutation({
-    mutationFn: async ({ deviceId, reason, notes, confirmHistoryLoss }: { deviceId: number; reason: string; notes?: string; confirmHistoryLoss?: boolean }) => {
-      const response = await apiClient.post<{ success: boolean; data: ActionChallengeInfo }>(`/admin/devices/${deviceId}/delete/request`, {
-        reason,
-        notes: notes || undefined,
-        confirm_history_loss: confirmHistoryLoss || undefined,
-      })
+    mutationFn: async ({ devices, reason, notes, confirmHistoryLoss }: { devices: Device[]; reason: string; notes?: string; confirmHistoryLoss?: boolean }) => {
+      const deviceIds = devices.map((device) => device.id)
+      const endpoint = deviceIds.length > 1
+        ? '/admin/devices/bulk-delete/request'
+        : '/admin/devices/' + deviceIds[0] + '/delete/request'
+      const body = deviceIds.length > 1
+        ? {
+            device_ids: deviceIds,
+            reason,
+            notes: notes || undefined,
+            confirm_history_loss: confirmHistoryLoss || undefined,
+          }
+        : {
+            reason,
+            notes: notes || undefined,
+            confirm_history_loss: confirmHistoryLoss || undefined,
+          }
+      const response = await apiClient.post<{ success: boolean; data: ActionChallengeInfo }>(endpoint, body)
       return response.data.data
     },
-    onSuccess: (challenge) => {
+    onSuccess: (challenge, variables) => {
       setDeleteChallenge(challenge)
       setDeleteChallengeError(null)
       setDeleteWarning(null)
-      toast.success('Verification PIN sent to the admin approval mailbox')
+      toast.success('Verification PIN sent for ' + variables.devices.length + ' device' + (variables.devices.length === 1 ? '' : 's') + ' to the admin approval mailbox')
     },
     onError: (error) => {
       if (requiresApiConfirmation(error)) {
-        setDeleteWarning(getApiErrorMessage(error, 'This device has inventory history. Confirm if you still want to delete it.'))
+        setDeleteWarning(getApiErrorMessage(error, 'Some selected devices have inventory history. Confirm if you still want to delete them.'))
         return
       }
       setDeleteWarning(null)
@@ -127,10 +141,11 @@ export default function DeviceManagementPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-devices'] })
-      toast.success('Device deleted successfully')
+      toast.success(deleteTargets.length + ' device' + (deleteTargets.length === 1 ? '' : 's') + ' deleted successfully')
       setDeleteChallenge(null)
       setDeleteChallengeError(null)
-      setDeleteDevice(null)
+      setDeleteTargets([])
+      setSelectedDevices([])
       setDeleteReason('')
       setDeleteNotes('')
     },
@@ -257,6 +272,49 @@ export default function DeviceManagementPage() {
     setEditingDevice(device)
   }
 
+  const visibleDeviceIds = devices.map((device) => device.id)
+  const allVisibleSelected = visibleDeviceIds.length > 0 && visibleDeviceIds.every((id) => selectedDevices.some((device) => device.id === id))
+
+  const toggleDeviceSelection = (device: Device) => {
+    setSelectedDevices((current) => {
+      if (current.some((item) => item.id === device.id)) {
+        return current.filter((item) => item.id !== device.id)
+      }
+      if (current.length >= 50) {
+        toast.error('You can select up to 50 devices at a time.')
+        return current
+      }
+      return [...current, device]
+    })
+  }
+
+  const toggleVisibleSelection = () => {
+    setSelectedDevices((current) => {
+      if (allVisibleSelected) {
+        return current.filter((device) => !visibleDeviceIds.includes(device.id))
+      }
+      const additions = devices.filter((device) => !current.some((item) => item.id === device.id))
+      if (current.length + additions.length > 50) {
+        toast.error('You can select up to 50 devices at a time.')
+      }
+      return [...current, ...additions].slice(0, 50)
+    })
+  }
+
+  const openDeleteDialog = (targets: Device[]) => {
+    setDeleteTargets(targets)
+    setDeleteReason('')
+    setDeleteNotes('')
+    setDeleteWarning(null)
+  }
+
+  const closeDeleteDialog = () => {
+    setDeleteTargets([])
+    setDeleteWarning(null)
+    setDeleteReason('')
+    setDeleteNotes('')
+  }
+
   return (
     <div className="space-y-6">
       {/* Page Header */}
@@ -300,6 +358,33 @@ export default function DeviceManagementPage() {
               }}
             />
           </div>
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+            <p className="text-xs text-slate-500">
+              Search for devices, select the rows you want, then delete them together (up to 50 at a time).
+              {selectedDevices.length > 0 && <span className="ml-1 font-semibold text-blue-700">{selectedDevices.length} selected</span>}
+            </p>
+            {selectedDevices.length > 0 && (
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setSelectedDevices([])}
+                  className="rounded-lg px-3 py-2 text-xs font-medium text-slate-600 hover:bg-slate-100"
+                >
+                  Clear selection
+                </button>
+                <Authorize permission={PERMISSIONS.DELETE_DEVICES}>
+                  <button
+                    type="button"
+                    onClick={() => openDeleteDialog(selectedDevices)}
+                    className="flex items-center gap-1.5 rounded-lg bg-red-600 px-3 py-2 text-xs font-semibold text-white hover:bg-red-700"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    Delete selected
+                  </button>
+                </Authorize>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Content */}
@@ -320,6 +405,15 @@ export default function DeviceManagementPage() {
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-slate-200/60">
+                    <th className="w-12 px-4 py-3 text-left">
+                      <input
+                        type="checkbox"
+                        aria-label="Select visible devices"
+                        checked={allVisibleSelected}
+                        onChange={toggleVisibleSelection}
+                        className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                      />
+                    </th>
                     <th className="text-left py-3 px-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Device</th>
                     <th className="text-left py-3 px-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Owner</th>
                     <th className="text-left py-3 px-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Status</th>
@@ -333,8 +427,18 @@ export default function DeviceManagementPage() {
                     const status = device.status
                       ? (typeof device.status === 'string' ? device.status : device.status.value)
                       : 'inactive'
+                    const isSelected = selectedDevices.some((item) => item.id === device.id)
                     return (
-                      <tr key={device.id} className="hover:bg-slate-50/50 transition-colors">
+                      <tr key={device.id} className={isSelected ? 'bg-blue-50/50 hover:bg-blue-50 transition-colors' : 'hover:bg-slate-50/50 transition-colors'}>
+                        <td className="px-4 py-3">
+                          <input
+                            type="checkbox"
+                            aria-label={'Select ' + device.brand + ' ' + device.model}
+                            checked={isSelected}
+                            onChange={() => toggleDeviceSelection(device)}
+                            className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                          />
+                        </td>
                         <td className="py-3 px-4">
                           <div className="flex items-center gap-3">
                             <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center flex-shrink-0">
@@ -415,7 +519,7 @@ export default function DeviceManagementPage() {
                             </Authorize>
                             <Authorize permission={PERMISSIONS.DELETE_DEVICES}>
                               <button
-                                onClick={() => { setDeleteDevice(device); setDeleteWarning(null) }}
+                                onClick={() => openDeleteDialog([device])}
                                 className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                                 title="Delete device"
                               >
@@ -761,76 +865,33 @@ export default function DeviceManagementPage() {
         </>
       )}
 
-      {/* Delete Confirmation Modal */}
-      {deleteDevice && (
-        <>
-          <div
-            className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-40"
-            onClick={() => { setDeleteDevice(null); setDeleteWarning(null) }}
-          />
-          <div className="fixed inset-x-4 top-[20%] md:inset-x-auto md:left-1/2 md:-translate-x-1/2 md:w-full md:max-w-md bg-white rounded-2xl shadow-xl z-50 overflow-hidden">
-            <div className="p-5 border-b border-slate-200">
-              <div className="flex items-center gap-3">
-                <div className="h-10 w-10 rounded-full bg-red-100 flex items-center justify-center">
-                  <AlertTriangle className="h-5 w-5 text-red-600" />
-                </div>
-                <div>
-                  <h3 className="text-lg font-semibold text-slate-800">Delete Device</h3>
-                  <p className="text-sm text-slate-500">This action cannot be undone</p>
-                </div>
-              </div>
-            </div>
-            <div className="p-5 space-y-4">
-              <p className="text-sm text-slate-600">
-                Are you sure you want to delete <span className="font-semibold">{deleteDevice.brand} {deleteDevice.model}</span>?
-                This will permanently remove the device and all associated data including locations and geofences.
-              </p>
-              <div>
-                <label htmlFor="management-delete-reason" className="mb-1 block text-sm font-medium text-slate-700">Reason <span className="text-red-500">*</span></label>
-                <input id="management-delete-reason" value={deleteReason} onChange={(event) => setDeleteReason(event.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm placeholder:text-slate-400 focus:border-blue-500 focus:outline-none" placeholder="Why should this device be deleted?" />
-              </div>
-              <div>
-                <label htmlFor="management-delete-notes" className="mb-1 block text-sm font-medium text-slate-700">Notes</label>
-                <textarea id="management-delete-notes" value={deleteNotes} onChange={(event) => setDeleteNotes(event.target.value)} rows={2} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm placeholder:text-slate-400 focus:border-blue-500 focus:outline-none" placeholder="Optional context" />
-              </div>
-              {deleteWarning && (
-                <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-                  <div className="flex items-start gap-2">
-                    <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0 text-amber-600" />
-                    <div>
-                      <p className="font-semibold">Confirm deletion of tracked inventory</p>
-                      <p className="mt-1">{deleteWarning}</p>
-                      <p className="mt-2">Proceeding will permanently delete this device after PIN verification. This cannot be undone.</p>
-                    </div>
-                  </div>
-                  <button type="button" onClick={() => setDeleteWarning(null)} className="mt-3 text-xs font-semibold text-amber-800 underline">Go back and review</button>
-                </div>
-              )}
-              <div className="flex gap-2">
-                <button
-                  onClick={() => { setDeleteDevice(null); setDeleteWarning(null); setDeleteReason(''); setDeleteNotes('') }}
-                  className="flex-1 px-4 py-2.5 bg-slate-100 text-slate-600 text-sm font-medium rounded-lg hover:bg-slate-200 transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={() => requestDeleteMutation.mutate({ deviceId: deleteDevice.id, reason: deleteReason, notes: deleteNotes, confirmHistoryLoss: Boolean(deleteWarning) })}
-                  disabled={!deleteReason.trim() || requestDeleteMutation.isPending}
-                  className="flex-1 px-4 py-2.5 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                >
-                  {requestDeleteMutation.isPending ? 'Sending PIN...' : deleteWarning ? 'Proceed & send PIN' : 'Send PIN'}
-                </button>
-              </div>
-            </div>
-          </div>
-        </>
+      {deleteTargets.length > 0 && (
+        <DeviceDeletionDialog
+          devices={deleteTargets}
+          reason={deleteReason}
+          notes={deleteNotes}
+          warning={deleteWarning}
+          isSubmitting={requestDeleteMutation.isPending}
+          onReasonChange={setDeleteReason}
+          onNotesChange={setDeleteNotes}
+          onSubmit={() => requestDeleteMutation.mutate({
+            devices: deleteTargets,
+            reason: deleteReason,
+            notes: deleteNotes,
+            confirmHistoryLoss: Boolean(deleteWarning),
+          })}
+          onCancel={closeDeleteDialog}
+          onDismissWarning={() => setDeleteWarning(null)}
+        />
       )}
 
       {deleteChallenge && (
         <ActionChallengePinModal
           challenge={deleteChallenge}
-          title="Confirm device deletion"
-          description="Device deletion is irreversible. Enter the PIN sent to the administrator approval mailbox to continue."
+          title={deleteTargets.length > 1 ? 'Confirm bulk device deletion' : 'Confirm device deletion'}
+          description={deleteTargets.length > 1
+            ? 'Deletion is irreversible. Enter the PIN sent to the administrator approval mailbox to remove all selected devices.'
+            : 'Device deletion is irreversible. Enter the PIN sent to the administrator approval mailbox to continue.'}
           error={deleteChallengeError}
           isVerifying={verifyDeleteMutation.isPending}
           isResending={resendDeleteMutation.isPending}
