@@ -6,6 +6,7 @@ use App\Enums\SubscriptionStatus;
 use App\Enums\TheftReportStatus;
 use App\Models\Device;
 use App\Models\DeviceCategory;
+use App\Models\InventoryMovement;
 use App\Models\Payment;
 use App\Models\Subscription;
 use App\Models\SubscriptionPlan;
@@ -44,6 +45,7 @@ describe('Dashboard Access Control', function () {
                     'devices',
                     'subscriptions',
                     'revenue',
+                    'administrative_sales',
                     'theft_reports',
                     'iot_modules',
                 ],
@@ -135,6 +137,64 @@ describe('Dashboard Statistics', function () {
 
         $response->assertSuccessful();
         expect((float) $response->json('data.revenue.total'))->toBe(300.0);
+    });
+
+    it('returns administrative sales separately with real month-over-month changes', function () {
+        $currentMonth = now()->startOfMonth()->addDay();
+        $lastMonth = now()->subMonth()->startOfMonth()->addDay();
+
+        $subscription = Subscription::factory()
+            ->for($this->customer, 'user')
+            ->for($this->plan, 'plan')
+            ->create();
+
+        Payment::factory()
+            ->for($this->customer, 'user')
+            ->for($subscription)
+            ->create([
+                'status' => PaymentStatus::Completed,
+                'amount' => 150,
+                'paid_at' => $currentMonth,
+            ]);
+
+        Payment::factory()
+            ->for($this->customer, 'user')
+            ->for($subscription)
+            ->create([
+                'status' => PaymentStatus::Completed,
+                'amount' => 100,
+                'paid_at' => $lastMonth,
+            ]);
+
+        InventoryMovement::create([
+            'movement_number' => 'MOVE-ADMIN-CURRENT',
+            'movement_type' => InventoryMovement::TYPE_ADMINISTRATIVE_SALE,
+            'quantity' => 1,
+            'total_amount' => 300,
+            'created_at' => $currentMonth,
+            'updated_at' => $currentMonth,
+        ]);
+
+        InventoryMovement::create([
+            'movement_number' => 'MOVE-ADMIN-LAST',
+            'movement_type' => InventoryMovement::TYPE_ADMINISTRATIVE_SALE,
+            'quantity' => 1,
+            'total_amount' => 200,
+            'created_at' => $lastMonth,
+            'updated_at' => $lastMonth,
+        ]);
+
+        $response = $this->actingAs($this->admin)
+            ->getJson('/api/v1/admin/dashboard');
+
+        $response->assertSuccessful()
+            ->assertJsonPath('data.revenue.this_month', 150)
+            ->assertJsonPath('data.revenue.last_month', 100)
+            ->assertJsonPath('data.revenue.month_over_month_change_percentage', 50)
+            ->assertJsonPath('data.administrative_sales.total', 500)
+            ->assertJsonPath('data.administrative_sales.this_month', 300)
+            ->assertJsonPath('data.administrative_sales.last_month', 200)
+            ->assertJsonPath('data.administrative_sales.month_over_month_change_percentage', 50);
     });
 
     it('returns correct theft report statistics', function () {

@@ -24,6 +24,13 @@ export interface DashboardStats {
     total: number
     this_month: number
     last_month: number
+    month_over_month_change_percentage: number | null
+  }
+  administrative_sales: {
+    total: number
+    this_month: number
+    last_month: number
+    month_over_month_change_percentage: number | null
   }
   theft_reports: {
     total: number

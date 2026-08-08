@@ -4,6 +4,7 @@ import {
   AlertTriangle,
   DollarSign,
   TrendingUp,
+  TrendingDown,
   ShieldCheck,
   Activity,
   ArrowUpRight,
@@ -15,6 +16,7 @@ import {
   Target,
   Award,
   Eye,
+  Receipt,
 } from 'lucide-react'
 import {
   AreaChart,
@@ -86,6 +88,14 @@ export default function AdminDashboardPage() {
   const totalDevices = dashboard?.devices?.total || 0
   const activeDevices = dashboard?.devices?.active || 0
   const recoveryRate = dashboard?.theft_reports?.recovery_rate || 0
+  const monthlyRevenue = dashboard?.revenue?.this_month || 0
+  const lastMonthRevenue = dashboard?.revenue?.last_month || 0
+  const monthlyRevenueChange = dashboard?.revenue?.month_over_month_change_percentage ?? null
+  const administrativeSalesThisMonth = dashboard?.administrative_sales?.this_month || 0
+  const administrativeSalesLastMonth = dashboard?.administrative_sales?.last_month || 0
+  const administrativeSalesChange = dashboard?.administrative_sales?.month_over_month_change_percentage ?? null
+  const revenueTrend = getTrend(monthlyRevenue, lastMonthRevenue)
+  const administrativeSalesTrend = getTrend(administrativeSalesThisMonth, administrativeSalesLastMonth)
 
   return (
     <div className="space-y-6 pb-8">
@@ -164,7 +174,7 @@ export default function AdminDashboardPage() {
       </div>
 
       {/* Main Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-5">
         <StatCard
           icon={Users}
           label="Total Users"
@@ -197,13 +207,24 @@ export default function AdminDashboardPage() {
         />
         <StatCard
           icon={DollarSign}
-          label="Monthly Revenue"
-          value={`MWK ${((dashboard?.revenue?.this_month || 0) / 1000).toFixed(0)}K`}
-          change={12}
+          label="Monthly Cash Revenue"
+          value={formatMwk(monthlyRevenue)}
+          change={monthlyRevenueChange}
           changeLabel="vs last month"
-          trend="up"
+          trend={revenueTrend}
           gradient="from-amber-500 to-yellow-400"
           bgGradient="from-amber-50 to-yellow-50"
+          isPercentage
+        />
+        <StatCard
+          icon={Receipt}
+          label="Administrative Sales"
+          value={formatMwk(administrativeSalesThisMonth)}
+          change={administrativeSalesChange}
+          changeLabel="vs last month"
+          trend={administrativeSalesTrend}
+          gradient="from-violet-500 to-fuchsia-400"
+          bgGradient="from-violet-50 to-fuchsia-50"
           isPercentage
         />
       </div>
@@ -215,12 +236,19 @@ export default function AdminDashboardPage() {
           <div className="p-6 border-b border-slate-100">
             <div className="flex items-center justify-between">
               <div>
-                <h2 className="text-lg font-semibold text-slate-800">Revenue Overview</h2>
-                <p className="text-sm text-slate-500 mt-0.5">Monthly revenue performance</p>
+                <h2 className="text-lg font-semibold text-slate-800">Cash Revenue Overview</h2>
+                <p className="text-sm text-slate-500 mt-0.5">Monthly payment revenue performance</p>
               </div>
-              <div className="flex items-center gap-2 px-3 py-1.5 bg-emerald-50 text-emerald-600 rounded-full text-sm font-medium">
-                <TrendingUp className="h-4 w-4" />
-                +12%
+              <div className={cn(
+                'flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium',
+                revenueTrend === 'up' && 'bg-emerald-50 text-emerald-600',
+                revenueTrend === 'down' && 'bg-red-50 text-red-600',
+                revenueTrend === 'neutral' && 'bg-slate-100 text-slate-600',
+              )}>
+                {revenueTrend === 'down'
+                  ? <TrendingDown className="h-4 w-4" />
+                  : <TrendingUp className="h-4 w-4" />}
+                {formatPercentageChange(monthlyRevenueChange)}
               </div>
             </div>
           </div>
@@ -248,7 +276,7 @@ export default function AdminDashboardPage() {
                     tickFormatter={(v) => `${(v / 1000000).toFixed(1)}M`}
                   />
                   <Tooltip
-                    formatter={(value: number) => [`MWK ${value.toLocaleString()}`, 'Revenue']}
+                    formatter={(value: number) => [`MWK ${value.toLocaleString()}`, 'Cash Revenue']}
                     contentStyle={{
                       borderRadius: '12px',
                       border: 'none',
@@ -486,7 +514,7 @@ function StatCard({
   icon: typeof Users
   label: string
   value: string | number
-  change: number
+  change: number | null
   changeLabel: string
   trend: 'up' | 'down' | 'neutral'
   gradient: string
@@ -513,7 +541,7 @@ function StatCard({
                 trend === 'neutral' && 'text-slate-600'
               )}
             >
-              {isPercentage ? `+${change}%` : change}
+              {isPercentage ? formatPercentageChange(change) : change ?? 0}
             </span>
             <span className="text-sm text-slate-500">{changeLabel}</span>
           </div>
@@ -529,6 +557,27 @@ function StatCard({
       )} />
     </div>
   )
+}
+
+function formatMwk(amount: number): string {
+  return `MWK ${amount.toLocaleString(undefined, { maximumFractionDigits: 0 })}`
+}
+
+function formatPercentageChange(change: number | null): string {
+  if (change === null) return 'New'
+
+  const normalizedChange = Object.is(change, -0) ? 0 : change
+  const value = Number.isInteger(normalizedChange)
+    ? normalizedChange.toString()
+    : normalizedChange.toFixed(1)
+
+  return `${normalizedChange > 0 ? '+' : ''}${value}%`
+}
+
+function getTrend(current: number, previous: number): 'up' | 'down' | 'neutral' {
+  if (current === previous) return 'neutral'
+
+  return current > previous ? 'up' : 'down'
 }
 
 function QuickStatCard({

@@ -10,6 +10,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Device;
 use App\Models\DeviceCategory;
 use App\Models\IotModule;
+use App\Models\InventoryMovement;
 use App\Models\Payment;
 use App\Models\Subscription;
 use App\Models\SubscriptionPlan;
@@ -37,6 +38,23 @@ class AdminDashboardController extends Controller
         $startOfLastMonth = $now->copy()->subMonth()->startOfMonth();
         $endOfLastMonth = $now->copy()->subMonth()->endOfMonth();
 
+        $monthlyRevenue = (float) Payment::completed()
+            ->where('paid_at', '>=', $startOfMonth)
+            ->sum('amount');
+        $lastMonthRevenue = (float) Payment::completed()
+            ->whereBetween('paid_at', [$startOfLastMonth, $endOfLastMonth])
+            ->sum('amount');
+
+        $administrativeSaleQuery = InventoryMovement::query()
+            ->where('movement_type', InventoryMovement::TYPE_ADMINISTRATIVE_SALE);
+        $administrativeSales = (float) (clone $administrativeSaleQuery)->sum('total_amount');
+        $administrativeSalesThisMonth = (float) (clone $administrativeSaleQuery)
+            ->where('created_at', '>=', $startOfMonth)
+            ->sum('total_amount');
+        $administrativeSalesLastMonth = (float) (clone $administrativeSaleQuery)
+            ->whereBetween('created_at', [$startOfLastMonth, $endOfLastMonth])
+            ->sum('total_amount');
+
         return response()->json([
             'success' => true,
             'data' => [
@@ -59,12 +77,21 @@ class AdminDashboardController extends Controller
                 ],
                 'revenue' => [
                     'total' => (float) Payment::completed()->sum('amount'),
-                    'this_month' => (float) Payment::completed()
-                        ->where('paid_at', '>=', $startOfMonth)
-                        ->sum('amount'),
-                    'last_month' => (float) Payment::completed()
-                        ->whereBetween('paid_at', [$startOfLastMonth, $endOfLastMonth])
-                        ->sum('amount'),
+                    'this_month' => $monthlyRevenue,
+                    'last_month' => $lastMonthRevenue,
+                    'month_over_month_change_percentage' => $this->calculatePercentageChange(
+                        $monthlyRevenue,
+                        $lastMonthRevenue,
+                    ),
+                ],
+                'administrative_sales' => [
+                    'total' => $administrativeSales,
+                    'this_month' => $administrativeSalesThisMonth,
+                    'last_month' => $administrativeSalesLastMonth,
+                    'month_over_month_change_percentage' => $this->calculatePercentageChange(
+                        $administrativeSalesThisMonth,
+                        $administrativeSalesLastMonth,
+                    ),
                 ],
                 'theft_reports' => [
                     'total' => TheftReport::count(),
@@ -321,6 +348,20 @@ class AdminDashboardController extends Controller
         }
 
         return round(($recovered / $resolved) * 100, 2);
+    }
+
+    /**
+     * Calculate the month-over-month percentage change.
+     *
+     * A null result represents a new metric with no prior-month baseline.
+     */
+    private function calculatePercentageChange(float $current, float $previous): ?float
+    {
+        if ($previous === 0.0) {
+            return $current === 0.0 ? 0.0 : null;
+        }
+
+        return round((($current - $previous) / abs($previous)) * 100, 1);
     }
 
     /**
