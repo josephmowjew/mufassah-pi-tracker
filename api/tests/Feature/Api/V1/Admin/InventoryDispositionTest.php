@@ -91,6 +91,19 @@ it('records an administrative sale with financial snapshots and no POS sale', fu
         ->and(Sale::count())->toBe(0);
 });
 
+it('defaults an administrative sale to purchase cost when no batch target price exists', function () {
+    $device = dispositionDevice();
+
+    $request = $this->actingAs($this->admin)
+        ->postJson("/api/v1/admin/inventory/{$device->id}/administrative-sale/request", [
+            'reason' => 'Fallback pricing test',
+        ])
+        ->assertCreated();
+
+    expect($request->json('data.financial.unit_price'))->toBe(100000)
+        ->and($request->json('data.financial.pricing_source'))->toBe('device.purchase_price');
+});
+
 it('records negative administrative profit as a loss', function () {
     $device = dispositionDevice(['purchase_price' => 100000]);
 
@@ -105,6 +118,22 @@ it('records negative administrative profit as a loss', function () {
     verifyDispositionChallenge($challenge, $this->admin)->assertSuccessful();
 
     expect((float) InventoryMovement::where('movement_type', InventoryMovement::TYPE_ADMINISTRATIVE_SALE)->value('profit_amount'))->toBe(-25000.0);
+});
+
+it('rejects a negative administrative sale amount', function () {
+    $device = dispositionDevice();
+
+    $this->actingAs($this->admin)
+        ->postJson("/api/v1/admin/inventory/{$device->id}/administrative-sale/request", [
+            'selling_price' => -1,
+            'reason' => 'Invalid negative amount',
+        ])
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors('selling_price');
+
+    expect($device->fresh()->inventory_status)->toBe(InventoryStatus::IN_STOCK)
+        ->and(InventoryActionChallenge::count())->toBe(0)
+        ->and(InventoryMovement::where('movement_type', InventoryMovement::TYPE_ADMINISTRATIVE_SALE)->count())->toBe(0);
 });
 
 it('rejects an administrative sale when cost cannot be resolved', function () {

@@ -56,7 +56,12 @@ function CompleteSaleModal({ sale, onClose, onConfirm, isLoading }: CompleteSale
                 min={totalDue}
                 step="0.01"
                 value={paymentAmount}
-                onChange={(e) => setPaymentAmount(e.target.value)}
+                onChange={(e) => {
+                  const value = e.target.value
+                  if (value === '' || (Number.isFinite(Number(value)) && Number(value) >= 0)) {
+                    setPaymentAmount(value)
+                  }
+                }}
                 placeholder={`Minimum MWK ${totalDue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
                 className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
                 required

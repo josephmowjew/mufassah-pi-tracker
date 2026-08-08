@@ -518,6 +518,7 @@ export default function AdminStockMovementsPage() {
               setTransferQuantities({})
               setQuantityErrors({})
               setFormErrors({})
+              setTransferOverrideWarning(null)
             }}
             quantityOptions={transferQuantityOptions}
             quantityOptionsLoading={quantityOptionsLoading}
@@ -718,14 +719,14 @@ function ActionModal(props: ActionModalProps) {
         <div className="space-y-5 p-6">
           {isTransfer ? (
             <div className="grid gap-4 sm:grid-cols-2">
-              <FieldError label="Source Branch" errors={errors.from_branch_id || errors.branch_id}>
-                <select value={sourceBranchId} onChange={(event) => setSourceBranchId(event.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm">
+              <FieldError label="Source Branch" htmlFor="transfer-source-branch" errors={errors.from_branch_id || errors.branch_id}>
+                <select id="transfer-source-branch" value={sourceBranchId} onChange={(event) => setSourceBranchId(event.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm">
                   <option value="">Select source branch</option>
                   {branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
                 </select>
               </FieldError>
-              <FieldError label="Destination Branch" errors={errors.to_branch_id}>
-                <select value={destinationBranchId} onChange={(event) => setDestinationBranchId(event.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm">
+              <FieldError label="Destination Branch" htmlFor="transfer-destination-branch" errors={errors.to_branch_id}>
+                <select id="transfer-destination-branch" value={destinationBranchId} onChange={(event) => setDestinationBranchId(event.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm">
                   <option value="">Select destination branch</option>
                   {branches
                     .filter((branch) => branch.id.toString() !== sourceBranchId)
@@ -734,15 +735,16 @@ function ActionModal(props: ActionModalProps) {
               </FieldError>
             </div>
           ) : (
-            <FieldError label="New Inventory Status" errors={errors.inventory_status}>
-              <select value={adjustStatus} onChange={(event) => setAdjustStatus(event.target.value as InventoryStatusValue)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm">
+            <FieldError label="New Inventory Status" htmlFor="adjust-inventory-status" errors={errors.inventory_status}>
+              <select id="adjust-inventory-status" value={adjustStatus} onChange={(event) => setAdjustStatus(event.target.value as InventoryStatusValue)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm">
                 {statusOptions.map((status) => <option key={status} value={status}>{label(status)}</option>)}
               </select>
             </FieldError>
           )}
 
-          <FieldError label="Reason" errors={errors.reason}>
+          <FieldError label="Reason" htmlFor="inventory-action-reason" errors={errors.reason}>
             <input
+              id="inventory-action-reason"
               value={reason}
               onChange={(event) => setReason(event.target.value)}
               placeholder={isTransfer ? 'e.g. Restock the Lilongwe branch' : 'e.g. Damaged during inspection'}
@@ -750,8 +752,9 @@ function ActionModal(props: ActionModalProps) {
             />
           </FieldError>
 
-          <FieldError label="Notes" errors={errors.notes}>
+          <FieldError label="Notes" htmlFor="inventory-action-notes" errors={errors.notes}>
             <textarea
+              id="inventory-action-notes"
               value={notes}
               onChange={(event) => setNotes(event.target.value)}
               rows={3}
@@ -911,12 +914,12 @@ function ActionModal(props: ActionModalProps) {
   )
 }
 
-function FieldError({ label: title, errors, children }: { label: string; errors?: string[]; children: ReactNode }) {
+function FieldError({ label: title, htmlFor, errors, children }: { label: string; htmlFor: string; errors?: string[]; children: ReactNode }) {
   return (
-    <label className="block">
-      <span className="mb-1 block text-sm font-medium text-slate-700">{title}</span>
+    <div className="block">
+      <label htmlFor={htmlFor} className="mb-1 block text-sm font-medium text-slate-700">{title}</label>
       {children}
       {errors?.length ? <span className="mt-1 block text-xs text-red-600">{errors[0]}</span> : null}
-    </label>
+    </div>
   )
 }

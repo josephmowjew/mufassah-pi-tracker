@@ -188,7 +188,7 @@ export default function AdminInventoryPage() {
 
   const openAdministrativeSale = (device: Device, batch: InventoryBatch | null = null) => {
     const deviceCost = device.purchase_price ?? batch?.buying_price
-    if (deviceCost === null || deviceCost === undefined) {
+    if (deviceCost === null || deviceCost === undefined || !Number.isFinite(Number(deviceCost)) || Number(deviceCost) <= 0) {
       toast.error('This device has no resolvable cost and cannot be sold administratively')
       setAdministrativeSaleDevice(null)
       setAdministrativeSaleBatch(null)
@@ -197,9 +197,11 @@ export default function AdminInventoryPage() {
 
     setAdministrativeSaleDevice(device)
     setAdministrativeSaleBatch(batch)
-    setAdministrativeSaleAmount(batch?.target_selling_price === null || batch?.target_selling_price === undefined
-      ? ''
-      : String(batch.target_selling_price))
+    const batchTargetPrice = batch?.target_selling_price
+    const defaultPrice = batchTargetPrice !== null && batchTargetPrice !== undefined && Number(batchTargetPrice) > 0
+      ? Number(batchTargetPrice)
+      : Number(device.purchase_price ?? batch?.buying_price)
+    setAdministrativeSaleAmount(Number.isFinite(defaultPrice) && defaultPrice > 0 ? String(defaultPrice) : '')
     setAdministrativeSaleReason('')
     setAdministrativeSaleNotes('')
     setSaleChallengeError(null)
@@ -207,6 +209,10 @@ export default function AdminInventoryPage() {
 
   const saleCost = Number(administrativeSaleDevice?.purchase_price ?? administrativeSaleBatch?.buying_price ?? 0)
   const saleAmount = Number(administrativeSaleAmount || 0)
+  const saleAmountValid = administrativeSaleAmount.trim() !== '' && Number.isFinite(saleAmount) && saleAmount > 0
+  const hasAdministrativeBatchPrice = administrativeSaleBatch?.target_selling_price !== null
+    && administrativeSaleBatch?.target_selling_price !== undefined
+    && Number(administrativeSaleBatch.target_selling_price) > 0
   const projectedSaleProfit = saleAmount - saleCost
 
   const requestAdministrativeSaleMutation = useMutation({
@@ -887,27 +893,33 @@ export default function AdminInventoryPage() {
               >
                   <div className="grid grid-cols-2 gap-3">
                   <div className="rounded-lg bg-slate-50 p-3"><p className="text-xs text-slate-500">Unit cost</p><p className="font-semibold text-slate-900">{formatMoney(saleCost)}</p><p className="mt-1 text-xs text-slate-500">Device cost or batch buying price</p></div>
-                  <div className="rounded-lg bg-blue-50 p-3"><p className="text-xs text-blue-700">{administrativeSaleBatch ? 'Batch target' : 'Pricing source'}</p><p className="font-semibold text-blue-800">{administrativeSaleBatch ? formatMoney(administrativeSaleBatch.target_selling_price) : 'Manual amount'}</p><p className="mt-1 text-xs text-blue-700">{administrativeSaleBatch ? 'Used as the default amount' : 'Enter the actual sale amount below'}</p></div>
+                  <div className="rounded-lg bg-blue-50 p-3"><p className="text-xs text-blue-700">{hasAdministrativeBatchPrice ? 'Batch target' : 'Purchase cost fallback'}</p><p className="font-semibold text-blue-800">{hasAdministrativeBatchPrice ? formatMoney(administrativeSaleBatch?.target_selling_price) : formatMoney(saleCost)}</p><p className="mt-1 text-xs text-blue-700">{hasAdministrativeBatchPrice ? 'Used as the default amount' : 'Used because no valid batch target price is available'}</p></div>
                 </div>
                 <div>
-                  <label className="mb-1 block text-sm font-medium text-slate-700">Actual sale amount (MWK)</label>
-                  <input type="number" min="0" step="0.01" value={administrativeSaleAmount} onChange={(event) => setAdministrativeSaleAmount(event.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-2 focus:border-blue-500 focus:outline-none" required />
+                  <label htmlFor="administrative-sale-amount" className="mb-1 block text-sm font-medium text-slate-700">Actual sale amount (MWK)</label>
+                  <input id="administrative-sale-amount" type="number" min="0" step="0.01" value={administrativeSaleAmount} onChange={(event) => {
+                    const value = event.target.value
+                    if (value === '' || (Number.isFinite(Number(value)) && Number(value) >= 0)) {
+                      setAdministrativeSaleAmount(value)
+                    }
+                  }} className="w-full rounded-lg border border-slate-300 px-3 py-2 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none" placeholder="Enter actual sale amount" required />
+                  {administrativeSaleAmount.trim() !== '' && !saleAmountValid && <p className="mt-1 text-xs text-red-600">Sale amount must be greater than zero.</p>}
                 </div>
                 <div className={`rounded-lg p-3 ${projectedSaleProfit < 0 ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-700'}`}>
                   <p className="text-xs font-medium">Projected {projectedSaleProfit < 0 ? 'loss' : 'profit'}</p>
                   <p className="text-lg font-semibold">{formatMoney(Math.abs(projectedSaleProfit))}{projectedSaleProfit < 0 ? ' loss' : ''}</p>
                 </div>
                 <div>
-                  <label className="mb-1 block text-sm font-medium text-slate-700">Reason <span className="text-red-500">*</span></label>
-                  <input value={administrativeSaleReason} onChange={(event) => setAdministrativeSaleReason(event.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-2 focus:border-blue-500 focus:outline-none" placeholder="Why is this being recorded outside POS?" required />
+                  <label htmlFor="administrative-sale-reason" className="mb-1 block text-sm font-medium text-slate-700">Reason <span className="text-red-500">*</span></label>
+                  <input id="administrative-sale-reason" value={administrativeSaleReason} onChange={(event) => setAdministrativeSaleReason(event.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-2 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none" placeholder="Why is this being recorded outside POS?" required />
                 </div>
                 <div>
-                  <label className="mb-1 block text-sm font-medium text-slate-700">Notes</label>
-                  <textarea value={administrativeSaleNotes} onChange={(event) => setAdministrativeSaleNotes(event.target.value)} rows={2} className="w-full rounded-lg border border-slate-300 px-3 py-2 focus:border-blue-500 focus:outline-none" placeholder="Optional supporting notes" />
+                  <label htmlFor="administrative-sale-notes" className="mb-1 block text-sm font-medium text-slate-700">Notes</label>
+                  <textarea id="administrative-sale-notes" value={administrativeSaleNotes} onChange={(event) => setAdministrativeSaleNotes(event.target.value)} rows={2} className="w-full rounded-lg border border-slate-300 px-3 py-2 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none" placeholder="Optional supporting notes" />
                 </div>
                 <div className="flex justify-end gap-2 pt-1">
                   <button type="button" onClick={() => setAdministrativeSaleDevice(null)} className="rounded-lg px-4 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-100">Cancel</button>
-                  <button type="submit" disabled={!administrativeSaleReason.trim() || !administrativeSaleAmount || requestAdministrativeSaleMutation.isPending} className="rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50">
+                  <button type="submit" disabled={!administrativeSaleReason.trim() || !saleAmountValid || requestAdministrativeSaleMutation.isPending} className="rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50">
                     {requestAdministrativeSaleMutation.isPending ? 'Sending PIN...' : 'Send approval PIN'}
                   </button>
                 </div>

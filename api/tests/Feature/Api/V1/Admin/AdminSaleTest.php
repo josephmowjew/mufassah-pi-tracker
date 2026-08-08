@@ -7,6 +7,7 @@ use App\Enums\SaleStatus;
 use App\Models\Branch;
 use App\Models\Device;
 use App\Models\DeviceCategory;
+use App\Models\InventoryBatch;
 use App\Models\Sale;
 use App\Models\User;
 
@@ -50,9 +51,22 @@ function salePayload(Device $device, User $customer, array $overrides = []): arr
 
 describe('Admin Sales', function () {
     it('creates a completed paid sale and snapshots profit', function () {
+        $batch = InventoryBatch::create([
+            'batch_number' => 'BATCH-TEST-SALE-PRICE',
+            'branch_id' => $this->branch->id,
+            'category_id' => $this->category->id,
+            'brand' => 'Sony',
+            'model' => 'Bravia X85L',
+            'color' => 'Black',
+            'quantity_received' => 1,
+            'buying_price' => 800,
+            'target_selling_price' => 1200,
+        ]);
+
         $device = Device::factory()->create([
             'category_id' => $this->category->id,
             'branch_id' => $this->branch->id,
+            'inventory_batch_id' => $batch->id,
             'brand' => 'Sony',
             'model' => 'Bravia X85L',
             'color' => 'Black',
@@ -77,6 +91,72 @@ describe('Admin Sales', function () {
         expect($device->inventory_status)->toBe(InventoryStatus::SOLD);
         expect($device->owner_id)->toBe($this->customer->id);
         expect($device->sold_at)->not->toBeNull();
+    });
+
+    it('uses device purchase cost when no batch selling price is available', function () {
+        $device = Device::factory()->create([
+            'category_id' => $this->category->id,
+            'branch_id' => $this->branch->id,
+            'brand' => 'Sony',
+            'model' => 'Bravia X85L',
+            'color' => 'Black',
+            'owner_id' => null,
+            'purchase_price' => 800,
+            'inventory_batch_id' => null,
+            'inventory_status' => InventoryStatus::IN_STOCK,
+        ]);
+
+        $response = $this->actingAs($this->admin)
+            ->postJson('/api/v1/admin/sales', salePayload($device, $this->customer, [
+                'items' => [[
+                    'category_id' => $device->category_id,
+                    'brand' => $device->brand,
+                    'model' => $device->model,
+                    'color' => $device->color,
+                    'quantity' => 1,
+                    'unit_price' => 0,
+                    'discount' => 0,
+                    'tax' => 0,
+                ]],
+            ]));
+
+        $response->assertCreated()
+            ->assertJsonPath('data.items.0.unit_price', '800.00')
+            ->assertJsonPath('data.items.0.selling_price', '800.00')
+            ->assertJsonPath('data.items.0.profit_amount', '0.00');
+    });
+
+    it('rejects a sale when neither batch price nor purchase cost is available', function () {
+        $device = Device::factory()->create([
+            'category_id' => $this->category->id,
+            'branch_id' => $this->branch->id,
+            'brand' => 'Sony',
+            'model' => 'Bravia X85L',
+            'color' => 'Black',
+            'owner_id' => null,
+            'purchase_price' => null,
+            'inventory_batch_id' => null,
+            'inventory_status' => InventoryStatus::IN_STOCK,
+        ]);
+
+        $this->actingAs($this->admin)
+            ->postJson('/api/v1/admin/sales', salePayload($device, $this->customer, [
+                'items' => [[
+                    'category_id' => $device->category_id,
+                    'brand' => $device->brand,
+                    'model' => $device->model,
+                    'color' => $device->color,
+                    'quantity' => 1,
+                    'unit_price' => 0,
+                    'discount' => 0,
+                    'tax' => 0,
+                ]],
+            ]))
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('items');
+
+        expect($device->fresh()->inventory_status)->toBe(InventoryStatus::IN_STOCK)
+            ->and(Sale::count())->toBe(0);
     });
 
     it('creates a draft sale that reserves stock only', function () {
@@ -178,6 +258,7 @@ describe('Admin Sales', function () {
             'model' => 'Bravia X85L',
             'color' => 'Blue',
             'owner_id' => null,
+            'purchase_price' => 800,
             'inventory_status' => InventoryStatus::IN_STOCK,
         ]);
 
@@ -191,6 +272,92 @@ describe('Admin Sales', function () {
         expect($device->fresh()->inventory_status)->toBe(InventoryStatus::IN_STOCK);
     });
 
+    it('rejects negative monetary values before creating a sale', function () {
+        $device = Device::factory()->create([
+            'category_id' => $this->category->id,
+            'branch_id' => $this->branch->id,
+            'brand' => 'Sony',
+            'model' => 'Bravia X85L',
+            'color' => 'Blue',
+            'owner_id' => null,
+            'purchase_price' => 800,
+            'inventory_status' => InventoryStatus::IN_STOCK,
+        ]);
+
+        $cases = [
+            [
+                'field' => 'payment_amount',
+                'payload' => ['payment_amount' => -1],
+                'message' => 'Payment amount cannot be negative.',
+            ],
+            [
+                'field' => 'items.0.quantity',
+                'payload' => ['items' => [['quantity' => -1]]],
+                'message' => 'Quantity must be at least 1.',
+            ],
+            [
+                'field' => 'items.0.unit_price',
+                'payload' => ['items' => [['unit_price' => -1]]],
+                'message' => 'Sale price cannot be negative.',
+            ],
+            [
+                'field' => 'items.0.price_override',
+                'payload' => ['items' => [['price_override' => -1, 'price_override_reason' => 'Negative price test']]],
+                'message' => 'Sale price override cannot be negative.',
+            ],
+            [
+                'field' => 'items.0.discount',
+                'payload' => ['items' => [['discount' => -1]]],
+                'message' => 'Discount cannot be negative.',
+            ],
+            [
+                'field' => 'items.0.tax',
+                'payload' => ['items' => [['tax' => -1]]],
+                'message' => 'Tax cannot be negative.',
+            ],
+        ];
+
+        foreach ($cases as $case) {
+            $response = $this->actingAs($this->admin)
+                ->postJson('/api/v1/admin/sales', salePayload($device, $this->customer, $case['payload']));
+
+            $response->assertUnprocessable()->assertJsonValidationErrors($case['field']);
+            expect($response->json('errors')[$case['field']][0])->toBe($case['message']);
+        }
+
+        expect($device->fresh()->inventory_status)->toBe(InventoryStatus::IN_STOCK)
+            ->and(Sale::count())->toBe(0);
+    });
+
+    it('rejects a negative payment when completing a draft sale', function () {
+        $device = Device::factory()->create([
+            'category_id' => $this->category->id,
+            'branch_id' => $this->branch->id,
+            'brand' => 'Sony',
+            'model' => 'Bravia X85L',
+            'color' => 'Black',
+            'owner_id' => null,
+            'purchase_price' => 800,
+            'inventory_status' => InventoryStatus::IN_STOCK,
+        ]);
+
+        $saleId = $this->actingAs($this->admin)
+            ->postJson('/api/v1/admin/sales', salePayload($device, $this->customer, [
+                'status' => 'draft',
+                'payment_amount' => null,
+            ]))
+            ->assertCreated()
+            ->json('data.id');
+
+        $response = $this->actingAs($this->admin)
+            ->postJson("/api/v1/admin/sales/{$saleId}/complete", ['payment_amount' => -1]);
+
+        $response->assertUnprocessable()->assertJsonValidationErrors('payment_amount');
+        expect($response->json('errors.payment_amount.0'))->toBe('Payment amount cannot be negative.');
+        expect(Sale::find($saleId)->status->value)->toBe('draft')
+            ->and($device->fresh()->inventory_status)->toBe(InventoryStatus::RESERVED);
+    });
+
     it('rejects item discounts greater than unit price', function () {
         $device = Device::factory()->create([
             'category_id' => $this->category->id,
@@ -199,11 +366,13 @@ describe('Admin Sales', function () {
             'model' => 'Bravia X85L',
             'color' => 'Blue',
             'owner_id' => null,
+            'purchase_price' => 800,
             'inventory_status' => InventoryStatus::IN_STOCK,
         ]);
 
         $this->actingAs($this->admin)
             ->postJson('/api/v1/admin/sales', salePayload($device, $this->customer, [
+                'payment_amount' => 5000000,
                 'items' => [[
                     'category_id' => $device->category_id,
                     'brand' => $device->brand,

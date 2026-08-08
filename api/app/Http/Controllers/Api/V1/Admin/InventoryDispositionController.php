@@ -32,17 +32,21 @@ class InventoryDispositionController extends BaseController
             'selling_price' => ['nullable', 'numeric', 'min:0'],
             'reason' => ['required', 'string', 'max:255'],
             'notes' => ['nullable', 'string', 'max:1000'],
+        ], [
+            'selling_price.min' => 'Sale amount cannot be negative.',
         ]);
 
         [$unitCost, $pricingSource] = $this->resolveUnitCost($device);
         $batchPrice = $device->inventoryBatch?->target_selling_price;
         $unitPrice = array_key_exists('selling_price', $validated) && $validated['selling_price'] !== null
             ? round((float) $validated['selling_price'], 2)
-            : ($batchPrice !== null ? round((float) $batchPrice, 2) : null);
+            : ($batchPrice !== null && (float) $batchPrice > 0
+                ? round((float) $batchPrice, 2)
+                : $unitCost);
 
-        if ($unitPrice === null) {
+        if ($unitPrice === null || $unitPrice <= 0) {
             throw ValidationException::withMessages([
-                'selling_price' => ['An actual sale amount is required because this device has no batch target selling price.'],
+                'selling_price' => ['An actual sale amount greater than zero is required because this device has no valid batch selling price or purchase cost.'],
             ]);
         }
 
@@ -276,10 +280,10 @@ class InventoryDispositionController extends BaseController
     private function resolveUnitCost(Device $device): array
     {
         $device->loadMissing('inventoryBatch');
-        if ($device->purchase_price !== null) {
+        if ($device->purchase_price !== null && (float) $device->purchase_price > 0) {
             return [round((float) $device->purchase_price, 2), 'device.purchase_price'];
         }
-        if ($device->inventoryBatch?->buying_price !== null) {
+        if ($device->inventoryBatch?->buying_price !== null && (float) $device->inventoryBatch->buying_price > 0) {
             return [round((float) $device->inventoryBatch->buying_price, 2), 'inventory_batch.buying_price'];
         }
 

@@ -31,6 +31,11 @@ interface CartItem {
 
 const customerContactLabel = (customer: Pick<UserType, 'email' | 'phone_number'>) =>
   customer.email || customer.phone_number || 'No contact details'
+const isNonNegativeNumberInput = (value: string) => {
+  if (value === '') return true
+  const number = Number(value)
+  return Number.isFinite(number) && number >= 0
+}
 
 export default function CustomerServiceNewSalePage() {
   const navigate = useNavigate()
@@ -139,6 +144,10 @@ export default function CustomerServiceNewSalePage() {
         tax: parseFloat(item.tax) || 0,
       }))
 
+      if (items.some(item => !Number.isFinite(item.unit_price) || item.unit_price <= 0)) {
+        throw new Error('Every sale item must have a valid price greater than zero.')
+      }
+
       const response = await apiClient.post<{ success: boolean; data: Sale }>('/customer-service/sales', {
         customer_id: selectedCustomer?.id,
         payment_method: paymentMethod,
@@ -229,10 +238,14 @@ export default function CustomerServiceNewSalePage() {
   const colors = productOptions?.colors || []
   const hasColors = productOptions?.has_colors || false
   const availableCount = productOptions?.available_count || 0
+  const sellingPrice = productOptions?.selling_price !== null && productOptions?.selling_price !== undefined
+    ? Number(productOptions.selling_price)
+    : null
+  const hasValidSellingPrice = sellingPrice !== null && Number.isFinite(sellingPrice) && sellingPrice > 0
 
   // Check if we can add to cart (all required fields selected)
   const canAddToCart = selectedCategoryId && selectedBrand && selectedModel &&
-    (!hasColors || selectedColor !== null) && quantity > 0 && availableCount >= quantity
+    (!hasColors || selectedColor !== null) && quantity > 0 && availableCount >= quantity && hasValidSellingPrice
 
   const addToCart = () => {
     if (!selectedCategoryId || !selectedBrand || !selectedModel) {
@@ -255,11 +268,11 @@ export default function CustomerServiceNewSalePage() {
       return
     }
 
-    // Get price with multiple fallbacks
-    let basePrice = '0'
-    if (productOptions?.selling_price) {
-      basePrice = productOptions.selling_price.toString()
+    if (!hasValidSellingPrice || sellingPrice === null) {
+      toast.error('This item has no valid selling price or purchase cost and cannot be added.')
+      return
     }
+    const basePrice = sellingPrice.toString()
 
     // Calculate tax if VAT is enabled
     const taxAmount = vatApplicable ? (parseFloat(basePrice) * 0.175) : 0
@@ -520,13 +533,18 @@ export default function CustomerServiceNewSalePage() {
                   <span className="text-sm text-slate-600">Available:</span>
                   <span className="text-sm font-medium text-slate-900">{availableCount} units</span>
                 </div>
-                {productOptions?.selling_price && (
+                {hasValidSellingPrice && (
                   <div className="flex items-center justify-between">
-                    <span className="text-sm text-slate-600">Price:</span>
+                    <span className="text-sm text-slate-600">
+                      {productOptions?.pricing_source === 'purchase_cost' ? 'Price (purchase cost):' : 'Price:'}
+                    </span>
                     <span className="text-sm font-medium text-slate-900">
-                      MWK {Number(productOptions.selling_price).toLocaleString()} each
+                      MWK {sellingPrice.toLocaleString()} each
                     </span>
                   </div>
+                )}
+                {selectedModel && !productOptionsLoading && !hasValidSellingPrice && (
+                  <p className="text-xs text-red-600">No valid batch selling price or purchase cost is available. This item cannot be added.</p>
                 )}
                 {(productOptions?.price_tiers?.length || 0) > 1 && (
                   <p className="mt-1 text-xs text-amber-700">Stock spans multiple batches; the final selling price is calculated per batch at checkout.</p>
@@ -617,13 +635,16 @@ export default function CustomerServiceNewSalePage() {
                       <div className="grid grid-cols-2 gap-2">
                         <div>
                           <label className="text-xs text-slate-500">Quantity</label>
-                          <input
-                            type="number"
-                            value={item.quantity}
-                            onChange={(e) => updateCartItem(index, 'quantity', parseInt(e.target.value) || 1)}
-                            className="w-full px-2 py-1 text-sm border border-slate-200 rounded"
-                            min="1"
-                          />
+                        <input
+                          type="number"
+                          value={item.quantity}
+                          onChange={(e) => {
+                            const quantity = parseInt(e.target.value, 10)
+                            updateCartItem(index, 'quantity', Number.isFinite(quantity) ? Math.max(1, quantity) : 1)
+                          }}
+                          className="w-full px-2 py-1 text-sm border border-slate-200 rounded"
+                          min="1"
+                        />
                         </div>
                         <div>
                           <label className="text-xs text-slate-500">Unit Price</label>
@@ -640,8 +661,14 @@ export default function CustomerServiceNewSalePage() {
                           <input
                             type="number"
                             value={item.discount}
-                            onChange={(e) => updateCartItem(index, 'discount', e.target.value)}
+                            onChange={(e) => {
+                              if (isNonNegativeNumberInput(e.target.value)) {
+                                updateCartItem(index, 'discount', e.target.value)
+                              }
+                            }}
                             className="w-full px-2 py-1 text-sm border border-slate-200 rounded"
+                            min="0"
+                            step="0.01"
                           />
                         </div>
                         <div>
@@ -753,7 +780,11 @@ export default function CustomerServiceNewSalePage() {
                 <input
                   type="number"
                   value={amountPaid}
-                  onChange={(e) => setAmountPaid(e.target.value)}
+                  onChange={(e) => {
+                    if (isNonNegativeNumberInput(e.target.value)) {
+                      setAmountPaid(e.target.value)
+                    }
+                  }}
                   placeholder="Enter amount customer is paying..."
                   className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 text-lg font-semibold"
                   min="0"

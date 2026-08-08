@@ -166,6 +166,29 @@ describe('Product Options', function () {
             ->assertJsonPath('data.price_tiers.0.selling_price', '500000.00');
     });
 
+    it('uses device purchase cost when no batch selling price is available', function () {
+        $this->storeAdmin->update(['branch_id' => $this->branch->id]);
+
+        Device::factory()->create([
+            'category_id' => $this->category->id,
+            'branch_id' => $this->branch->id,
+            'inventory_batch_id' => null,
+            'brand' => 'Legacy',
+            'model' => 'Unbatched Device',
+            'purchase_price' => 400000,
+            'inventory_status' => InventoryStatus::IN_STOCK,
+            'owner_id' => null,
+        ]);
+
+        $this->actingAs($this->storeAdmin)
+            ->getJson("/api/v1/admin/inventory/product-options?category_id={$this->category->id}&brand=Legacy&model=Unbatched%20Device")
+            ->assertSuccessful()
+            ->assertJsonPath('data.selling_price', 400000)
+            ->assertJsonPath('data.pricing_source', 'purchase_cost')
+            ->assertJsonPath('data.price_tiers.0.selling_price', '400000.00')
+            ->assertJsonPath('data.price_tiers.0.pricing_source', 'purchase_cost');
+    });
+
     it('uses branch-scoped FIFO batch target price', function () {
         $otherBranch = Branch::create([
             'name' => 'Other Branch',

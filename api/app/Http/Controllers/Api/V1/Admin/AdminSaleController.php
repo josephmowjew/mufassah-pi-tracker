@@ -135,6 +135,13 @@ class AdminSaleController extends BaseController
             'items.*.price_override_reason' => 'required_with:items.*.price_override|string|max:500',
             'items.*.discount' => 'nullable|numeric|min:0',
             'items.*.tax' => 'nullable|numeric|min:0',
+        ], [
+            'payment_amount.min' => 'Payment amount cannot be negative.',
+            'items.*.quantity.min' => 'Quantity must be at least 1.',
+            'items.*.unit_price.min' => 'Sale price cannot be negative.',
+            'items.*.price_override.min' => 'Sale price override cannot be negative.',
+            'items.*.discount.min' => 'Discount cannot be negative.',
+            'items.*.tax.min' => 'Tax cannot be negative.',
         ]);
 
         return DB::transaction(function () use ($validated, $request) {
@@ -198,11 +205,12 @@ class AdminSaleController extends BaseController
                         ]);
                     }
                     $unitPrice = $this->resolveSellingPrice($device, $itemData);
+                    $this->assertPositiveSellingPrice($device, $unitPrice);
                     if ($discount > $unitPrice) throw ValidationException::withMessages(['items' => ['Discount cannot be greater than the unit price.']]);
                     $tax = $sale->vat_applicable ? round($unitPrice * 0.175, 2) : 0;
                     $totalPrice = round(($unitPrice - $discount) + $tax, 2);
 
-                    $costPrice = round((float) ($device->purchase_price ?? 0), 2);
+                    $costPrice = $this->resolveCostPrice($device);
                     $saleItem = SaleItem::create([
                         'sale_id' => $sale->id,
                         'device_id' => $device->id,
@@ -260,11 +268,12 @@ class AdminSaleController extends BaseController
                     // Create a sale item for each device
                     foreach ($devices as $device) {
                         $unitPrice = $this->resolveSellingPrice($device, $itemData);
+                        $this->assertPositiveSellingPrice($device, $unitPrice);
                         if ($discount > $unitPrice) throw ValidationException::withMessages(['items' => ['Discount cannot be greater than the unit price.']]);
                         $tax = $sale->vat_applicable ? round($unitPrice * 0.175, 2) : 0;
                         $totalPrice = round(($unitPrice - $discount) + $tax, 2);
                         $colorText = $device->color ? " - {$device->color}" : '';
-                        $costPrice = round((float) ($device->purchase_price ?? 0), 2);
+                        $costPrice = $this->resolveCostPrice($device);
                         $saleItem = SaleItem::create([
                             'sale_id' => $sale->id,
                             'device_id' => $device->id,
@@ -344,6 +353,8 @@ class AdminSaleController extends BaseController
         $validated = $request->validate([
             'payment_reference' => 'nullable|string|max:100',
             'payment_amount' => 'nullable|numeric|min:0',
+        ], [
+            'payment_amount.min' => 'Payment amount cannot be negative.',
         ]);
 
         return DB::transaction(function () use ($sale, $validated, $request) {
@@ -701,10 +712,46 @@ class AdminSaleController extends BaseController
 
         $device->loadMissing('inventoryBatch');
         if ($device->inventoryBatch?->target_selling_price !== null) {
-            return round((float) $device->inventoryBatch->target_selling_price, 2);
+            $batchPrice = (float) $device->inventoryBatch->target_selling_price;
+            if ($batchPrice > 0) {
+                return round($batchPrice, 2);
+            }
         }
 
-        return round((float) ($itemData['unit_price'] ?? 0), 2);
+        $purchaseCost = $device->purchase_price;
+        if ($purchaseCost === null || (float) $purchaseCost <= 0) {
+            $purchaseCost = $device->inventoryBatch?->buying_price;
+        }
+        if ($purchaseCost !== null && (float) $purchaseCost > 0) {
+            return round((float) $purchaseCost, 2);
+        }
+
+        $requestedUnitPrice = $itemData['unit_price'] ?? null;
+        if ($requestedUnitPrice !== null && (float) $requestedUnitPrice > 0) {
+            return round((float) $requestedUnitPrice, 2);
+        }
+
+        return 0;
+    }
+
+    private function resolveCostPrice(Device $device): float
+    {
+        $device->loadMissing('inventoryBatch');
+        $costPrice = $device->purchase_price;
+        if ($costPrice === null || (float) $costPrice <= 0) {
+            $costPrice = $device->inventoryBatch?->buying_price;
+        }
+
+        return round((float) ($costPrice ?? 0), 2);
+    }
+
+    private function assertPositiveSellingPrice(Device $device, float $unitPrice): void
+    {
+        if ($unitPrice <= 0) {
+            throw ValidationException::withMessages([
+                'items' => ["Device {$device->serial_number} has no valid selling price. Set a batch selling price or purchase cost before selling."],
+            ]);
+        }
     }
 
     private function resolveSaleReadBranchId(Request $request, ?int $requestedBranchId): ?int

@@ -276,15 +276,36 @@ class AdminInventoryController extends BaseController
             $priceTiers = $this->applyFifoOrder((clone $baseQuery)
                 ->where('brand', $brand)
                 ->where('model', $model)
-                ->with('inventoryBatch:id,batch_number,target_selling_price'))
+                ->with('inventoryBatch:id,batch_number,buying_price,target_selling_price'))
                 ->get()
-                ->groupBy('inventory_batch_id')
-                ->map(fn ($devices) => [
-                    'batch_id' => $devices->first()->inventory_batch_id,
-                    'batch_number' => $devices->first()->inventoryBatch?->batch_number,
-                    'available_quantity' => $devices->count(),
-                    'selling_price' => $devices->first()->inventoryBatch?->target_selling_price,
-                ])->values();
+                ->map(function (Device $device): array {
+                    [$sellingPrice, $pricingSource] = $this->resolveProductOptionPrice($device);
+                    $formattedPrice = $sellingPrice !== null
+                        ? number_format($sellingPrice, 2, '.', '')
+                        : null;
+
+                    return [
+                        'device' => $device,
+                        'group_key' => $device->inventory_batch_id !== null
+                            ? sprintf('batch:%d:%s', $device->inventory_batch_id, $formattedPrice ?? 'unpriced')
+                            : sprintf('purchase:%s', $formattedPrice ?? 'unpriced'),
+                        'selling_price' => $formattedPrice,
+                        'pricing_source' => $pricingSource,
+                    ];
+                })
+                ->groupBy('group_key')
+                ->map(function ($devices): array {
+                    $first = $devices->first();
+                    $device = $first['device'];
+
+                    return [
+                        'batch_id' => $device->inventory_batch_id,
+                        'batch_number' => $device->inventoryBatch?->batch_number,
+                        'available_quantity' => $devices->count(),
+                        'selling_price' => $first['selling_price'],
+                        'pricing_source' => $first['pricing_source'],
+                    ];
+                })->values();
         }
         $sellingPrice = $priceTiers->first()['selling_price'] ?? null;
 
@@ -294,7 +315,8 @@ class AdminInventoryController extends BaseController
             'colors' => $colors,
             'has_colors' => $hasColors,
             'available_count' => $availableCount,
-            'selling_price' => $sellingPrice ? round($sellingPrice, 2) : null,
+            'selling_price' => $sellingPrice !== null ? round((float) $sellingPrice, 2) : null,
+            'pricing_source' => $priceTiers->first()['pricing_source'] ?? null,
             'price_tiers' => $priceTiers,
         ]);
     }
@@ -719,6 +741,25 @@ class AdminInventoryController extends BaseController
             ->orderBy('inventory_batch_id')
             ->orderBy('created_at')
             ->orderBy('id');
+    }
+
+    /** @return array{0: float|null, 1: string|null} */
+    private function resolveProductOptionPrice(Device $device): array
+    {
+        $batchPrice = $device->inventoryBatch?->target_selling_price;
+        if ($batchPrice !== null && (float) $batchPrice > 0) {
+            return [round((float) $batchPrice, 2), 'batch_target_selling_price'];
+        }
+
+        $purchaseCost = $device->purchase_price;
+        if ($purchaseCost === null || (float) $purchaseCost <= 0) {
+            $purchaseCost = $device->inventoryBatch?->buying_price;
+        }
+        if ($purchaseCost !== null && (float) $purchaseCost > 0) {
+            return [round((float) $purchaseCost, 2), 'purchase_cost'];
+        }
+
+        return [null, null];
     }
 
     private function createBatchWithRetry(array $attributes): InventoryBatch

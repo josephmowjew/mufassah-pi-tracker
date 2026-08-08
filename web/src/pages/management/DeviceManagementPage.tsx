@@ -786,12 +786,12 @@ export default function DeviceManagementPage() {
                 This will permanently remove the device and all associated data including locations and geofences.
               </p>
               <div>
-                <label className="mb-1 block text-sm font-medium text-slate-700">Reason <span className="text-red-500">*</span></label>
-                <input value={deleteReason} onChange={(event) => setDeleteReason(event.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" placeholder="Why should this device be deleted?" />
+                <label htmlFor="management-delete-reason" className="mb-1 block text-sm font-medium text-slate-700">Reason <span className="text-red-500">*</span></label>
+                <input id="management-delete-reason" value={deleteReason} onChange={(event) => setDeleteReason(event.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm placeholder:text-slate-400 focus:border-blue-500 focus:outline-none" placeholder="Why should this device be deleted?" />
               </div>
               <div>
-                <label className="mb-1 block text-sm font-medium text-slate-700">Notes</label>
-                <textarea value={deleteNotes} onChange={(event) => setDeleteNotes(event.target.value)} rows={2} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" placeholder="Optional context" />
+                <label htmlFor="management-delete-notes" className="mb-1 block text-sm font-medium text-slate-700">Notes</label>
+                <textarea id="management-delete-notes" value={deleteNotes} onChange={(event) => setDeleteNotes(event.target.value)} rows={2} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm placeholder:text-slate-400 focus:border-blue-500 focus:outline-none" placeholder="Optional context" />
               </div>
               {deleteWarning && (
                 <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
