@@ -538,6 +538,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::prefix('sales')->name('sales.')->group(function () {
             Route::get('/', [AdminSaleController::class, 'index'])->name('index');
             Route::post('/', [AdminSaleController::class, 'store'])->middleware('permission:manage-sales')->name('store');
+            Route::get('/summary', [AdminSaleController::class, 'summary'])->name('summary');
             Route::get('/{sale}', [AdminSaleController::class, 'show'])->name('show');
             Route::get('/{sale}/receipt', [AdminSaleController::class, 'receipt'])->name('receipt');
             Route::get('/{sale}/receipt-url', [AdminSaleController::class, 'generateReceiptUrl'])->name('receipt-url');

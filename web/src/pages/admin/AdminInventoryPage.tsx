@@ -6,13 +6,15 @@ import ConfirmDialog from '@/components/ui/ConfirmDialog'
 import { PERMISSIONS } from '@/stores/auth-store'
 import apiClient from '@/api/client'
 import { toast } from 'sonner'
-import type { Device, GroupedInventoryItem, InventoryBatch } from '@/types'
+import type { Branch, Device, GroupedInventoryItem, InventoryBatch } from '@/types'
 import ActionChallengePinModal, { type ActionChallengeInfo } from '@/components/admin/ActionChallengePinModal'
+import BranchScopeFilter from '@/components/admin/BranchScopeFilter'
 import StockViewTable from '@/components/inventory/StockViewTable'
 import SerialViewTable from '@/components/inventory/SerialViewTable'
 import ProductDetailsModal from '@/components/inventory/ProductDetailsModal'
 import BulkAddDeviceModal from '@/components/inventory/BulkAddDeviceModal'
 import { CheckCircle, Clock, Tag, RotateCcw, AlertTriangle } from 'lucide-react'
+import { appendBranchScope } from '@/lib/branch-scope'
 
 interface PaginatedResponse {
   data: Device[]
@@ -88,9 +90,11 @@ export default function AdminInventoryPage() {
 
   // Fetch inventory stats
   const { data: stats } = useQuery({
-    queryKey: ['inventory-stats'],
+    queryKey: ['inventory-stats', selectedBranchId],
     queryFn: async () => {
-      const response = await apiClient.get<{ success: boolean; data: InventoryStats }>('/admin/inventory/stats')
+      const params = new URLSearchParams()
+      appendBranchScope(params, selectedBranchId)
+      const response = await apiClient.get<{ success: boolean; data: InventoryStats }>(`/admin/inventory/stats?${params.toString()}`)
       return response.data.data
     },
   })
@@ -99,7 +103,7 @@ export default function AdminInventoryPage() {
   const { data: branches } = useQuery({
     queryKey: ['branches'],
     queryFn: async () => {
-      const response = await apiClient.get<{ success: boolean; data: Array<{ id: number; name: string }> }>('/admin/branches')
+      const response = await apiClient.get<{ success: boolean; data: Branch[] }>('/admin/branches?per_page=100')
       return response.data.data
     },
   })
@@ -111,7 +115,7 @@ export default function AdminInventoryPage() {
       const params = new URLSearchParams()
       if (search) params.append('search', search)
       if (inventoryStatus) params.append('inventory_status', inventoryStatus)
-      if (selectedBranchId) params.append('branch_id', selectedBranchId)
+      appendBranchScope(params, selectedBranchId)
 
       const response = await apiClient.get<{ success: boolean; data: { data: GroupedInventoryItem[]; total: number } }>(
         `/admin/inventory/grouped?${params.toString()}`
@@ -130,7 +134,7 @@ export default function AdminInventoryPage() {
       params.append('per_page', '15')
       if (search) params.append('search', search)
       if (inventoryStatus) params.append('inventory_status', inventoryStatus)
-      if (selectedBranchId) params.append('branch_id', selectedBranchId)
+      appendBranchScope(params, selectedBranchId)
 
       const response = await apiClient.get<{ success: boolean; data: Device[]; meta: PaginatedResponse['meta'] }>(
         `/admin/inventory?${params.toString()}`
@@ -147,7 +151,7 @@ export default function AdminInventoryPage() {
       params.append('page', page.toString())
       params.append('per_page', '15')
       if (search) params.append('search', search)
-      if (selectedBranchId) params.append('branch_id', selectedBranchId)
+      appendBranchScope(params, selectedBranchId)
 
       const response = await apiClient.get<{ success: boolean; data: InventoryBatch[]; meta: PaginatedResponse['meta'] }>(
         `/admin/inventory/batches?${params.toString()}`
@@ -424,18 +428,12 @@ export default function AdminInventoryPage() {
                 className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
             </div>
-            <select
+            <BranchScopeFilter
               value={selectedBranchId}
-              onChange={(e) => { setSelectedBranchId(e.target.value); setPage(1) }}
-              className="px-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="">All Branches</option>
-              {branches?.map((branch) => (
-                <option key={branch.id} value={branch.id.toString()}>
-                  {branch.name}
-                </option>
-              ))}
-            </select>
+              branches={branches}
+              onChange={(value) => { setSelectedBranchId(value); setPage(1) }}
+              className="w-full sm:w-64"
+            />
             {viewMode !== 'batches' && (
               <select
                 value={inventoryStatus}

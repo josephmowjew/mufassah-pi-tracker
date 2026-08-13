@@ -473,6 +473,132 @@ describe('Admin Sales', function () {
         expect($response->json('data.0.sale_number'))->toBe('SALE-2026-00001');
     });
 
+    it('lets super admins filter sales by branch and explicitly view all branches', function () {
+        $otherBranch = Branch::create([
+            'name' => 'Other Branch',
+            'code' => 'OTH',
+            'is_active' => true,
+        ]);
+
+        Sale::create([
+            'sale_number' => 'SALE-2026-00004',
+            'customer_id' => $this->customer->id,
+            'branch_id' => $this->branch->id,
+            'sold_by_id' => $this->admin->id,
+            'payment_method' => PaymentMethod::Cash,
+            'payment_status' => PaymentStatus::Completed,
+            'status' => SaleStatus::COMPLETED,
+            'sale_date' => now(),
+            'subtotal' => 100,
+            'tax_amount' => 0,
+            'discount_amount' => 0,
+            'total_amount' => 100,
+        ]);
+
+        Sale::create([
+            'sale_number' => 'SALE-2026-00005',
+            'customer_id' => $this->customer->id,
+            'branch_id' => $otherBranch->id,
+            'sold_by_id' => $this->admin->id,
+            'payment_method' => PaymentMethod::Cash,
+            'payment_status' => PaymentStatus::Completed,
+            'status' => SaleStatus::COMPLETED,
+            'sale_date' => now(),
+            'subtotal' => 200,
+            'tax_amount' => 0,
+            'discount_amount' => 0,
+            'total_amount' => 200,
+        ]);
+
+        $this->actingAs($this->admin)
+            ->getJson("/api/v1/admin/sales?branch_id={$otherBranch->id}")
+            ->assertSuccessful()
+            ->assertJsonPath('meta.total', 1)
+            ->assertJsonPath('data.0.branch_id', $otherBranch->id)
+            ->assertJsonPath('data.0.branch.name', 'Other Branch');
+
+        $this->actingAs($this->admin)
+            ->getJson('/api/v1/admin/sales?all_branches=1')
+            ->assertSuccessful()
+            ->assertJsonPath('meta.total', 2);
+    });
+
+    it('filters sales inclusively by the requested date range', function () {
+        $from = now()->subDays(2)->toDateString();
+        $to = now()->subDay()->toDateString();
+
+        foreach ([
+            ['number' => 'SALE-2026-DATE-01', 'date' => now()->subDays(3)],
+            ['number' => 'SALE-2026-DATE-02', 'date' => now()->subDays(2)->startOfDay()],
+            ['number' => 'SALE-2026-DATE-03', 'date' => now()->subDay()->endOfDay()],
+        ] as $saleData) {
+            Sale::create([
+                'sale_number' => $saleData['number'],
+                'customer_id' => $this->customer->id,
+                'branch_id' => $this->branch->id,
+                'sold_by_id' => $this->admin->id,
+                'payment_method' => PaymentMethod::Cash,
+                'payment_status' => PaymentStatus::Completed,
+                'status' => SaleStatus::COMPLETED,
+                'sale_date' => $saleData['date'],
+                'subtotal' => 100,
+                'tax_amount' => 0,
+                'discount_amount' => 0,
+                'total_amount' => 100,
+            ]);
+        }
+
+        $this->actingAs($this->admin)
+            ->getJson("/api/v1/admin/sales?date_from={$from}&date_to={$to}")
+            ->assertSuccessful()
+            ->assertJsonPath('meta.total', 2);
+    });
+
+    it('summarizes all sales matching the branch and date filters', function () {
+        $otherBranch = Branch::create([
+            'name' => 'Other Branch',
+            'code' => 'OTH',
+            'is_active' => true,
+        ]);
+
+        $matchingDate = now()->subDay();
+        foreach ([
+            ['number' => 'SALE-2026-SUMMARY-01', 'branch_id' => $this->branch->id, 'amount' => 100],
+            ['number' => 'SALE-2026-SUMMARY-02', 'branch_id' => $this->branch->id, 'amount' => 200],
+            ['number' => 'SALE-2026-SUMMARY-03', 'branch_id' => $otherBranch->id, 'amount' => 500],
+        ] as $saleData) {
+            Sale::create([
+                'sale_number' => $saleData['number'],
+                'customer_id' => $this->customer->id,
+                'branch_id' => $saleData['branch_id'],
+                'sold_by_id' => $this->admin->id,
+                'payment_method' => PaymentMethod::Cash,
+                'payment_status' => PaymentStatus::Completed,
+                'status' => SaleStatus::COMPLETED,
+                'sale_date' => $matchingDate,
+                'subtotal' => $saleData['amount'],
+                'tax_amount' => 0,
+                'discount_amount' => 0,
+                'total_amount' => $saleData['amount'],
+            ]);
+        }
+
+        $date = $matchingDate->toDateString();
+        $this->actingAs($this->admin)
+            ->getJson("/api/v1/admin/sales/summary?branch_id={$this->branch->id}&date_from={$date}&date_to={$date}")
+            ->assertSuccessful()
+            ->assertJsonPath('data.sales_count', 2)
+            ->assertJsonPath('data.total_amount', 300)
+            ->assertJsonPath('data.average_amount', 150);
+    });
+
+    it('rejects a sales date range whose end precedes its start', function () {
+        $this->actingAs($this->admin)
+            ->getJson('/api/v1/admin/sales?date_from=2026-08-13&date_to=2026-08-12')
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('date_to');
+    });
+
     it('prevents store admins from viewing another branch sale directly', function () {
         $otherBranch = Branch::create([
             'name' => 'Other Branch',

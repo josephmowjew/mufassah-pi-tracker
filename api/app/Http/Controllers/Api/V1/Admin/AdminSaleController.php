@@ -24,6 +24,7 @@ use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Validation\ValidationException;
 use Illuminate\Database\QueryException;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Validation\Rule;
 
 class AdminSaleController extends BaseController
@@ -37,46 +38,10 @@ class AdminSaleController extends BaseController
      */
     public function index(Request $request): JsonResponse
     {
-        $branchId = $this->resolveSaleReadBranchId($request, $request->filled('branch_id') ? $request->integer('branch_id') : null);
-        $query = Sale::query()
+        $validated = $this->validateSaleListFilters($request);
+        $query = $this->buildSaleReadQuery($request, $validated)
             ->with(['customer', 'soldBy', 'branch'])
-            ->withCount('items')
-            ->when($branchId, fn ($q) => $q->where('branch_id', $branchId));
-
-        // Filter by status
-        if ($request->has('status')) {
-            $query->where('status', $request->status);
-        }
-
-        // Filter by payment status
-        if ($request->has('payment_status')) {
-            $query->where('payment_status', $request->payment_status);
-        }
-
-        // Filter by customer
-        if ($request->has('customer_id')) {
-            $query->where('customer_id', $request->customer_id);
-        }
-
-        // Filter by date range
-        if ($request->has('date_from')) {
-            $query->whereDate('sale_date', '>=', $request->date_from);
-        }
-        if ($request->has('date_to')) {
-            $query->whereDate('sale_date', '<=', $request->date_to);
-        }
-
-        // Search by sale number or customer name
-        if ($request->has('search')) {
-            $search = $request->search;
-            $query->where(function ($q) use ($search) {
-                $q->where('sale_number', 'like', "%{$search}%")
-                    ->orWhereHas('customer', function ($customerQuery) use ($search) {
-                        $customerQuery->where('name', 'like', "%{$search}%")
-                            ->orWhere('email', 'like', "%{$search}%");
-                    });
-            });
-        }
+            ->withCount('items');
 
         // Sort
         $sortField = $request->get('sort', 'created_at');
@@ -88,6 +53,23 @@ class AdminSaleController extends BaseController
         $sales = $query->paginate($perPage);
 
         return $this->paginated(SaleResource::collection($sales));
+    }
+
+    /**
+     * Summarize all sales matching the current list filters, independent of pagination.
+     */
+    public function summary(Request $request): JsonResponse
+    {
+        $validated = $this->validateSaleListFilters($request);
+        $summary = $this->buildSaleReadQuery($request, $validated)
+            ->selectRaw('COUNT(*) as sales_count, COALESCE(SUM(total_amount), 0) as total_amount, COALESCE(AVG(total_amount), 0) as average_amount')
+            ->first();
+
+        return $this->success([
+            'sales_count' => (int) ($summary?->sales_count ?? 0),
+            'total_amount' => round((float) ($summary?->total_amount ?? 0), 2),
+            'average_amount' => round((float) ($summary?->average_amount ?? 0), 2),
+        ]);
     }
 
     /**
@@ -754,11 +736,66 @@ class AdminSaleController extends BaseController
         }
     }
 
+    private function validateSaleListFilters(Request $request): array
+    {
+        return $request->validate([
+            'date_from' => ['nullable', 'date'],
+            'date_to' => ['nullable', 'date', 'after_or_equal:date_from'],
+        ]);
+    }
+
+    /** @param array<string, mixed> $validated */
+    private function buildSaleReadQuery(Request $request, array $validated): Builder
+    {
+        $branchId = $this->resolveSaleReadBranchId(
+            $request,
+            $request->filled('branch_id') ? $request->integer('branch_id') : null,
+        );
+        $query = Sale::query()
+            ->when($branchId, fn ($q) => $q->where('branch_id', $branchId));
+
+        if ($request->has('status')) {
+            $query->where('status', $request->status);
+        }
+
+        if ($request->has('payment_status')) {
+            $query->where('payment_status', $request->payment_status);
+        }
+
+        if ($request->has('customer_id')) {
+            $query->where('customer_id', $request->customer_id);
+        }
+
+        if (! empty($validated['date_from'])) {
+            $query->whereDate('sale_date', '>=', $validated['date_from']);
+        }
+        if (! empty($validated['date_to'])) {
+            $query->whereDate('sale_date', '<=', $validated['date_to']);
+        }
+
+        if ($request->has('search')) {
+            $search = $request->search;
+            $query->where(function ($q) use ($search) {
+                $q->where('sale_number', 'like', "%{$search}%")
+                    ->orWhereHas('customer', function ($customerQuery) use ($search) {
+                        $customerQuery->where('name', 'like', "%{$search}%")
+                            ->orWhere('email', 'like', "%{$search}%");
+                    });
+            });
+        }
+
+        return $query;
+    }
+
     private function resolveSaleReadBranchId(Request $request, ?int $requestedBranchId): ?int
     {
         $user = $request->user();
 
         if ($user?->hasRole('super_admin')) {
+            if ($request->boolean('all_branches')) {
+                return null;
+            }
+
             return $requestedBranchId ?: ($user->branch_id ? (int) $user->branch_id : null);
         }
 

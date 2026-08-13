@@ -1,13 +1,15 @@
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Search, ShoppingCart, Plus, Loader2, User, Eye, CheckCircle, XCircle, RotateCcw, Clock, Receipt, Smartphone, Trash2, Package, UserPlus, X, Minus, Printer } from 'lucide-react'
+import { Search, ShoppingCart, Plus, Loader2, User, Eye, CheckCircle, XCircle, RotateCcw, Clock, CalendarDays, Receipt, Smartphone, Trash2, Package, UserPlus, X, Minus, Printer, DollarSign, TrendingUp } from 'lucide-react'
 import apiClient from '@/api/client'
 import { devicesApi } from '@/api/devices'
 import { toast } from 'sonner'
-import type { Sale, User as UserType, SubscriptionPlan, ProductOptions } from '@/types'
+import type { Branch, Sale, User as UserType, SubscriptionPlan, ProductOptions } from '@/types'
 import { Authorize } from '@/components/auth/Authorize'
+import BranchScopeFilter from '@/components/admin/BranchScopeFilter'
 import { PERMISSIONS } from '@/stores/auth-store'
 import ReceiptModal from '@/components/sales/ReceiptModal'
+import { appendBranchScope } from '@/lib/branch-scope'
 
 interface NewCustomerFormData {
   name: string
@@ -27,6 +29,12 @@ interface PaginatedResponse {
   }
 }
 
+interface SalesSummary {
+  sales_count: number
+  total_amount: number | string
+  average_amount: number | string
+}
+
 interface CartItem {
   category_id: number
   category_name: string
@@ -40,9 +48,55 @@ interface CartItem {
   subscription_plan_id: string
 }
 
+type DurationPreset = 'all' | 'today' | 'this_week' | 'this_month' | 'last_month' | 'custom'
+
+const durationPresets: Array<{ value: DurationPreset; label: string }> = [
+  { value: 'all', label: 'All time' },
+  { value: 'today', label: 'Today' },
+  { value: 'this_week', label: 'This week' },
+  { value: 'this_month', label: 'This month' },
+  { value: 'last_month', label: 'Last month' },
+  { value: 'custom', label: 'Custom' },
+]
+
 const roundMoney = (value: number) => Math.round((value + Number.EPSILON) * 100) / 100
 const formatMoney = (value: number | string | null | undefined) =>
   `MWK ${Number(value || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+const formatDateInput = (date: Date) => {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return String(year) + '-' + month + '-' + day
+}
+
+const getDurationRange = (preset: DurationPreset): { from: string; to: string } | null => {
+  if (preset === 'all' || preset === 'custom') return null
+
+  const today = new Date()
+  const currentDay = new Date(today.getFullYear(), today.getMonth(), today.getDate())
+
+  if (preset === 'today') {
+    const value = formatDateInput(currentDay)
+    return { from: value, to: value }
+  }
+
+  if (preset === 'this_week') {
+    const mondayOffset = (currentDay.getDay() + 6) % 7
+    const monday = new Date(currentDay)
+    monday.setDate(currentDay.getDate() - mondayOffset)
+    return { from: formatDateInput(monday), to: formatDateInput(currentDay) }
+  }
+
+  if (preset === 'this_month') {
+    const monthStart = new Date(currentDay.getFullYear(), currentDay.getMonth(), 1)
+    return { from: formatDateInput(monthStart), to: formatDateInput(currentDay) }
+  }
+
+  const lastMonthStart = new Date(currentDay.getFullYear(), currentDay.getMonth() - 1, 1)
+  const lastMonthEnd = new Date(currentDay.getFullYear(), currentDay.getMonth(), 0)
+  return { from: formatDateInput(lastMonthStart), to: formatDateInput(lastMonthEnd) }
+}
+
 const isNonNegativeNumberInput = (value: string) => {
   if (value === '') return true
   const number = Number(value)
@@ -56,6 +110,10 @@ export default function SalesPage() {
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
   const [statusFilter, setStatusFilter] = useState('')
+  const [selectedBranchId, setSelectedBranchId] = useState('')
+  const [durationPreset, setDurationPreset] = useState<DurationPreset>('all')
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo] = useState('')
   const [selectedSale, setSelectedSale] = useState<Sale | null>(null)
   const [showNewSaleModal, setShowNewSaleModal] = useState(false)
   const [showDetailsModal, setShowDetailsModal] = useState(false)
@@ -96,21 +154,75 @@ export default function SalesPage() {
   })
   const [customerFormErrors, setCustomerFormErrors] = useState<Partial<Record<keyof NewCustomerFormData, string>>>({})
 
+  const { data: branches, isLoading: branchesLoading } = useQuery({
+    queryKey: ['branches'],
+    queryFn: async () => {
+      const response = await apiClient.get<{ success: boolean; data: Branch[] }>('/admin/branches?per_page=100')
+      return response.data.data
+    },
+  })
+
+  const dateRangeError = dateFrom && dateTo && dateFrom > dateTo
+    ? 'The start date must be on or before the end date.'
+    : ''
+  const isDateRangeValid = !dateRangeError
+
+  const handleDurationPresetChange = (preset: DurationPreset) => {
+    setDurationPreset(preset)
+    const range = getDurationRange(preset)
+    setDateFrom(range?.from || '')
+    setDateTo(range?.to || '')
+    setPage(1)
+  }
+
+  const handleDateChange = (field: 'from' | 'to', value: string) => {
+    setDurationPreset('custom')
+    if (field === 'from') {
+      setDateFrom(value)
+    } else {
+      setDateTo(value)
+    }
+    setPage(1)
+  }
+
   // Fetch sales
   const { data, isLoading, error } = useQuery({
-    queryKey: ['admin-sales', search, page, statusFilter],
+    queryKey: ['admin-sales', search, page, statusFilter, selectedBranchId, dateFrom, dateTo],
     queryFn: async () => {
       const params = new URLSearchParams()
       params.append('page', page.toString())
       params.append('per_page', '15')
       if (search) params.append('search', search)
       if (statusFilter) params.append('status', statusFilter)
+      appendBranchScope(params, selectedBranchId)
+      if (dateFrom) params.append('date_from', dateFrom)
+      if (dateTo) params.append('date_to', dateTo)
 
       const response = await apiClient.get<{ success: boolean; data: Sale[]; meta: PaginatedResponse['meta'] }>(
         `/admin/sales?${params.toString()}`
       )
       return response.data
     },
+    enabled: isDateRangeValid,
+  })
+
+  // Aggregate the complete filtered result set independently of the table page.
+  const { data: summaryData, isLoading: summaryLoading } = useQuery({
+    queryKey: ['admin-sales-summary', search, statusFilter, selectedBranchId, dateFrom, dateTo],
+    queryFn: async () => {
+      const params = new URLSearchParams()
+      if (search) params.append('search', search)
+      if (statusFilter) params.append('status', statusFilter)
+      appendBranchScope(params, selectedBranchId)
+      if (dateFrom) params.append('date_from', dateFrom)
+      if (dateTo) params.append('date_to', dateTo)
+
+      const response = await apiClient.get<{ success: boolean; data: SalesSummary }>(
+        `/admin/sales/summary?${params.toString()}`
+      )
+      return response.data.data
+    },
+    enabled: isDateRangeValid,
   })
 
   // Search customers
@@ -205,6 +317,7 @@ export default function SalesPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-sales'] })
+      queryClient.invalidateQueries({ queryKey: ['admin-sales-summary'] })
       queryClient.invalidateQueries({ queryKey: ['admin-inventory'] })
       queryClient.invalidateQueries({ queryKey: ['inventory-stats'] })
       queryClient.invalidateQueries({ queryKey: ['inventory-batches'] })
@@ -230,6 +343,7 @@ export default function SalesPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-sales'] })
+      queryClient.invalidateQueries({ queryKey: ['admin-sales-summary'] })
       queryClient.invalidateQueries({ queryKey: ['admin-inventory'] })
       queryClient.invalidateQueries({ queryKey: ['inventory-batches'] })
       queryClient.invalidateQueries({ queryKey: ['inventory-stats'] })
@@ -257,6 +371,7 @@ export default function SalesPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-sales'] })
+      queryClient.invalidateQueries({ queryKey: ['admin-sales-summary'] })
       queryClient.invalidateQueries({ queryKey: ['admin-inventory'] })
       queryClient.invalidateQueries({ queryKey: ['inventory-batches'] })
       queryClient.invalidateQueries({ queryKey: ['inventory-stats'] })
@@ -278,6 +393,7 @@ export default function SalesPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-sales'] })
+      queryClient.invalidateQueries({ queryKey: ['admin-sales-summary'] })
       queryClient.invalidateQueries({ queryKey: ['admin-inventory'] })
       queryClient.invalidateQueries({ queryKey: ['inventory-stats'] })
       queryClient.invalidateQueries({ queryKey: ['inventory-batches'] })
@@ -557,6 +673,8 @@ export default function SalesPage() {
 
   const sales = data?.data || []
   const meta = data?.meta
+  const summaryValues = summaryData
+  const summaryUnavailable = !isDateRangeValid || !summaryValues
   const customers = customersData || []
   const categories = categoriesData || []
   const plans = plansData || []
@@ -596,30 +714,150 @@ export default function SalesPage() {
         </Authorize>
       </div>
 
+        {/* Filter-aware summary */}
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="flex items-start gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
+                <DollarSign className="h-5 w-5" aria-hidden="true" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Sales total</p>
+                <p className="mt-1 text-2xl font-semibold tracking-tight text-slate-900">
+                  {summaryLoading || summaryUnavailable ? '—' : formatMoney(summaryValues.total_amount)}
+                </p>
+                <p className="mt-1 truncate text-xs text-slate-500">Matches the current filters</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="flex items-start gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600">
+                <Receipt className="h-5 w-5" aria-hidden="true" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Transactions</p>
+                <p className="mt-1 text-2xl font-semibold tracking-tight text-slate-900">
+                  {summaryLoading || summaryUnavailable ? '—' : summaryValues.sales_count.toLocaleString()}
+                </p>
+                <p className="mt-1 truncate text-xs text-slate-500">Sales matching the current filters</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="flex items-start gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-violet-50 text-violet-600">
+                <TrendingUp className="h-5 w-5" aria-hidden="true" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Average sale</p>
+                <p className="mt-1 text-2xl font-semibold tracking-tight text-slate-900">
+                  {summaryLoading || summaryUnavailable ? '—' : formatMoney(summaryValues.average_amount)}
+                </p>
+                <p className="mt-1 truncate text-xs text-slate-500">Average value per transaction</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
         {/* Filters */}
         <div className="bg-white rounded-xl border border-slate-200 p-4">
-          <div className="flex flex-col sm:flex-row gap-4">
-            <div className="flex-1 relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-end">
+            <div className="relative flex-1">
+              <label htmlFor="sales-search" className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Search sales
+              </label>
+              <Search className="absolute left-3 top-[2.15rem] h-4 w-4 text-slate-400" />
               <input
+                id="sales-search"
                 type="text"
                 placeholder="Search by sale number or customer..."
                 value={search}
                 onChange={(e) => { setSearch(e.target.value); setPage(1) }}
-                className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full rounded-lg border border-slate-200 py-2.5 pl-10 pr-4 text-sm transition-colors focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
               />
             </div>
-            <select
-              value={statusFilter}
-              onChange={(e) => { setStatusFilter(e.target.value); setPage(1) }}
-              className="px-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="">All Status</option>
-              <option value="draft">Draft</option>
-              <option value="completed">Completed</option>
-              <option value="cancelled">Cancelled</option>
-              <option value="refunded">Refunded</option>
-            </select>
+            <div className="min-w-[170px]">
+              <label htmlFor="sales-status-filter" className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Status
+              </label>
+              <select
+                id="sales-status-filter"
+                value={statusFilter}
+                onChange={(e) => { setStatusFilter(e.target.value); setPage(1) }}
+                className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-medium text-slate-700 transition-colors focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+              >
+                <option value="">All statuses</option>
+                <option value="draft">Draft</option>
+                <option value="completed">Completed</option>
+                <option value="cancelled">Cancelled</option>
+                <option value="refunded">Refunded</option>
+              </select>
+            </div>
+            <BranchScopeFilter
+              value={selectedBranchId}
+              branches={branches}
+              isLoading={branchesLoading}
+              onChange={(value) => {
+                setSelectedBranchId(value)
+                setPage(1)
+              }}
+              className="w-full lg:w-64"
+            />
+          </div>
+          <div className="mt-4 border-t border-slate-100 pt-4">
+            <div className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
+              <div className="min-w-0 flex-1">
+                <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  <CalendarDays className="h-3.5 w-3.5 text-blue-500" aria-hidden="true" />
+                  Sales duration
+                </div>
+                <div className="flex flex-wrap gap-2" role="group" aria-label="Sales duration presets">
+                  {durationPresets.map((preset) => (
+                    <button
+                      key={preset.value}
+                      type="button"
+                      aria-pressed={durationPreset === preset.value}
+                      onClick={() => handleDurationPresetChange(preset.value)}
+                      className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+                        durationPreset === preset.value
+                          ? 'border-blue-600 bg-blue-600 text-white shadow-sm'
+                          : 'border-slate-200 bg-white text-slate-600 hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700'
+                      }`}
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {durationPreset === 'custom' && (
+                <div className="grid w-full grid-cols-1 gap-3 sm:grid-cols-2 xl:w-[390px]">
+                  <label className="text-xs font-semibold text-slate-600">
+                    From
+                    <input
+                      type="date"
+                      value={dateFrom}
+                      max={dateTo || undefined}
+                      onChange={(event) => handleDateChange('from', event.target.value)}
+                      className="mt-1.5 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-normal text-slate-700 transition-colors focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                    />
+                  </label>
+                  <label className="text-xs font-semibold text-slate-600">
+                    To
+                    <input
+                      type="date"
+                      value={dateTo}
+                      min={dateFrom || undefined}
+                      onChange={(event) => handleDateChange('to', event.target.value)}
+                      className="mt-1.5 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-normal text-slate-700 transition-colors focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                    />
+                  </label>
+                </div>
+              )}
+            </div>
+            {dateRangeError && <p className="mt-2 text-xs font-medium text-red-600">{dateRangeError}</p>}
           </div>
         </div>
 
@@ -643,6 +881,7 @@ export default function SalesPage() {
                   <tr>
                     <th className="text-left px-6 py-3 text-xs font-medium text-slate-500 uppercase tracking-wider">Sale #</th>
                     <th className="text-left px-6 py-3 text-xs font-medium text-slate-500 uppercase tracking-wider">Customer</th>
+                    <th className="text-left px-6 py-3 text-xs font-medium text-slate-500 uppercase tracking-wider">Branch</th>
                     <th className="text-left px-6 py-3 text-xs font-medium text-slate-500 uppercase tracking-wider">Items</th>
                     <th className="text-left px-6 py-3 text-xs font-medium text-slate-500 uppercase tracking-wider">Total</th>
                     <th className="text-left px-6 py-3 text-xs font-medium text-slate-500 uppercase tracking-wider">Payment</th>
@@ -665,6 +904,9 @@ export default function SalesPage() {
                           <User className="h-4 w-4 text-slate-400" />
                           <span className="text-sm text-slate-600">{sale.customer?.name || '-'}</span>
                         </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className="text-sm text-slate-600">{sale.branch?.name || 'Unassigned'}</span>
                       </td>
                       <td className="px-6 py-4">
                         <span className="text-sm text-slate-600">{sale.items_count || 0} item(s)</span>

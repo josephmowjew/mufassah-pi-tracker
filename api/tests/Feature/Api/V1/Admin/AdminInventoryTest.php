@@ -104,6 +104,40 @@ describe('Inventory Index', function () {
         expect($response->json('meta.total'))->toBe(2);
     });
 
+    it('lets super admins choose a branch and explicitly view all inventory branches', function () {
+        $otherBranch = Branch::create([
+            'name' => 'Other Branch',
+            'code' => 'OTH',
+            'is_active' => true,
+        ]);
+
+        Device::factory()->count(2)->create([
+            'branch_id' => $this->branch->id,
+            'category_id' => $this->category->id,
+            'inventory_status' => InventoryStatus::IN_STOCK,
+        ]);
+        Device::factory()->count(3)->create([
+            'branch_id' => $otherBranch->id,
+            'category_id' => $this->category->id,
+            'inventory_status' => InventoryStatus::IN_STOCK,
+        ]);
+
+        $this->actingAs($this->admin)
+            ->getJson("/api/v1/admin/inventory?branch_id={$otherBranch->id}")
+            ->assertSuccessful()
+            ->assertJsonPath('meta.total', 3);
+
+        $this->actingAs($this->admin)
+            ->getJson('/api/v1/admin/inventory/stats?branch_id='.$otherBranch->id)
+            ->assertSuccessful()
+            ->assertJsonPath('data.summary.total', 3);
+
+        $this->actingAs($this->admin)
+            ->getJson('/api/v1/admin/inventory?all_branches=1')
+            ->assertSuccessful()
+            ->assertJsonPath('meta.total', 5);
+    });
+
     it('searches by serial number', function () {
         Device::factory()->create([
             'category_id' => $this->category->id,

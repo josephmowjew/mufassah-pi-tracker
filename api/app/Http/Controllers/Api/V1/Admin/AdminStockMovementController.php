@@ -275,6 +275,10 @@ class AdminStockMovementController extends BaseController
         $user = $request->user();
 
         if ($user?->hasRole('super_admin')) {
+            if ($request->boolean('all_branches')) {
+                return null;
+            }
+
             return $requestedBranchId ?: ($user->branch_id ? (int) $user->branch_id : null);
         }
 

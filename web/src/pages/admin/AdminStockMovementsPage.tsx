@@ -8,6 +8,7 @@ import Authorize from '@/components/auth/Authorize'
 import { PERMISSIONS } from '@/stores/auth-store'
 import type { Branch, Device, GroupedInventoryItem, InventoryMovement, InventoryMovementSummary, InventoryStatusValue, StockTransferRequest } from '@/types'
 import { useAuthStore } from '@/stores/auth-store'
+import { appendBranchScope } from '@/lib/branch-scope'
 
 const movementTypes = [
   'receipt',
@@ -83,7 +84,7 @@ export default function AdminStockMovementsPage() {
   const movementQuery = useMemo(() => {
     const params = new URLSearchParams({ page: page.toString(), per_page: '15' })
     if (search) params.append('search', search)
-    if (branchId) params.append('branch_id', branchId)
+    appendBranchScope(params, branchId)
     if (movementType) params.append('movement_type', movementType)
     if (dateFrom) params.append('date_from', dateFrom)
     if (dateTo) params.append('date_to', dateTo)
@@ -92,7 +93,7 @@ export default function AdminStockMovementsPage() {
 
   const summaryQuery = useMemo(() => {
     const params = new URLSearchParams()
-    if (branchId) params.append('branch_id', branchId)
+    appendBranchScope(params, branchId)
     if (movementType) params.append('movement_type', movementType)
     if (dateFrom) params.append('date_from', dateFrom)
     if (dateTo) params.append('date_to', dateTo)

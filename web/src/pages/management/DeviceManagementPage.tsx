@@ -6,10 +6,12 @@ import { Authorize } from '@/components/auth/Authorize'
 import { PERMISSIONS } from '@/stores/auth-store'
 import apiClient from '@/api/client'
 import { toast } from 'sonner'
-import type { Device, IotModule } from '@/types'
+import type { Branch, Device, IotModule } from '@/types'
 import ActionChallengePinModal, { type ActionChallengeInfo } from '@/components/admin/ActionChallengePinModal'
+import BranchScopeFilter from '@/components/admin/BranchScopeFilter'
 import DeviceDeletionDialog from '@/components/admin/DeviceDeletionDialog'
 import { getApiErrorMessage, requiresApiConfirmation } from '@/lib/utils'
+import { appendBranchScope } from '@/lib/branch-scope'
 
 interface PaginatedResponse {
   data: Device[]
@@ -26,6 +28,7 @@ export default function DeviceManagementPage() {
   const queryClient = useQueryClient()
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
+  const [selectedBranchId, setSelectedBranchId] = useState('')
   const [selectedDevice, setSelectedDevice] = useState<Device | null>(null)
   const [selectedDevices, setSelectedDevices] = useState<Device[]>([])
   const [statusDevice, setStatusDevice] = useState<Device | null>(null)
@@ -52,13 +55,22 @@ export default function DeviceManagementPage() {
     purchase_location: '',
   })
 
+  const { data: branches, isLoading: branchesLoading } = useQuery({
+    queryKey: ['branches'],
+    queryFn: async () => {
+      const response = await apiClient.get<{ success: boolean; data: Branch[] }>('/admin/branches?per_page=100')
+      return response.data.data
+    },
+  })
+
   const { data, isLoading, error } = useQuery({
-    queryKey: ['admin-devices', search, page],
+    queryKey: ['admin-devices', search, page, selectedBranchId],
     queryFn: async () => {
       const params = new URLSearchParams()
       params.append('page', page.toString())
       params.append('per_page', '15')
       if (search) params.append('search', search)
+      appendBranchScope(params, selectedBranchId)
 
       const response = await apiClient.get<{ success: boolean; data: Device[]; meta: PaginatedResponse['meta'] }>(
         `/admin/devices?${params.toString()}`
@@ -345,17 +357,34 @@ export default function DeviceManagementPage() {
       <div className="bg-white rounded-xl border border-slate-200/60 shadow-sm">
         {/* Search Bar */}
         <div className="p-4 border-b border-slate-200/60">
-          <div className="relative max-w-md">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-            <input
-              type="text"
-              placeholder="Search by serial, brand, model, or owner..."
-              className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-slate-200 bg-slate-50/50 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-colors"
-              value={search}
-              onChange={(e) => {
-                setSearch(e.target.value)
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-end">
+            <div className="relative max-w-xl flex-1">
+              <label htmlFor="device-search" className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Search devices
+              </label>
+              <Search className="absolute left-3 top-[2.15rem] h-4 w-4 text-slate-400" />
+              <input
+                id="device-search"
+                type="text"
+                placeholder="Search by serial, brand, model, or owner..."
+                className="w-full rounded-lg border border-slate-200 bg-slate-50/50 py-2.5 pl-10 pr-4 text-sm placeholder:text-slate-400 transition-colors focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                value={search}
+                onChange={(e) => {
+                  setSearch(e.target.value)
+                  setPage(1)
+                }}
+              />
+            </div>
+            <BranchScopeFilter
+              value={selectedBranchId}
+              branches={branches}
+              isLoading={branchesLoading}
+              onChange={(value) => {
+                setSelectedBranchId(value)
                 setPage(1)
+                setSelectedDevices([])
               }}
+              className="w-full lg:w-64"
             />
           </div>
           <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
@@ -415,6 +444,7 @@ export default function DeviceManagementPage() {
                       />
                     </th>
                     <th className="text-left py-3 px-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Device</th>
+                    <th className="text-left py-3 px-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Branch</th>
                     <th className="text-left py-3 px-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Owner</th>
                     <th className="text-left py-3 px-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Status</th>
                     <th className="text-left py-3 px-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">IoT Module</th>
@@ -448,6 +478,12 @@ export default function DeviceManagementPage() {
                               <p className="font-medium text-slate-800">{device.brand} {device.model}</p>
                               <p className="text-xs text-slate-500 font-mono">{device.serial_number}</p>
                             </div>
+                          </div>
+                        </td>
+                        <td className="py-3 px-4">
+                          <div className="flex items-center gap-2 text-sm text-slate-600">
+                            <MapPin className="h-4 w-4 text-slate-400" />
+                            <span>{device.branch?.name || 'Unassigned'}</span>
                           </div>
                         </td>
                         <td className="py-3 px-4">

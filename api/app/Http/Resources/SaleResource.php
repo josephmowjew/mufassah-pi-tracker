@@ -12,6 +12,7 @@ class SaleResource extends JsonResource
         return [
             'id' => $this->id,
             'sale_number' => $this->sale_number,
+            'branch_id' => $this->branch_id,
             'subtotal' => $this->subtotal,
             'tax_amount' => $this->tax_amount,
             'discount_amount' => $this->discount_amount,
@@ -46,6 +47,7 @@ class SaleResource extends JsonResource
             // Relationships
             'customer' => new UserResource($this->whenLoaded('customer')),
             'sold_by' => new UserResource($this->whenLoaded('soldBy')),
+            'branch' => new BranchResource($this->whenLoaded('branch')),
             'items' => SaleItemResource::collection($this->whenLoaded('items')),
 
             // Timestamps

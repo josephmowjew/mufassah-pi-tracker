@@ -18,7 +18,14 @@ class AdminDeviceController extends BaseController
     public function index(Request $request): JsonResponse
     {
         $query = Device::query()
-            ->with(['category', 'owner', 'iotModule', 'lastLocation']);
+            ->with(['category', 'owner', 'iotModule', 'lastLocation', 'branch']);
+
+        $branchId = $this->resolveDeviceReadBranchId(
+            $request,
+            $request->filled('branch_id') ? $request->integer('branch_id') : null,
+        );
+
+        $query->when($branchId, fn ($q) => $q->where('branch_id', $branchId));
 
         // Filter by status
         if ($request->has('status')) {
@@ -65,6 +72,23 @@ class AdminDeviceController extends BaseController
         $devices = $query->paginate($perPage);
 
         return $this->paginated(DeviceResource::collection($devices));
+    }
+
+    private function resolveDeviceReadBranchId(Request $request, ?int $requestedBranchId): ?int
+    {
+        $user = $request->user();
+
+        if ($user?->hasRole('super_admin')) {
+            // The UI sends this flag for an intentional all-branches view. Keep
+            // the existing implicit branch fallback for direct API callers.
+            if ($request->boolean('all_branches')) {
+                return null;
+            }
+
+            return $requestedBranchId ?: ($user->branch_id ? (int) $user->branch_id : null);
+        }
+
+        return $user?->branch_id ? (int) $user->branch_id : null;
     }
 
     /**
