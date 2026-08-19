@@ -17,6 +17,13 @@ interface PaginatedResponse {
   }
 }
 
+interface ShiftStats {
+  total_shifts: number
+  completed_shifts: number
+  total_revenue: number
+  total_sales: number
+}
+
 // Helper functions
 const formatDuration = (startedAt: string, endedAt: string | null | undefined) => {
   if (!endedAt) return '-'
@@ -113,7 +120,7 @@ export default function AdminShiftsPage() {
       if (dateTo) params.append('date_to', dateTo)
       if (branchFilter) params.append('branch_id', branchFilter)
 
-      const response = await apiClient.get<{ success: boolean; data: any }>(
+      const response = await apiClient.get<{ success: boolean; data: ShiftStats }>(
         `/admin/shifts/stats?${params.toString()}`
       )
       return response.data.data
@@ -170,7 +177,11 @@ export default function AdminShiftsPage() {
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold text-slate-900">Shift Management</h1>
-            <p className="text-slate-500 text-sm mt-1">View and manage staff shifts across all branches</p>
+            <p className="text-slate-500 text-sm mt-1">
+              {isSuperAdmin
+                ? 'View and manage staff shifts across all branches'
+                : 'View and manage staff shifts for your assigned branch'}
+            </p>
           </div>
         </div>
 

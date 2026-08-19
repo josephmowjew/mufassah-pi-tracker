@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, ArrowLeftRight, Eye, Filter, Loader2, Package, RotateCcw, Search, X } from 'lucide-react'
@@ -119,11 +119,9 @@ export default function AdminStockMovementsPage() {
     enabled: !isSuperAdmin,
   })
 
-  useEffect(() => {
-    if (!isSuperAdmin && showTransferModal && !sourceBranchId && accessibleBranches?.[0]) {
-      setSourceBranchId(accessibleBranches[0].id.toString())
-    }
-  }, [accessibleBranches, isSuperAdmin, showTransferModal, sourceBranchId])
+  const effectiveSourceBranchId = isSuperAdmin
+    ? sourceBranchId
+    : accessibleBranches?.[0]?.id.toString() || ''
 
   const { data: movementsData, isLoading } = useQuery({
     queryKey: ['stock-movements', movementQuery],
@@ -146,27 +144,27 @@ export default function AdminStockMovementsPage() {
   })
 
   const { data: availableDevices, isLoading: devicesLoading } = useQuery({
-    queryKey: ['stock-movement-devices', showTransferModal ? sourceBranchId : branchId, transferSelectionMode],
+    queryKey: ['stock-movement-devices', showTransferModal ? effectiveSourceBranchId : branchId, transferSelectionMode],
     queryFn: async () => {
       const params = new URLSearchParams({ available_only: '1', per_page: '100' })
-      const selectedBranchId = showTransferModal ? sourceBranchId : branchId
+      const selectedBranchId = showTransferModal ? effectiveSourceBranchId : branchId
       if (selectedBranchId) params.append('branch_id', selectedBranchId)
       const response = await apiClient.get<{ success: boolean; data: Device[] }>(`/admin/inventory?${params}`)
       return response.data.data
     },
-    enabled: ((showTransferModal && !!sourceBranchId && transferSelectionMode === 'devices') || showAdjustModal),
+    enabled: ((showTransferModal && !!effectiveSourceBranchId && transferSelectionMode === 'devices') || showAdjustModal),
   })
 
   const { data: transferQuantityOptions = [], isLoading: quantityOptionsLoading } = useQuery({
-    queryKey: ['stock-transfer-quantity-options', sourceBranchId],
+    queryKey: ['stock-transfer-quantity-options', effectiveSourceBranchId],
     queryFn: async () => {
-      const params = new URLSearchParams({ branch_id: sourceBranchId, available_only: '1' })
+      const params = new URLSearchParams({ branch_id: effectiveSourceBranchId, available_only: '1' })
       const response = await apiClient.get<{ success: boolean; data: { data: GroupedInventoryItem[]; total: number } }>(
         `/admin/inventory/grouped?${params.toString()}`
       )
       return response.data.data.data
     },
-    enabled: showTransferModal && !!sourceBranchId && transferSelectionMode === 'quantity',
+    enabled: showTransferModal && !!effectiveSourceBranchId && transferSelectionMode === 'quantity',
   })
 
   const detailQuery = useQuery({
@@ -271,7 +269,7 @@ export default function AdminStockMovementsPage() {
 
       return apiClient.post('/admin/stock-movements/transfer-requests', {
         ...selection,
-        from_branch_id: sourceBranchId ? Number(sourceBranchId) : undefined,
+        from_branch_id: effectiveSourceBranchId ? Number(effectiveSourceBranchId) : undefined,
         to_branch_id: destinationBranchId ? Number(destinationBranchId) : undefined,
         reason,
         notes: notes || undefined,
@@ -360,15 +358,21 @@ export default function AdminStockMovementsPage() {
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="text-2xl font-bold text-slate-900">Stock Movements</h1>
-            <p className="mt-1 text-sm text-slate-500">Audit stock intake, sales, transfers, and adjustments by branch</p>
+            <p className="mt-1 text-sm text-slate-500">
+              {isSuperAdmin
+                ? 'Audit stock intake, sales, transfers, and adjustments across all branches'
+                : 'Audit stock activity involving your assigned branch'}
+            </p>
+            {!isSuperAdmin && (
+              <span className="mt-2 inline-flex rounded-full bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700">
+                {accessibleBranches?.[0]?.name || 'Assigned branch'} scope
+              </span>
+            )}
           </div>
           <Authorize permission={PERMISSIONS.MANAGE_STOCK_MOVEMENTS}>
             <div className="flex flex-wrap gap-2">
               <button
                 onClick={() => {
-                  if (!isSuperAdmin) {
-                    setSourceBranchId(accessibleBranches?.[0]?.id.toString() || '')
-                  }
                   setShowTransferModal(true)
                 }}
                 className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
@@ -388,7 +392,7 @@ export default function AdminStockMovementsPage() {
         </div>
 
         {summary && (
-          <div className="grid grid-cols-2 gap-4 lg:grid-cols-6">
+          <div className="grid grid-cols-2 gap-4 md:grid-cols-4 xl:grid-cols-7">
             <SummaryTile label="Received" value={summary.by_type.receipt || 0} tone="emerald" />
             <SummaryTile label="Sold" value={summary.by_type.sale || 0} tone="blue" />
             <SummaryTile label="Admin Sales" value={summary.by_type.administrative_sale || 0} tone="indigo" />
@@ -401,7 +405,14 @@ export default function AdminStockMovementsPage() {
 
         <div className="rounded-lg border border-slate-200 bg-white">
           <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
-            <div><h2 className="font-semibold text-slate-900">Transfer Requests</h2><p className="text-sm text-slate-500">Standard requests move stock after destination approval; super-admin overrides complete immediately.</p></div>
+            <div>
+              <h2 className="font-semibold text-slate-900">Transfer Requests</h2>
+              <p className="text-sm text-slate-500">
+                {isSuperAdmin
+                  ? 'Standard requests move stock after destination approval; super-admin overrides complete immediately.'
+                  : 'Review incoming transfers and track requests sent from your branch.'}
+              </p>
+            </div>
             {transferRequests.filter((request) => request.status === 'pending').length > 0 && <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-800">{transferRequests.filter((request) => request.status === 'pending').length} pending</span>}
           </div>
           <div className="divide-y divide-slate-100">
@@ -414,26 +425,43 @@ export default function AdminStockMovementsPage() {
         </div>
 
         <div className="rounded-lg border border-slate-200 bg-white p-4">
-          <div className="grid gap-3 lg:grid-cols-[1fr_160px_180px_160px_160px]">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-              <input
-                value={search}
-                onChange={(event) => { setSearch(event.target.value); setPage(1) }}
-                placeholder="Search movement, product, serial, batch, receipt, sale..."
-                className="w-full rounded-lg border border-slate-200 py-2 pl-9 pr-3 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-              />
-            </div>
-            {isSuperAdmin && <select value={branchId} onChange={(event) => { setBranchId(event.target.value); setPage(1) }} className="rounded-lg border border-slate-200 px-3 py-2 text-sm">
-              <option value="">All Branches</option>
-              {branches?.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
-            </select>}
-            <select value={movementType} onChange={(event) => { setMovementType(event.target.value); setPage(1) }} className="rounded-lg border border-slate-200 px-3 py-2 text-sm">
-              <option value="">All Movement Types</option>
-              {movementTypes.map((type) => <option key={type} value={type}>{label(type)}</option>)}
-            </select>
-            <input type="date" value={dateFrom} onChange={(event) => { setDateFrom(event.target.value); setPage(1) }} className="rounded-lg border border-slate-200 px-3 py-2 text-sm" />
-            <input type="date" value={dateTo} onChange={(event) => { setDateTo(event.target.value); setPage(1) }} className="rounded-lg border border-slate-200 px-3 py-2 text-sm" />
+          <div className={`grid items-end gap-3 ${isSuperAdmin ? 'lg:grid-cols-[minmax(240px,1fr)_160px_180px_160px_160px]' : 'lg:grid-cols-[minmax(260px,1fr)_180px_160px_160px]'}`}>
+            <label className="block">
+              <span className="mb-1 block text-xs font-medium text-slate-600">Search movements</span>
+              <span className="relative block">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                <input
+                  value={search}
+                  onChange={(event) => { setSearch(event.target.value); setPage(1) }}
+                  placeholder="Movement, product, serial or reference"
+                  className="w-full rounded-lg border border-slate-200 py-2 pl-9 pr-3 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                />
+              </span>
+            </label>
+            {isSuperAdmin && (
+              <label className="block">
+                <span className="mb-1 block text-xs font-medium text-slate-600">Branch</span>
+                <select value={branchId} onChange={(event) => { setBranchId(event.target.value); setPage(1) }} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm">
+                  <option value="">All Branches</option>
+                  {branches?.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
+                </select>
+              </label>
+            )}
+            <label className="block">
+              <span className="mb-1 block text-xs font-medium text-slate-600">Movement type</span>
+              <select value={movementType} onChange={(event) => { setMovementType(event.target.value); setPage(1) }} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm">
+                <option value="">All Movement Types</option>
+                {movementTypes.map((type) => <option key={type} value={type}>{label(type)}</option>)}
+              </select>
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-xs font-medium text-slate-600">From date</span>
+              <input type="date" value={dateFrom} onChange={(event) => { setDateFrom(event.target.value); setPage(1) }} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" />
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-xs font-medium text-slate-600">To date</span>
+              <input type="date" value={dateTo} onChange={(event) => { setDateTo(event.target.value); setPage(1) }} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" />
+            </label>
           </div>
         </div>
 
@@ -510,7 +538,7 @@ export default function AdminStockMovementsPage() {
             devicesLoading={devicesLoading}
             selectedDeviceIds={selectedDeviceIds}
             toggleDevice={toggleDevice}
-            sourceBranchId={sourceBranchId}
+            sourceBranchId={effectiveSourceBranchId}
             canChooseSourceBranch={isSuperAdmin}
             setSourceBranchId={(value) => {
               setSourceBranchId(value)
@@ -744,10 +772,16 @@ function ActionModal(props: ActionModalProps) {
         <div className="space-y-5 p-6">
           {isTransfer ? (
             <div className="grid gap-4 sm:grid-cols-2">
-              <FieldError label="Source Branch" htmlFor="transfer-source-branch" errors={errors.from_branch_id || errors.branch_id}>
+              <FieldError label={canChooseSourceBranch ? 'Source Branch' : 'Assigned Source Branch'} htmlFor="transfer-source-branch" errors={errors.from_branch_id || errors.branch_id}>
                 <select id="transfer-source-branch" value={sourceBranchId} onChange={(event) => setSourceBranchId(event.target.value)} disabled={!canChooseSourceBranch} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-600">
-                  <option value="">Select source branch</option>
-                  {branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
+                  {canChooseSourceBranch ? (
+                    <>
+                      <option value="">Select source branch</option>
+                      {branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
+                    </>
+                  ) : (
+                    <option value={sourceBranchId}>{branches.find((branch) => branch.id.toString() === sourceBranchId)?.name || 'Assigned branch'}</option>
+                  )}
                 </select>
               </FieldError>
               <FieldError label="Destination Branch" htmlFor="transfer-destination-branch" errors={errors.to_branch_id}>
