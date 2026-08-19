@@ -23,22 +23,23 @@ class StockTransferRequestController extends BaseController
     public function index(Request $request): JsonResponse
     {
         $user = $request->user();
+        $branchId = $user->hasRole('super_admin') ? null : $user->requiredBranchScopeId();
         $query = StockTransferRequest::with(['fromBranch', 'toBranch', 'requestedBy', 'decidedBy', 'overriddenBy'])
             ->withCount('items')
             ->latest();
 
         if (! $user->hasRole('super_admin')) {
-            $query->where(fn ($q) => $q->where('from_branch_id', $user->branch_id)->orWhere('to_branch_id', $user->branch_id));
+            $query->where(fn ($q) => $q->where('from_branch_id', $branchId)->orWhere('to_branch_id', $branchId));
         }
 
         if ($request->filled('status')) {
             $query->where('status', $request->string('status'));
         }
         if ($request->string('direction')->toString() === 'incoming') {
-            $query->where('to_branch_id', $user->branch_id);
+            $query->where('to_branch_id', $branchId);
         }
         if ($request->string('direction')->toString() === 'outgoing') {
-            $query->where('from_branch_id', $user->branch_id);
+            $query->where('from_branch_id', $branchId);
         }
 
         return $this->paginated(StockTransferRequestResource::collection($query->paginate(min((int) $request->get('per_page', 15), 100))));
@@ -101,15 +102,16 @@ class StockTransferRequestController extends BaseController
         }
 
         return DB::transaction(function () use ($data, $user, $override, $movementService, $deviceIds, $productQuantities) {
+            $branchId = $user->hasRole('super_admin') ? $user->branchScopeId() : $user->requiredBranchScopeId();
             if ($deviceIds) {
                 $devices = Device::whereIn('id', $deviceIds)->lockForUpdate()->get();
                 $fromBranchId = $user->hasRole('super_admin')
                     ? (int) ($data['from_branch_id'] ?? $devices->first()?->branch_id)
-                    : (int) $user->branch_id;
+                    : (int) $branchId;
             } else {
                 $fromBranchId = $user->hasRole('super_admin')
                     ? (int) ($data['from_branch_id'] ?? 0)
-                    : (int) $user->branch_id;
+                    : (int) $branchId;
 
                 if (! $fromBranchId) {
                     throw ValidationException::withMessages([
@@ -430,7 +432,7 @@ class StockTransferRequestController extends BaseController
     private function viewable(User $user, StockTransferRequest $transfer): void
     {
         if (! $user->hasRole('super_admin')
-            && ! in_array((int) $user->branch_id, [(int) $transfer->from_branch_id, (int) $transfer->to_branch_id], true)) {
+            && ! in_array((int) $user->branchScopeId(), [(int) $transfer->from_branch_id, (int) $transfer->to_branch_id], true)) {
             abort(403);
         }
     }

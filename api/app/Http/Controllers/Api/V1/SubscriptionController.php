@@ -28,6 +28,10 @@ class SubscriptionController extends Controller
         $this->authorize('viewAny', Subscription::class);
 
         $query = Subscription::query()->with(['plan', 'user', 'lastPayment']);
+        if (! $request->user()->hasRole('super_admin')) {
+            $branchId = $request->user()->requiredBranchScopeId();
+            $query->whereHas('user', fn ($userQuery) => $userQuery->where('branch_id', $branchId));
+        }
 
         if ($request->has('status')) {
             $query->where('status', $request->status);

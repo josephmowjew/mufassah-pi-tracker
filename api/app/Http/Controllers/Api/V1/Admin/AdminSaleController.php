@@ -16,22 +16,20 @@ use App\Models\SaleItem;
 use App\Notifications\NewSaleNotification;
 use App\Services\InventoryMovementService;
 use App\Services\ReceiptService;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\URL;
-use Illuminate\Validation\ValidationException;
-use Illuminate\Database\QueryException;
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class AdminSaleController extends BaseController
 {
-    public function __construct(private readonly InventoryMovementService $movementService)
-    {
-    }
+    public function __construct(private readonly InventoryMovementService $movementService) {}
 
     /**
      * List all sales with filtering and pagination.
@@ -188,7 +186,9 @@ class AdminSaleController extends BaseController
                     }
                     $unitPrice = $this->resolveSellingPrice($device, $itemData);
                     $this->assertPositiveSellingPrice($device, $unitPrice);
-                    if ($discount > $unitPrice) throw ValidationException::withMessages(['items' => ['Discount cannot be greater than the unit price.']]);
+                    if ($discount > $unitPrice) {
+                        throw ValidationException::withMessages(['items' => ['Discount cannot be greater than the unit price.']]);
+                    }
                     $tax = $sale->vat_applicable ? round($unitPrice * 0.175, 2) : 0;
                     $totalPrice = round(($unitPrice - $discount) + $tax, 2);
 
@@ -251,7 +251,9 @@ class AdminSaleController extends BaseController
                     foreach ($devices as $device) {
                         $unitPrice = $this->resolveSellingPrice($device, $itemData);
                         $this->assertPositiveSellingPrice($device, $unitPrice);
-                        if ($discount > $unitPrice) throw ValidationException::withMessages(['items' => ['Discount cannot be greater than the unit price.']]);
+                        if ($discount > $unitPrice) {
+                            throw ValidationException::withMessages(['items' => ['Discount cannot be greater than the unit price.']]);
+                        }
                         $tax = $sale->vat_applicable ? round($unitPrice * 0.175, 2) : 0;
                         $totalPrice = round(($unitPrice - $discount) + $tax, 2);
                         $colorText = $device->color ? " - {$device->color}" : '';
@@ -676,13 +678,15 @@ class AdminSaleController extends BaseController
             return isset($validated['branch_id']) ? (int) $validated['branch_id'] : ($user->branch_id ? (int) $user->branch_id : null);
         }
 
-        if (! $user->branch_id) {
+        $branchId = $user->branchScopeId();
+
+        if (! $branchId) {
             throw ValidationException::withMessages([
                 'branch_id' => ['Your account must be assigned to a branch before creating sales.'],
             ]);
         }
 
-        return (int) $user->branch_id;
+        return $branchId;
     }
 
     /** The batch price is authoritative unless an inventory manager supplied a one-off override. */
@@ -799,7 +803,7 @@ class AdminSaleController extends BaseController
             return $requestedBranchId ?: ($user->branch_id ? (int) $user->branch_id : null);
         }
 
-        return $user?->branch_id ? (int) $user->branch_id : null;
+        return $user?->requiredBranchScopeId();
     }
 
     private function createSaleWithRetry(array $attributes): Sale
@@ -836,13 +840,13 @@ class AdminSaleController extends BaseController
             return;
         }
 
-        if ($user->hasRole('store_admin') && (int) $sale->branch_id === (int) $user->branch_id) {
+        if ($user->hasRole('store_admin') && (int) $sale->branch_id === (int) $user->branchScopeId()) {
             return;
         }
 
         if (
             $user->hasRole('customer_service')
-            && (int) $sale->branch_id === (int) $user->branch_id
+            && (int) $sale->branch_id === (int) $user->branchScopeId()
             && (int) $sale->sold_by_id === (int) $user->id
         ) {
             return;
@@ -859,13 +863,13 @@ class AdminSaleController extends BaseController
             return;
         }
 
-        if ($user->hasRole('store_admin') && (int) $sale->branch_id === (int) $user->branch_id) {
+        if ($user->hasRole('store_admin') && (int) $sale->branch_id === (int) $user->branchScopeId()) {
             return;
         }
 
         if (
             $user->hasRole('customer_service')
-            && (int) $sale->branch_id === (int) $user->branch_id
+            && (int) $sale->branch_id === (int) $user->branchScopeId()
             && (int) $sale->sold_by_id === (int) $user->id
         ) {
             return;

@@ -89,6 +89,57 @@ class User extends Authenticatable implements MustVerifyEmail
     }
 
     /**
+     * Get the branch this user manages, when they are assigned as a branch
+     * manager. Branch assignment is the source of truth for manager-scoped
+     * admin reads, while branch_id remains the normal staff assignment.
+     */
+    public function managedBranch()
+    {
+        return $this->hasOne(\App\Models\Branch::class, 'manager_id');
+    }
+
+    /**
+     * Resolve the branch to use for branch-scoped admin operations.
+     */
+    public function branchScopeId(): ?int
+    {
+        $managedBranchId = $this->managedBranch()->value('id');
+
+        if ($managedBranchId !== null) {
+            return (int) $managedBranchId;
+        }
+
+        return $this->branch_id ? (int) $this->branch_id : null;
+    }
+
+    /**
+     * Resolve the branch for a branch-scoped account and fail closed when the
+     * account has not been assigned to one.
+     */
+    public function requiredBranchScopeId(): int
+    {
+        $branchId = $this->branchScopeId();
+
+        abort_if(! $branchId, 403, 'Your account must be assigned to a branch before accessing branch data.');
+
+        return $branchId;
+    }
+
+    /**
+     * Determine whether this user may access a record owned by a branch.
+     */
+    public function canAccessBranch(?int $branchId): bool
+    {
+        if ($this->hasRole('super_admin')) {
+            return true;
+        }
+
+        $scopeId = $this->branchScopeId();
+
+        return $scopeId !== null && $branchId !== null && $scopeId === (int) $branchId;
+    }
+
+    /**
      * Get the subscriptions for the user.
      */
     public function subscriptions()

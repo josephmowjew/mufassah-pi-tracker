@@ -25,8 +25,10 @@ class WarrantyPolicy
             return true;
         }
 
-        // Admins can view any warranty
-        return $user->hasRole(['super_admin', 'store_admin', 'customer_service']);
+        return $user->hasRole('super_admin')
+            || ($user->hasAnyRole(['store_admin', 'customer_service'])
+                && $warranty->device
+                && $user->canAccessBranch($warranty->device->branch_id));
     }
 
     /**
@@ -34,7 +36,8 @@ class WarrantyPolicy
      */
     public function create(User $user): bool
     {
-        return $user->hasRole(['super_admin', 'store_admin']);
+        return $user->hasRole('super_admin')
+            || ($user->hasRole('store_admin') && $user->branchScopeId() !== null);
     }
 
     /**
@@ -71,8 +74,10 @@ class WarrantyPolicy
             return true;
         }
 
-        // Admins can submit claims on behalf of users
-        return $user->hasRole(['super_admin', 'store_admin']);
+        return $user->hasRole('super_admin')
+            || ($user->hasRole('store_admin')
+                && $warranty->device
+                && $user->canAccessBranch($warranty->device->branch_id));
     }
 
     /**

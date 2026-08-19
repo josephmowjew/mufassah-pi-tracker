@@ -2,6 +2,7 @@
 
 use App\Enums\DeviceStatus;
 use App\Enums\TheftReportStatus;
+use App\Models\Branch;
 use App\Models\Device;
 use App\Models\DeviceCategory;
 use App\Models\TheftReport;
@@ -56,7 +57,7 @@ describe('Theft Report Listing', function () {
 
     it('filters reports by status', function () {
         $admin = User::factory()->create();
-        $admin->assignRole('store_admin');
+        $admin->assignRole('super_admin');
 
         TheftReport::factory()->count(3)->create(['status' => TheftReportStatus::Reported]);
         TheftReport::factory()->count(2)->investigating()->create();
@@ -384,7 +385,7 @@ describe('Theft Report Deletion', function () {
 describe('Theft Report Status Update', function () {
     it('allows admin to update report status', function () {
         $admin = User::factory()->create();
-        $admin->assignRole('customer_service');
+        $admin->assignRole('super_admin');
         $report = TheftReport::factory()->create(['status' => TheftReportStatus::Reported]);
 
         actingAs($admin, 'sanctum')
@@ -452,6 +453,27 @@ describe('Theft Report Status Update', function () {
             ])
             ->assertForbidden();
     });
+});
+
+it('limits store admins to theft reports for devices in their branch', function () {
+    $branch = Branch::create(['name' => 'Theft Branch', 'code' => 'THF', 'is_active' => true]);
+    $otherBranch = Branch::create(['name' => 'Other Theft Branch', 'code' => 'OTF', 'is_active' => true]);
+    $admin = User::factory()->create(['branch_id' => $branch->id]);
+    $admin->assignRole('store_admin');
+    $ownDevice = Device::factory()->create(['branch_id' => $branch->id]);
+    $otherDevice = Device::factory()->create(['branch_id' => $otherBranch->id]);
+    $ownReport = TheftReport::factory()->create(['device_id' => $ownDevice->id]);
+    $otherReport = TheftReport::factory()->create(['device_id' => $otherDevice->id]);
+
+    actingAs($admin, 'sanctum')
+        ->getJson(apiUrl('theft-reports'))
+        ->assertOk()
+        ->assertJsonCount(1, 'data')
+        ->assertJsonPath('data.0.id', $ownReport->id);
+
+    actingAs($admin, 'sanctum')
+        ->getJson(apiUrl("theft-reports/{$otherReport->id}"))
+        ->assertForbidden();
 });
 
 describe('Theft Report Assignment', function () {

@@ -25,8 +25,12 @@ class DevicePolicy
             return true;
         }
 
-        // Admins can view any device
-        return $user->hasRole(['super_admin', 'store_admin', 'customer_service']);
+        if ($user->hasRole('super_admin')) {
+            return true;
+        }
+
+        return $user->hasAnyRole(['store_admin', 'customer_service'])
+            && $user->canAccessBranch($device->branch_id);
     }
 
     /**
@@ -47,8 +51,8 @@ class DevicePolicy
             return true;
         }
 
-        // Admins can update any device
-        return $user->hasRole(['super_admin', 'store_admin']);
+        return $user->hasRole('super_admin')
+            || ($user->hasRole('store_admin') && $user->canAccessBranch($device->branch_id));
     }
 
     /**
@@ -75,8 +79,8 @@ class DevicePolicy
             return true;
         }
 
-        // Admins can transfer any device
-        return $user->hasRole(['super_admin', 'store_admin']);
+        return $user->hasRole('super_admin')
+            || ($user->hasRole('store_admin') && $user->canAccessBranch($device->branch_id));
     }
 
     /**
@@ -89,8 +93,8 @@ class DevicePolicy
             return true;
         }
 
-        // Admins can update status of any device
-        return $user->hasRole(['super_admin', 'store_admin', 'customer_service']);
+        return $user->hasRole('super_admin')
+            || ($user->hasAnyRole(['store_admin', 'customer_service']) && $user->canAccessBranch($device->branch_id));
     }
 
     /**
@@ -103,8 +107,8 @@ class DevicePolicy
             return true;
         }
 
-        // Admins can link IoT modules on any device
-        return $user->hasRole(['super_admin', 'store_admin']);
+        return $user->hasRole('super_admin')
+            || ($user->hasRole('store_admin') && $user->canAccessBranch($device->branch_id));
     }
 
     /**
@@ -117,7 +121,7 @@ class DevicePolicy
             return true;
         }
 
-        // Admins can view any device locations
-        return $user->hasRole(['super_admin', 'store_admin']);
+        return $user->hasRole('super_admin')
+            || ($user->hasRole('store_admin') && $user->canAccessBranch($device->branch_id));
     }
 }

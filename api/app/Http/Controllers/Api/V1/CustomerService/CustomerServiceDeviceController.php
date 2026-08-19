@@ -59,7 +59,7 @@ class CustomerServiceDeviceController extends BaseController
         $user = $request->user();
 
         // Ensure the device belongs to the user's branch
-        if ($device->branch_id !== $user->branch_id) {
+        if (! $user->canAccessBranch($device->branch_id)) {
             return $this->error('You do not have permission to view this device', 403);
         }
 

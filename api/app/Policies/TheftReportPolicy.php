@@ -30,8 +30,10 @@ class TheftReportPolicy
             return true;
         }
 
-        // Admins and customer service can view any report
-        return $user->hasRole(['super_admin', 'store_admin', 'customer_service']);
+        return $user->hasRole('super_admin')
+            || ($user->hasAnyRole(['store_admin', 'customer_service'])
+                && $theftReport->device
+                && $user->canAccessBranch($theftReport->device->branch_id));
     }
 
     /**
@@ -52,8 +54,10 @@ class TheftReportPolicy
             return true;
         }
 
-        // Admins can update any report
-        return $user->hasRole(['super_admin', 'store_admin', 'customer_service']);
+        return $user->hasRole('super_admin')
+            || ($user->hasAnyRole(['store_admin', 'customer_service'])
+                && $theftReport->device
+                && $user->canAccessBranch($theftReport->device->branch_id));
     }
 
     /**
@@ -75,7 +79,7 @@ class TheftReportPolicy
      */
     public function updateStatus(User $user, TheftReport $theftReport): bool
     {
-        return $user->hasRole(['super_admin', 'store_admin', 'customer_service']);
+        return $this->update($user, $theftReport);
     }
 
     /**
@@ -83,7 +87,10 @@ class TheftReportPolicy
      */
     public function assign(User $user, TheftReport $theftReport): bool
     {
-        return $user->hasRole(['super_admin', 'store_admin']);
+        return $user->hasRole('super_admin')
+            || ($user->hasRole('store_admin')
+                && $theftReport->device
+                && $user->canAccessBranch($theftReport->device->branch_id));
     }
 
     /**
@@ -96,8 +103,7 @@ class TheftReportPolicy
             return true;
         }
 
-        // Admins can add evidence to any report
-        return $user->hasRole(['super_admin', 'store_admin', 'customer_service']);
+        return $this->update($user, $theftReport);
     }
 
     /**

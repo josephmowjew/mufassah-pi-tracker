@@ -523,6 +523,43 @@ describe('Admin Sales', function () {
             ->assertJsonPath('meta.total', 2);
     });
 
+    it('scopes sale listings to the branch managed by the store admin', function () {
+        $manager = User::factory()->create(['branch_id' => null]);
+        $manager->assignRole('store_admin');
+        $this->branch->update(['manager_id' => $manager->id]);
+        $otherBranch = Branch::create([
+            'name' => 'Other Branch',
+            'code' => 'OTH',
+            'is_active' => true,
+        ]);
+
+        foreach ([
+            ['number' => 'SALE-2026-MANAGER-01', 'branch_id' => $this->branch->id],
+            ['number' => 'SALE-2026-MANAGER-02', 'branch_id' => $otherBranch->id],
+        ] as $saleData) {
+            Sale::create([
+                'sale_number' => $saleData['number'],
+                'customer_id' => $this->customer->id,
+                'branch_id' => $saleData['branch_id'],
+                'sold_by_id' => $this->admin->id,
+                'payment_method' => PaymentMethod::Cash,
+                'payment_status' => PaymentStatus::Completed,
+                'status' => SaleStatus::COMPLETED,
+                'sale_date' => now(),
+                'subtotal' => 100,
+                'tax_amount' => 0,
+                'discount_amount' => 0,
+                'total_amount' => 100,
+            ]);
+        }
+
+        $this->actingAs($manager)
+            ->getJson('/api/v1/admin/sales?all_branches=1')
+            ->assertSuccessful()
+            ->assertJsonPath('meta.total', 1)
+            ->assertJsonPath('data.0.branch_id', $this->branch->id);
+    });
+
     it('filters sales inclusively by the requested date range', function () {
         $from = now()->subDays(2)->toDateString();
         $to = now()->subDay()->toDateString();

@@ -159,8 +159,8 @@ class Sale extends Model
     public function scopeForCurrentUserBranch($query)
     {
         $user = Auth::user();
-        if ($user?->branch_id && $user instanceof User) {
-            return $query->where('branch_id', $user->branch_id);
+        if ($user instanceof User && ! $user->hasRole('super_admin')) {
+            return $query->where('branch_id', $user->requiredBranchScopeId());
         }
 
         return $query;

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Download, Loader2, DollarSign, Smartphone, AlertTriangle, Users, TrendingUp, Wifi, CheckCircle, Package, Building2 } from 'lucide-react'
 import apiClient from '@/api/client'
+import { useAuthStore } from '@/stores/auth-store'
 
 interface RevenueData {
   summary: {
@@ -133,6 +134,7 @@ interface StockData {
 }
 
 export default function AdminReportsPage() {
+  const isSuperAdmin = useAuthStore((state) => state.isSuperAdmin())
   const [period, setPeriod] = useState<'month' | 'year'>('month')
   const [stockFrom, setStockFrom] = useState('')
   const [stockTo, setStockTo] = useState('')
@@ -322,7 +324,7 @@ export default function AdminReportsPage() {
                       className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-white text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
                     />
                   </div>
-                  <div>
+                  {isSuperAdmin && <div>
                     <label className="block text-xs font-medium text-slate-500 mb-1">Branch</label>
                     <select
                       value={stockBranchId}
@@ -336,7 +338,7 @@ export default function AdminReportsPage() {
                         </option>
                       ))}
                     </select>
-                  </div>
+                  </div>}
                 </div>
               </div>
             </div>

@@ -2,6 +2,7 @@
 
 use App\Enums\WarrantyClaimStatus;
 use App\Enums\WarrantyStatus;
+use App\Models\Branch;
 use App\Models\Device;
 use App\Models\DeviceCategory;
 use App\Models\User;
@@ -56,7 +57,7 @@ describe('Warranty Listing', function () {
 
     it('filters warranties by status', function () {
         $admin = User::factory()->create();
-        $admin->assignRole('store_admin');
+        $admin->assignRole('super_admin');
 
         Warranty::factory()->count(3)->create(['status' => WarrantyStatus::Active]);
         Warranty::factory()->count(2)->expired()->create();
@@ -222,7 +223,7 @@ describe('Warranty View', function () {
 describe('Warranty Update (Admin)', function () {
     it('allows admin to update warranty', function () {
         $admin = User::factory()->create();
-        $admin->assignRole('store_admin');
+        $admin->assignRole('super_admin');
         $warranty = Warranty::factory()->create();
 
         actingAs($admin, 'sanctum')
@@ -398,7 +399,7 @@ describe('Warranty Claim Submission', function () {
 describe('Warranty Claim Processing (Admin)', function () {
     it('allows admin to process claim', function () {
         $admin = User::factory()->create();
-        $admin->assignRole('customer_service');
+        $admin->assignRole('super_admin');
         $claim = WarrantyClaim::factory()->create(['status' => WarrantyClaimStatus::Pending]);
 
         actingAs($admin, 'sanctum')
@@ -474,7 +475,7 @@ describe('Warranty Claim Listing', function () {
 
     it('filters claims by status', function () {
         $admin = User::factory()->create();
-        $admin->assignRole('store_admin');
+        $admin->assignRole('super_admin');
 
         WarrantyClaim::factory()->count(3)->create(['status' => WarrantyClaimStatus::Pending]);
         WarrantyClaim::factory()->count(2)->approved()->create();
@@ -500,6 +501,37 @@ describe('Warranty Claim Listing', function () {
             ->assertOk()
             ->assertJsonCount(2, 'data');
     });
+});
+
+it('limits store admins to warranties and claims in their branch', function () {
+    $branch = Branch::create(['name' => 'Warranty Branch', 'code' => 'WAR', 'is_active' => true]);
+    $otherBranch = Branch::create(['name' => 'Other Warranty Branch', 'code' => 'OWR', 'is_active' => true]);
+    $admin = User::factory()->create(['branch_id' => $branch->id]);
+    $admin->assignRole('store_admin');
+    $ownDevice = Device::factory()->create(['branch_id' => $branch->id]);
+    $otherDevice = Device::factory()->create(['branch_id' => $otherBranch->id]);
+    $ownWarranty = Warranty::factory()->create(['device_id' => $ownDevice->id]);
+    $otherWarranty = Warranty::factory()->create(['device_id' => $otherDevice->id]);
+    $ownClaim = WarrantyClaim::factory()->create(['warranty_id' => $ownWarranty->id]);
+    $otherClaim = WarrantyClaim::factory()->create(['warranty_id' => $otherWarranty->id]);
+
+    actingAs($admin, 'sanctum')
+        ->getJson(apiUrl('warranties'))
+        ->assertOk()
+        ->assertJsonCount(1, 'data')
+        ->assertJsonPath('data.0.id', $ownWarranty->id);
+
+    actingAs($admin, 'sanctum')
+        ->getJson(apiUrl('admin/warranty-claims'))
+        ->assertOk()
+        ->assertJsonCount(1, 'data')
+        ->assertJsonPath('data.0.id', $ownClaim->id);
+
+    actingAs($admin, 'sanctum')
+        ->getJson(apiUrl("warranties/{$otherWarranty->id}"))
+        ->assertForbidden();
+
+    expect($otherClaim->exists)->toBeTrue();
 });
 
 describe('Warranty Claim Deletion', function () {

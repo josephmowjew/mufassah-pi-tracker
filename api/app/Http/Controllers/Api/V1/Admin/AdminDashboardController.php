@@ -9,14 +9,15 @@ use App\Enums\TheftReportStatus;
 use App\Http\Controllers\Controller;
 use App\Models\Device;
 use App\Models\DeviceCategory;
-use App\Models\IotModule;
 use App\Models\InventoryMovement;
+use App\Models\IotModule;
 use App\Models\Payment;
 use App\Models\Subscription;
 use App\Models\SubscriptionPlan;
 use App\Models\TheftReport;
 use App\Models\User;
 use App\Models\WarrantyClaim;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -31,21 +32,25 @@ class AdminDashboardController extends Controller
     /**
      * Get main dashboard overview with key metrics.
      */
-    public function index(): JsonResponse
+    public function index(Request $request): JsonResponse
     {
+        $branchId = $this->resolveBranchId($request);
         $now = now();
         $startOfMonth = $now->copy()->startOfMonth();
         $startOfLastMonth = $now->copy()->subMonth()->startOfMonth();
         $endOfLastMonth = $now->copy()->subMonth()->endOfMonth();
 
-        $monthlyRevenue = (float) Payment::completed()
+        $paymentQuery = $this->paymentsQuery($branchId);
+        $monthlyRevenue = (float) (clone $paymentQuery)
+            ->completed()
             ->where('paid_at', '>=', $startOfMonth)
             ->sum('amount');
-        $lastMonthRevenue = (float) Payment::completed()
+        $lastMonthRevenue = (float) (clone $paymentQuery)
+            ->completed()
             ->whereBetween('paid_at', [$startOfLastMonth, $endOfLastMonth])
             ->sum('amount');
 
-        $administrativeSaleQuery = InventoryMovement::query()
+        $administrativeSaleQuery = $this->inventoryMovementsQuery($branchId)
             ->where('movement_type', InventoryMovement::TYPE_ADMINISTRATIVE_SALE);
         $administrativeSales = (float) (clone $administrativeSaleQuery)->sum('total_amount');
         $administrativeSalesThisMonth = (float) (clone $administrativeSaleQuery)
@@ -59,24 +64,24 @@ class AdminDashboardController extends Controller
             'success' => true,
             'data' => [
                 'users' => [
-                    'total' => User::count(),
-                    'new_this_month' => User::where('created_at', '>=', $startOfMonth)->count(),
-                    'new_last_month' => User::whereBetween('created_at', [$startOfLastMonth, $endOfLastMonth])->count(),
+                    'total' => $this->usersQuery($branchId)->count(),
+                    'new_this_month' => $this->usersQuery($branchId)->where('created_at', '>=', $startOfMonth)->count(),
+                    'new_last_month' => $this->usersQuery($branchId)->whereBetween('created_at', [$startOfLastMonth, $endOfLastMonth])->count(),
                 ],
                 'devices' => [
-                    'total' => Device::count(),
-                    'active' => Device::where('status', DeviceStatus::ACTIVE)->count(),
-                    'stolen' => Device::where('status', DeviceStatus::STOLEN)->count(),
-                    'recovered' => Device::where('status', DeviceStatus::RECOVERED)->count(),
-                    'with_iot_module' => Device::whereNotNull('iot_module_id')->count(),
+                    'total' => $this->devicesQuery($branchId)->count(),
+                    'active' => $this->devicesQuery($branchId)->where('status', DeviceStatus::ACTIVE)->count(),
+                    'stolen' => $this->devicesQuery($branchId)->where('status', DeviceStatus::STOLEN)->count(),
+                    'recovered' => $this->devicesQuery($branchId)->where('status', DeviceStatus::RECOVERED)->count(),
+                    'with_iot_module' => $this->devicesQuery($branchId)->whereNotNull('iot_module_id')->count(),
                 ],
                 'subscriptions' => [
-                    'active' => Subscription::where('status', SubscriptionStatus::Active)->count(),
-                    'total' => Subscription::count(),
-                    'new_this_month' => Subscription::where('created_at', '>=', $startOfMonth)->count(),
+                    'active' => $this->subscriptionsQuery($branchId)->where('status', SubscriptionStatus::Active)->count(),
+                    'total' => $this->subscriptionsQuery($branchId)->count(),
+                    'new_this_month' => $this->subscriptionsQuery($branchId)->where('created_at', '>=', $startOfMonth)->count(),
                 ],
                 'revenue' => [
-                    'total' => (float) Payment::completed()->sum('amount'),
+                    'total' => (float) (clone $paymentQuery)->completed()->sum('amount'),
                     'this_month' => $monthlyRevenue,
                     'last_month' => $lastMonthRevenue,
                     'month_over_month_change_percentage' => $this->calculatePercentageChange(
@@ -94,18 +99,18 @@ class AdminDashboardController extends Controller
                     ),
                 ],
                 'theft_reports' => [
-                    'total' => TheftReport::count(),
-                    'active' => TheftReport::whereIn('status', [
+                    'total' => $this->theftReportsQuery($branchId)->count(),
+                    'active' => $this->theftReportsQuery($branchId)->whereIn('status', [
                         TheftReportStatus::Reported,
                         TheftReportStatus::Investigating,
                     ])->count(),
-                    'recovered' => TheftReport::where('status', TheftReportStatus::Recovered)->count(),
-                    'recovery_rate' => $this->calculateRecoveryRate(),
+                    'recovered' => $this->theftReportsQuery($branchId)->where('status', TheftReportStatus::Recovered)->count(),
+                    'recovery_rate' => $this->calculateRecoveryRate($branchId),
                 ],
                 'iot_modules' => [
-                    'total' => IotModule::count(),
-                    'active' => IotModule::where('status', 'active')->count(),
-                    'linked' => Device::whereNotNull('iot_module_id')->count(),
+                    'total' => $this->iotModulesQuery($branchId)->count(),
+                    'active' => $this->iotModulesQuery($branchId)->where('status', 'active')->count(),
+                    'linked' => $this->devicesQuery($branchId)->whereNotNull('iot_module_id')->count(),
                 ],
             ],
         ]);
@@ -116,28 +121,30 @@ class AdminDashboardController extends Controller
      */
     public function users(Request $request): JsonResponse
     {
+        $branchId = $this->resolveBranchId($request);
         $period = $request->input('period', 'month');
         $usersByRole = DB::table('users')
             ->join('model_has_roles', 'users.id', '=', 'model_has_roles.model_id')
             ->join('roles', 'model_has_roles.role_id', '=', 'roles.id')
             ->where('model_has_roles.model_type', User::class)
+            ->when($branchId, fn ($query) => $query->where('users.branch_id', $branchId))
             ->groupBy('roles.name')
             ->select('roles.name as role', DB::raw('count(*) as count'))
             ->get()
             ->pluck('count', 'role');
 
-        $userGrowth = $this->getUserGrowthData($period);
+        $userGrowth = $this->getUserGrowthData($period, $branchId);
 
         return response()->json([
             'success' => true,
             'data' => [
-                'total' => User::count(),
+                'total' => $this->usersQuery($branchId)->count(),
                 'by_role' => $usersByRole,
-                'with_subscriptions' => User::whereHas('subscriptions', function ($q) {
+                'with_subscriptions' => $this->usersQuery($branchId)->whereHas('subscriptions', function ($q) {
                     $q->where('status', SubscriptionStatus::Active);
                 })->count(),
-                'with_devices' => User::whereHas('devices')->count(),
-                'verified' => User::whereNotNull('email_verified_at')->count(),
+                'with_devices' => $this->usersQuery($branchId)->whereHas('devices')->count(),
+                'verified' => $this->usersQuery($branchId)->whereNotNull('email_verified_at')->count(),
                 'growth' => $userGrowth,
             ],
         ]);
@@ -148,32 +155,35 @@ class AdminDashboardController extends Controller
      */
     public function devices(Request $request): JsonResponse
     {
-        $devicesByStatus = Device::query()
+        $branchId = $this->resolveBranchId($request);
+        $devicesByStatus = $this->devicesQuery($branchId)
             ->groupBy('status')
             ->select('status', DB::raw('count(*) as count'))
             ->get()
             ->mapWithKeys(fn ($item) => [$item->status->value => $item->count]);
 
-        $devicesByCategory = Device::query()
+        $devicesByCategory = $this->devicesQuery($branchId)
             ->join('device_categories', 'devices.category_id', '=', 'device_categories.id')
             ->groupBy('device_categories.id', 'device_categories.name')
             ->select('device_categories.name', DB::raw('count(*) as count'))
             ->get()
             ->pluck('count', 'name');
 
-        $recentlyActive = Device::whereNotNull('last_seen_at')
+        $recentlyActive = $this->devicesQuery($branchId)->whereNotNull('last_seen_at')
             ->where('last_seen_at', '>=', now()->subDay())
             ->count();
 
         return response()->json([
             'success' => true,
             'data' => [
-                'total' => Device::count(),
+                'total' => $this->devicesQuery($branchId)->count(),
                 'by_status' => $devicesByStatus,
                 'by_category' => $devicesByCategory,
-                'with_iot_module' => Device::whereNotNull('iot_module_id')->count(),
+                'with_iot_module' => $this->devicesQuery($branchId)->whereNotNull('iot_module_id')->count(),
                 'recently_active' => $recentlyActive,
-                'categories' => DeviceCategory::withCount('devices')->get(['id', 'name', 'devices_count']),
+                'categories' => DeviceCategory::withCount([
+                    'devices' => fn ($query) => $query->when($branchId, fn ($deviceQuery) => $deviceQuery->where('branch_id', $branchId)),
+                ])->get(['id', 'name', 'devices_count']),
             ],
         ]);
     }
@@ -183,9 +193,10 @@ class AdminDashboardController extends Controller
      */
     public function revenue(Request $request): JsonResponse
     {
+        $branchId = $this->resolveBranchId($request);
         $period = $request->input('period', 'month');
 
-        $paymentsByStatus = Payment::query()
+        $paymentsByStatus = $this->paymentsQuery($branchId)
             ->groupBy('status')
             ->select('status', DB::raw('count(*) as count'), DB::raw('sum(amount) as total'))
             ->get()
@@ -196,7 +207,7 @@ class AdminDashboardController extends Controller
                 ],
             ]);
 
-        $paymentsByMethod = Payment::completed()
+        $paymentsByMethod = $this->paymentsQuery($branchId)->completed()
             ->groupBy('payment_method')
             ->select('payment_method', DB::raw('count(*) as count'), DB::raw('sum(amount) as total'))
             ->get()
@@ -207,7 +218,7 @@ class AdminDashboardController extends Controller
                 ],
             ]);
 
-        $revenueByPlan = Payment::query()
+        $revenueByPlan = $this->paymentsQuery($branchId)
             ->where('payments.status', PaymentStatus::Completed)
             ->join('subscriptions', 'payments.subscription_id', '=', 'subscriptions.id')
             ->join('subscription_plans', 'subscriptions.plan_id', '=', 'subscription_plans.id')
@@ -217,13 +228,13 @@ class AdminDashboardController extends Controller
             ->pluck('total', 'name')
             ->map(fn ($v) => (float) $v);
 
-        $revenueTrend = $this->getRevenueTrendData($period);
+        $revenueTrend = $this->getRevenueTrendData($period, $branchId);
 
         return response()->json([
             'success' => true,
             'data' => [
-                'total_revenue' => (float) Payment::completed()->sum('amount'),
-                'total_transactions' => Payment::count(),
+                'total_revenue' => (float) $this->paymentsQuery($branchId)->completed()->sum('amount'),
+                'total_transactions' => $this->paymentsQuery($branchId)->count(),
                 'by_status' => $paymentsByStatus,
                 'by_method' => $paymentsByMethod,
                 'by_plan' => $revenueByPlan,
@@ -237,13 +248,15 @@ class AdminDashboardController extends Controller
      */
     public function theftReports(Request $request): JsonResponse
     {
-        $reportsByStatus = TheftReport::query()
+        $branchId = $this->resolveBranchId($request);
+        $reportsByStatus = $this->theftReportsQuery($branchId)
             ->groupBy('status')
             ->select('status', DB::raw('count(*) as count'))
             ->get()
             ->mapWithKeys(fn ($item) => [$item->status->value => $item->count]);
 
-        $activeReports = TheftReport::with(['device:id,name,brand,model', 'reporter:id,name'])
+        $activeReports = $this->theftReportsQuery($branchId)
+            ->with(['device:id,name,brand,model', 'reporter:id,name'])
             ->whereIn('status', [TheftReportStatus::Reported, TheftReportStatus::Investigating])
             ->latest()
             ->take(10)
@@ -252,12 +265,12 @@ class AdminDashboardController extends Controller
         return response()->json([
             'success' => true,
             'data' => [
-                'total' => TheftReport::count(),
+                'total' => $this->theftReportsQuery($branchId)->count(),
                 'by_status' => $reportsByStatus,
-                'recovery_rate' => $this->calculateRecoveryRate(),
-                'average_resolution_days' => $this->calculateAverageResolutionDays(),
+                'recovery_rate' => $this->calculateRecoveryRate($branchId),
+                'average_resolution_days' => $this->calculateAverageResolutionDays($branchId),
                 'recent_active' => $activeReports,
-                'this_month' => TheftReport::where('created_at', '>=', now()->startOfMonth())->count(),
+                'this_month' => $this->theftReportsQuery($branchId)->where('created_at', '>=', now()->startOfMonth())->count(),
             ],
         ]);
     }
@@ -267,13 +280,14 @@ class AdminDashboardController extends Controller
      */
     public function subscriptions(Request $request): JsonResponse
     {
-        $subscriptionsByStatus = Subscription::query()
+        $branchId = $this->resolveBranchId($request);
+        $subscriptionsByStatus = $this->subscriptionsQuery($branchId)
             ->groupBy('status')
             ->select('status', DB::raw('count(*) as count'))
             ->get()
             ->mapWithKeys(fn ($item) => [$item->status->value => $item->count]);
 
-        $subscriptionsByPlan = Subscription::query()
+        $subscriptionsByPlan = $this->subscriptionsQuery($branchId)
             ->join('subscription_plans', 'subscriptions.plan_id', '=', 'subscription_plans.id')
             ->where('subscriptions.status', SubscriptionStatus::Active)
             ->groupBy('subscription_plans.id', 'subscription_plans.name')
@@ -281,19 +295,22 @@ class AdminDashboardController extends Controller
             ->get()
             ->pluck('count', 'name');
 
-        $plans = SubscriptionPlan::withCount(['subscriptions' => function ($q) {
+        $plans = SubscriptionPlan::withCount(['subscriptions' => function ($q) use ($branchId) {
             $q->where('status', SubscriptionStatus::Active);
+            if ($branchId) {
+                $q->whereHas('user', fn ($userQuery) => $userQuery->where('branch_id', $branchId));
+            }
         }])->get(['id', 'name', 'price_monthly', 'price_yearly']);
 
         return response()->json([
             'success' => true,
             'data' => [
-                'total' => Subscription::count(),
-                'active' => Subscription::where('status', SubscriptionStatus::Active)->count(),
+                'total' => $this->subscriptionsQuery($branchId)->count(),
+                'active' => $this->subscriptionsQuery($branchId)->where('status', SubscriptionStatus::Active)->count(),
                 'by_status' => $subscriptionsByStatus,
                 'by_plan' => $subscriptionsByPlan,
-                'auto_renew_enabled' => Subscription::where('auto_renew', true)->count(),
-                'expiring_soon' => Subscription::where('status', SubscriptionStatus::Active)
+                'auto_renew_enabled' => $this->subscriptionsQuery($branchId)->where('auto_renew', true)->count(),
+                'expiring_soon' => $this->subscriptionsQuery($branchId)->where('status', SubscriptionStatus::Active)
                     ->where('ends_at', '<=', now()->addDays(7))
                     ->count(),
                 'plans' => $plans,
@@ -306,13 +323,15 @@ class AdminDashboardController extends Controller
      */
     public function support(Request $request): JsonResponse
     {
-        $claimsByStatus = WarrantyClaim::query()
+        $branchId = $this->resolveBranchId($request);
+        $claimsByStatus = $this->warrantyClaimsQuery($branchId)
             ->groupBy('status')
             ->select('status', DB::raw('count(*) as count'))
             ->get()
             ->mapWithKeys(fn ($item) => [$item->status->value => $item->count]);
 
-        $pendingClaims = WarrantyClaim::with(['warranty.device:id,name,brand', 'warranty.user:id,name'])
+        $pendingClaims = $this->warrantyClaimsQuery($branchId)
+            ->with(['warranty.device:id,name,brand,owner_id', 'warranty.device.owner:id,name'])
             ->where('status', 'pending')
             ->latest()
             ->take(10)
@@ -321,11 +340,11 @@ class AdminDashboardController extends Controller
         return response()->json([
             'success' => true,
             'data' => [
-                'total_claims' => WarrantyClaim::count(),
+                'total_claims' => $this->warrantyClaimsQuery($branchId)->count(),
                 'by_status' => $claimsByStatus,
-                'pending_count' => WarrantyClaim::where('status', 'pending')->count(),
+                'pending_count' => $this->warrantyClaimsQuery($branchId)->where('status', 'pending')->count(),
                 'recent_pending' => $pendingClaims,
-                'this_month' => WarrantyClaim::where('created_at', '>=', now()->startOfMonth())->count(),
+                'this_month' => $this->warrantyClaimsQuery($branchId)->where('created_at', '>=', now()->startOfMonth())->count(),
             ],
         ]);
     }
@@ -333,15 +352,17 @@ class AdminDashboardController extends Controller
     /**
      * Calculate theft recovery rate.
      */
-    private function calculateRecoveryRate(): float
+    private function calculateRecoveryRate(?int $branchId): float
     {
-        $resolved = TheftReport::whereIn('status', [
+        $resolved = $this->theftReportsQuery($branchId)->whereIn('status', [
             TheftReportStatus::Recovered,
             TheftReportStatus::Closed,
             TheftReportStatus::FalseAlarm,
         ])->count();
 
-        $recovered = TheftReport::where('status', TheftReportStatus::Recovered)->count();
+        $recovered = $this->theftReportsQuery($branchId)
+            ->where('status', TheftReportStatus::Recovered)
+            ->count();
 
         if ($resolved === 0) {
             return 0;
@@ -367,9 +388,9 @@ class AdminDashboardController extends Controller
     /**
      * Calculate average theft report resolution time in days.
      */
-    private function calculateAverageResolutionDays(): ?float
+    private function calculateAverageResolutionDays(?int $branchId): ?float
     {
-        $resolvedReports = TheftReport::whereIn('status', [
+        $resolvedReports = $this->theftReportsQuery($branchId)->whereIn('status', [
             TheftReportStatus::Recovered,
             TheftReportStatus::Closed,
         ])
@@ -390,12 +411,12 @@ class AdminDashboardController extends Controller
     /**
      * Get user growth data for the specified period.
      */
-    private function getUserGrowthData(string $period): array
+    private function getUserGrowthData(string $period, ?int $branchId): array
     {
         $days = $period === 'year' ? 365 : 30;
         $format = $period === 'year' ? 'Y-m' : 'Y-m-d';
 
-        $users = User::query()
+        $users = $this->usersQuery($branchId)
             ->where('created_at', '>=', now()->subDays($days))
             ->get(['created_at']);
 
@@ -408,12 +429,12 @@ class AdminDashboardController extends Controller
     /**
      * Get revenue trend data for the specified period.
      */
-    private function getRevenueTrendData(string $period): array
+    private function getRevenueTrendData(string $period, ?int $branchId): array
     {
         $days = $period === 'year' ? 365 : 30;
         $format = $period === 'year' ? 'Y-m' : 'Y-m-d';
 
-        $payments = Payment::completed()
+        $payments = $this->paymentsQuery($branchId)->completed()
             ->where('paid_at', '>=', now()->subDays($days))
             ->get(['paid_at', 'amount']);
 
@@ -421,5 +442,78 @@ class AdminDashboardController extends Controller
             ->map(fn ($group) => (float) $group->sum('amount'))
             ->sortKeys()
             ->toArray();
+    }
+
+    private function resolveBranchId(Request $request): ?int
+    {
+        if ($request->user()->hasRole('super_admin')) {
+            return null;
+        }
+
+        return $request->user()->requiredBranchScopeId();
+    }
+
+    private function usersQuery(?int $branchId): Builder
+    {
+        return User::query()->when($branchId, fn ($query) => $query->where('branch_id', $branchId));
+    }
+
+    private function devicesQuery(?int $branchId): Builder
+    {
+        return Device::query()->when($branchId, fn ($query) => $query->where('branch_id', $branchId));
+    }
+
+    private function paymentsQuery(?int $branchId): Builder
+    {
+        return Payment::query()->when(
+            $branchId,
+            fn ($query) => $query->whereHas('user', fn ($userQuery) => $userQuery->where('branch_id', $branchId))
+        );
+    }
+
+    private function subscriptionsQuery(?int $branchId): Builder
+    {
+        return Subscription::query()->when(
+            $branchId,
+            fn ($query) => $query->whereHas('user', fn ($userQuery) => $userQuery->where('branch_id', $branchId))
+        );
+    }
+
+    private function theftReportsQuery(?int $branchId): Builder
+    {
+        return TheftReport::query()->when(
+            $branchId,
+            fn ($query) => $query->whereHas('device', fn ($deviceQuery) => $deviceQuery->where('branch_id', $branchId))
+        );
+    }
+
+    private function inventoryMovementsQuery(?int $branchId): Builder
+    {
+        return InventoryMovement::query()->when($branchId, function ($query) use ($branchId) {
+            $query->where(function ($branchQuery) use ($branchId) {
+                $branchQuery->where('branch_id', $branchId)
+                    ->orWhere('from_branch_id', $branchId)
+                    ->orWhere('to_branch_id', $branchId);
+            });
+        });
+    }
+
+    private function iotModulesQuery(?int $branchId): Builder
+    {
+        return IotModule::query()->when(
+            $branchId,
+            fn ($query) => $query->whereHas('device', fn ($deviceQuery) => $deviceQuery->where('branch_id', $branchId))
+        );
+    }
+
+    private function warrantyClaimsQuery(?int $branchId): Builder
+    {
+        return WarrantyClaim::query()->when(
+            $branchId,
+            fn ($query) => $query->whereHas(
+                'warranty.device',
+                fn ($deviceQuery) => $deviceQuery->where('branch_id', $branchId)
+            )
+        );
     }
 }

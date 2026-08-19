@@ -56,7 +56,7 @@ class ShiftController extends BaseController
 
         $shift = Shift::create([
             'user_id' => $user->id,
-            'branch_id' => $user->branch_id,
+            'branch_id' => $user->requiredBranchScopeId(),
             'started_at' => now(),
             'status' => 'active',
             'opening_cash' => $validated['opening_cash'] ?? 0,

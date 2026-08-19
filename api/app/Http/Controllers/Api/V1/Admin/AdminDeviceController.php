@@ -88,14 +88,15 @@ class AdminDeviceController extends BaseController
             return $requestedBranchId ?: ($user->branch_id ? (int) $user->branch_id : null);
         }
 
-        return $user?->branch_id ? (int) $user->branch_id : null;
+        return $user?->requiredBranchScopeId();
     }
 
     /**
      * Get a specific device with full details.
      */
-    public function show(Device $device): JsonResponse
+    public function show(Request $request, Device $device): JsonResponse
     {
+        $this->authorizeDeviceBranch($request, $device);
         $device->load(['category', 'owner', 'iotModule', 'lastLocation', 'warranty']);
 
         return $this->success(new DeviceResource($device));
@@ -106,6 +107,7 @@ class AdminDeviceController extends BaseController
      */
     public function update(Request $request, Device $device): JsonResponse
     {
+        $this->authorizeDeviceBranch($request, $device);
         $validated = $request->validate([
             'brand' => 'sometimes|string|max:100',
             'model' => 'sometimes|string|max:100',
@@ -130,6 +132,7 @@ class AdminDeviceController extends BaseController
      */
     public function updateStatus(Request $request, Device $device): JsonResponse
     {
+        $this->authorizeDeviceBranch($request, $device);
         $validated = $request->validate([
             'status' => ['required', Rule::enum(DeviceStatus::class)],
             'notes' => 'nullable|string|max:500',
@@ -157,5 +160,14 @@ class AdminDeviceController extends BaseController
         // step-up verification. Actual deletion is performed by
         // InventoryDispositionController after a verified challenge.
         return $this->error('Device deletion requires PIN verification. Request a deletion challenge first.', 403);
+    }
+
+    private function authorizeDeviceBranch(Request $request, Device $device): void
+    {
+        abort_unless(
+            $request->user()?->canAccessBranch($device->branch_id),
+            403,
+            'You cannot access devices for another branch.'
+        );
     }
 }

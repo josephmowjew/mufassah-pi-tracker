@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, ArrowLeftRight, Eye, Filter, Loader2, Package, RotateCcw, Search, X } from 'lucide-react'
@@ -58,6 +58,7 @@ const extractErrors = (error: unknown) => {
 export default function AdminStockMovementsPage() {
   const queryClient = useQueryClient()
   const { user, getUserRoles } = useAuthStore()
+  const isSuperAdmin = getUserRoles().includes('super_admin')
   const [page, setPage] = useState(1)
   const [search, setSearch] = useState('')
   const [branchId, setBranchId] = useState('')
@@ -102,12 +103,27 @@ export default function AdminStockMovementsPage() {
   }, [branchId, dateFrom, dateTo, movementType, search])
 
   const { data: branches } = useQuery({
-    queryKey: ['branches'],
+    queryKey: ['branch-options'],
     queryFn: async () => {
-      const response = await apiClient.get<{ data: Branch[] }>('/admin/branches')
+      const response = await apiClient.get<{ data: Branch[] }>('/admin/branch-options')
       return response.data.data
     },
   })
+
+  const { data: accessibleBranches } = useQuery({
+    queryKey: ['accessible-branches'],
+    queryFn: async () => {
+      const response = await apiClient.get<{ data: Branch[] }>('/admin/branches?per_page=100')
+      return response.data.data
+    },
+    enabled: !isSuperAdmin,
+  })
+
+  useEffect(() => {
+    if (!isSuperAdmin && showTransferModal && !sourceBranchId && accessibleBranches?.[0]) {
+      setSourceBranchId(accessibleBranches[0].id.toString())
+    }
+  }, [accessibleBranches, isSuperAdmin, showTransferModal, sourceBranchId])
 
   const { data: movementsData, isLoading } = useQuery({
     queryKey: ['stock-movements', movementQuery],
@@ -349,7 +365,12 @@ export default function AdminStockMovementsPage() {
           <Authorize permission={PERMISSIONS.MANAGE_STOCK_MOVEMENTS}>
             <div className="flex flex-wrap gap-2">
               <button
-                onClick={() => setShowTransferModal(true)}
+                onClick={() => {
+                  if (!isSuperAdmin) {
+                    setSourceBranchId(accessibleBranches?.[0]?.id.toString() || '')
+                  }
+                  setShowTransferModal(true)
+                }}
                 className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
               >
                 <ArrowLeftRight className="h-4 w-4" />
@@ -403,10 +424,10 @@ export default function AdminStockMovementsPage() {
                 className="w-full rounded-lg border border-slate-200 py-2 pl-9 pr-3 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
               />
             </div>
-            <select value={branchId} onChange={(event) => { setBranchId(event.target.value); setPage(1) }} className="rounded-lg border border-slate-200 px-3 py-2 text-sm">
+            {isSuperAdmin && <select value={branchId} onChange={(event) => { setBranchId(event.target.value); setPage(1) }} className="rounded-lg border border-slate-200 px-3 py-2 text-sm">
               <option value="">All Branches</option>
               {branches?.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
-            </select>
+            </select>}
             <select value={movementType} onChange={(event) => { setMovementType(event.target.value); setPage(1) }} className="rounded-lg border border-slate-200 px-3 py-2 text-sm">
               <option value="">All Movement Types</option>
               {movementTypes.map((type) => <option key={type} value={type}>{label(type)}</option>)}
@@ -490,6 +511,7 @@ export default function AdminStockMovementsPage() {
             selectedDeviceIds={selectedDeviceIds}
             toggleDevice={toggleDevice}
             sourceBranchId={sourceBranchId}
+            canChooseSourceBranch={isSuperAdmin}
             setSourceBranchId={(value) => {
               setSourceBranchId(value)
               setSelectedDeviceIds([])
@@ -646,6 +668,7 @@ interface ActionModalProps {
   selectedDeviceIds: number[]
   toggleDevice: (deviceId: number) => void
   sourceBranchId: string
+  canChooseSourceBranch: boolean
   setSourceBranchId: (value: string) => void
   destinationBranchId: string
   setDestinationBranchId: (value: string) => void
@@ -681,6 +704,7 @@ function ActionModal(props: ActionModalProps) {
     selectedDeviceIds,
     toggleDevice,
     sourceBranchId,
+    canChooseSourceBranch,
     setSourceBranchId,
     destinationBranchId,
     setDestinationBranchId,
@@ -721,7 +745,7 @@ function ActionModal(props: ActionModalProps) {
           {isTransfer ? (
             <div className="grid gap-4 sm:grid-cols-2">
               <FieldError label="Source Branch" htmlFor="transfer-source-branch" errors={errors.from_branch_id || errors.branch_id}>
-                <select id="transfer-source-branch" value={sourceBranchId} onChange={(event) => setSourceBranchId(event.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm">
+                <select id="transfer-source-branch" value={sourceBranchId} onChange={(event) => setSourceBranchId(event.target.value)} disabled={!canChooseSourceBranch} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-600">
                   <option value="">Select source branch</option>
                   {branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
                 </select>

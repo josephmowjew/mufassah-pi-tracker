@@ -71,3 +71,50 @@ it('keeps store admin device listings scoped to their assigned branch', function
         ->assertSuccessful()
         ->assertJsonPath('meta.total', 2);
 });
+
+it('scopes device listings to the branch managed by the store admin', function () {
+    $manager = User::factory()->create(['branch_id' => $this->otherBranch->id]);
+    $manager->assignRole('store_admin');
+    $this->branch->update(['manager_id' => $manager->id]);
+
+    Device::factory()->create([
+        'branch_id' => $this->branch->id,
+        'category_id' => $this->category->id,
+    ]);
+    Device::factory()->create([
+        'branch_id' => $this->otherBranch->id,
+        'category_id' => $this->category->id,
+    ]);
+
+    $this->actingAs($manager)
+        ->getJson('/api/v1/admin/devices?all_branches=1')
+        ->assertSuccessful()
+        ->assertJsonPath('meta.total', 1)
+        ->assertJsonPath('data.0.branch_id', $this->branch->id);
+});
+
+it('blocks store admins from direct access to another branch device', function () {
+    $storeAdmin = User::factory()->create(['branch_id' => $this->branch->id]);
+    $storeAdmin->assignRole('store_admin');
+    $device = Device::factory()->create([
+        'branch_id' => $this->otherBranch->id,
+        'category_id' => $this->category->id,
+    ]);
+
+    $this->actingAs($storeAdmin)
+        ->getJson("/api/v1/admin/devices/{$device->id}")
+        ->assertForbidden();
+
+    $this->actingAs($storeAdmin)
+        ->putJson("/api/v1/admin/devices/{$device->id}", ['notes' => 'Cross-branch update'])
+        ->assertForbidden();
+});
+
+it('fails closed when a store admin has no branch assignment', function () {
+    $storeAdmin = User::factory()->create(['branch_id' => null]);
+    $storeAdmin->assignRole('store_admin');
+
+    $this->actingAs($storeAdmin)
+        ->getJson('/api/v1/admin/devices')
+        ->assertForbidden();
+});

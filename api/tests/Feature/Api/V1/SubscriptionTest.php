@@ -1,6 +1,7 @@
 <?php
 
 use App\Enums\SubscriptionStatus;
+use App\Models\Branch;
 use App\Models\Payment;
 use App\Models\Subscription;
 use App\Models\SubscriptionPlan;
@@ -272,5 +273,26 @@ describe('Admin Subscription Management', function () {
             ->getJson('/api/v1/admin/subscriptions');
 
         $response->assertForbidden();
+    });
+
+    it('limits store admins to subscriptions for users in their branch', function () {
+        $branch = Branch::create(['name' => 'Subscription Branch', 'code' => 'SUB', 'is_active' => true]);
+        $otherBranch = Branch::create(['name' => 'Other Subscription Branch', 'code' => 'OSB', 'is_active' => true]);
+        $storeAdmin = User::factory()->create(['branch_id' => $branch->id]);
+        $storeAdmin->assignRole('store_admin');
+        $ownUser = User::factory()->create(['branch_id' => $branch->id]);
+        $otherUser = User::factory()->create(['branch_id' => $otherBranch->id]);
+        $ownSubscription = Subscription::factory()->active()->for($ownUser)->for($this->plan, 'plan')->create();
+        $otherSubscription = Subscription::factory()->active()->for($otherUser)->for($this->plan, 'plan')->create();
+
+        $this->actingAs($storeAdmin)
+            ->getJson('/api/v1/admin/subscriptions')
+            ->assertSuccessful()
+            ->assertJsonPath('meta.total', 1)
+            ->assertJsonPath('data.0.id', $ownSubscription->id);
+
+        $this->actingAs($storeAdmin)
+            ->postJson("/api/v1/admin/subscriptions/{$otherSubscription->id}/suspend")
+            ->assertForbidden();
     });
 });

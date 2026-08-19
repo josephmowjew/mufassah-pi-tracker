@@ -699,7 +699,7 @@ class AdminInventoryController extends BaseController
             return $requestedBranchId ?: ($user->branch_id ? (int) $user->branch_id : null);
         }
 
-        return $user?->branch_id ? (int) $user->branch_id : null;
+        return $user?->requiredBranchScopeId();
     }
 
     private function resolveInventoryWriteBranchId(Request $request, int $requestedBranchId): int
@@ -710,15 +710,17 @@ class AdminInventoryController extends BaseController
             return $requestedBranchId;
         }
 
-        if (! $user?->branch_id) {
+        $branchId = $user?->branchScopeId();
+
+        if (! $branchId) {
             abort(403, 'Your account must be assigned to a branch before managing inventory.');
         }
 
-        if ((int) $user->branch_id !== $requestedBranchId) {
+        if ($branchId !== $requestedBranchId) {
             abort(403, 'You cannot manage inventory for another branch.');
         }
 
-        return (int) $user->branch_id;
+        return $branchId;
     }
 
     private function authorizeInventoryBranch(Request $request, ?int $branchId): void
@@ -729,7 +731,8 @@ class AdminInventoryController extends BaseController
             return;
         }
 
-        if ($user?->branch_id && (int) $user->branch_id === (int) $branchId) {
+        $userBranchId = $user?->branchScopeId();
+        if ($userBranchId && (int) $userBranchId === (int) $branchId) {
             return;
         }
 

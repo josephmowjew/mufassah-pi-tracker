@@ -391,6 +391,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/roles', [AdminUserController::class, 'roles'])->name('roles');
 
         // Branch management
+        Route::get('/branch-options', [BranchController::class, 'options'])->name('branches.options');
         Route::apiResource('branches', BranchController::class);
         Route::prefix('branches/{branch}')->name('branches.')->group(function () {
             Route::get('/stats', [BranchController::class, 'stats'])->name('stats');
@@ -422,10 +423,13 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/device-categories', [DeviceCategoryController::class, 'index'])
             ->name('device-categories.index');
         Route::post('/device-categories', [DeviceCategoryController::class, 'store'])
+            ->middleware('role:super_admin')
             ->name('device-categories.store');
         Route::put('/device-categories/{deviceCategory}', [DeviceCategoryController::class, 'update'])
+            ->middleware('role:super_admin')
             ->name('device-categories.update');
         Route::delete('/device-categories/{deviceCategory}', [DeviceCategoryController::class, 'destroy'])
+            ->middleware('role:super_admin')
             ->name('device-categories.destroy');
 
         // IoT Module management
@@ -521,17 +525,17 @@ Route::middleware('auth:sanctum')->group(function () {
 
             // Brands CRUD
             Route::get('/brands', [AdminProductCatalogController::class, 'brandIndex'])->name('brands.index');
-            Route::post('/brands', [AdminProductCatalogController::class, 'brandStore'])->name('brands.store');
+            Route::post('/brands', [AdminProductCatalogController::class, 'brandStore'])->middleware('role:super_admin')->name('brands.store');
             Route::get('/brands/{brand}', [AdminProductCatalogController::class, 'brandShow'])->name('brands.show');
-            Route::put('/brands/{brand}', [AdminProductCatalogController::class, 'brandUpdate'])->name('brands.update');
-            Route::delete('/brands/{brand}', [AdminProductCatalogController::class, 'brandDestroy'])->name('brands.destroy');
+            Route::put('/brands/{brand}', [AdminProductCatalogController::class, 'brandUpdate'])->middleware('role:super_admin')->name('brands.update');
+            Route::delete('/brands/{brand}', [AdminProductCatalogController::class, 'brandDestroy'])->middleware('role:super_admin')->name('brands.destroy');
 
             // Product Models CRUD
             Route::get('/models', [AdminProductCatalogController::class, 'modelIndex'])->name('models.index');
-            Route::post('/models', [AdminProductCatalogController::class, 'modelStore'])->name('models.store');
+            Route::post('/models', [AdminProductCatalogController::class, 'modelStore'])->middleware('role:super_admin')->name('models.store');
             Route::get('/models/{productModel}', [AdminProductCatalogController::class, 'modelShow'])->name('models.show');
-            Route::put('/models/{productModel}', [AdminProductCatalogController::class, 'modelUpdate'])->name('models.update');
-            Route::delete('/models/{productModel}', [AdminProductCatalogController::class, 'modelDestroy'])->name('models.destroy');
+            Route::put('/models/{productModel}', [AdminProductCatalogController::class, 'modelUpdate'])->middleware('role:super_admin')->name('models.update');
+            Route::delete('/models/{productModel}', [AdminProductCatalogController::class, 'modelDestroy'])->middleware('role:super_admin')->name('models.destroy');
         });
 
         // Sales management (POS)
@@ -556,17 +560,17 @@ Route::middleware('auth:sanctum')->group(function () {
         });
 
         // Communication Settings
-        Route::prefix('communications')->name('communications.')->group(function () {
+        Route::prefix('communications')->name('communications.')->middleware('role:super_admin')->group(function () {
             Route::get('/', [CommunicationSettingsController::class, 'index'])->name('index');
             Route::put('/', [CommunicationSettingsController::class, 'update'])->name('update');
             Route::post('/test-email', [CommunicationSettingsController::class, 'sendTestEmail'])->name('test-email');
         });
 
         // Careers management
-        Route::apiResource('vacancies', VacancyController::class);
+        Route::apiResource('vacancies', VacancyController::class)->middleware('role:super_admin');
 
         // Community management (Admin)
-        Route::prefix('community')->name('community.')->group(function () {
+        Route::prefix('community')->name('community.')->middleware('role:super_admin')->group(function () {
             Route::get('/alerts', [CommunityAlertController::class, 'allAlerts'])->name('alerts.index');
             Route::get('/tips', [CommunityAlertController::class, 'allTips'])->name('tips.index');
             Route::get('/claims', [CommunityAlertController::class, 'allClaims'])->name('claims.index');
@@ -577,7 +581,7 @@ Route::middleware('auth:sanctum')->group(function () {
         });
 
         // Family management (Admin manages on behalf of users)
-        Route::prefix('families')->name('families.')->group(function () {
+        Route::prefix('families')->name('families.')->middleware('role:super_admin')->group(function () {
             Route::get('/', [AdminFamilyController::class, 'index'])->name('index');
             Route::get('/{family}', [AdminFamilyController::class, 'show'])->name('show');
             Route::put('/{family}', [AdminFamilyController::class, 'update'])->name('update');

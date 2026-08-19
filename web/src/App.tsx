@@ -174,24 +174,26 @@ function App() {
               <Route element={<AdminLayout />}>
                 <Route path="/admin" element={<AdminDashboardPage />} />
                 <Route path="/admin/users" element={<AdminUsersPage />} />
-                <Route path="/admin/families" element={<AdminFamiliesPage />} />
                 <Route path="/admin/devices" element={<DeviceManagementPage />} />
                 <Route path="/admin/tracking" element={<AdminTrackingPage />} />
                 <Route path="/admin/iot-modules" element={<IoTModulesPage />} />
                 <Route path="/admin/inventory" element={<AdminInventoryPage />} />
                 <Route path="/admin/stock-movements" element={<AdminStockMovementsPage />} />
-                <Route path="/admin/branches" element={<AdminBranchesPage />} />
-                <Route path="/admin/catalog" element={<AdminProductCatalogPage />} />
-                <Route path="/admin/categories" element={<AdminCategoriesPage />} />
                 <Route path="/admin/sales" element={<SalesPage />} />
                 <Route path="/admin/shifts" element={<AdminShiftsPage />} />
-                <Route path="/admin/communications" element={<AdminCommunicationsPage />} />
                 <Route path="/admin/notifications" element={<NotificationsPage />} />
-                <Route path="/admin/vacancies" element={<AdminVacanciesPage />} />
                 <Route path="/admin/theft-reports" element={<AdminTheftReportsPage />} />
                 <Route path="/admin/subscriptions" element={<AdminSubscriptionsPage />} />
                 <Route path="/admin/reports" element={<AdminReportsPage />} />
-                <Route path="/admin/community" element={<AdminCommunityPage />} />
+                <Route element={<ProtectedRoute requiredRoles={['super_admin']} />}>
+                  <Route path="/admin/families" element={<AdminFamiliesPage />} />
+                  <Route path="/admin/branches" element={<AdminBranchesPage />} />
+                  <Route path="/admin/catalog" element={<AdminProductCatalogPage />} />
+                  <Route path="/admin/categories" element={<AdminCategoriesPage />} />
+                  <Route path="/admin/communications" element={<AdminCommunicationsPage />} />
+                  <Route path="/admin/vacancies" element={<AdminVacanciesPage />} />
+                  <Route path="/admin/community" element={<AdminCommunityPage />} />
+                </Route>
               </Route>
             </Route>
 

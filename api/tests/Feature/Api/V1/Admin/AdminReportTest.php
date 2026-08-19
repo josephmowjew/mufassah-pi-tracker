@@ -3,9 +3,9 @@
 use App\Enums\DeviceStatus;
 use App\Enums\InventoryStatus;
 use App\Enums\PaymentStatus;
+use App\Models\Branch;
 use App\Models\Device;
 use App\Models\DeviceCategory;
-use App\Models\Branch;
 use App\Models\InventoryBatch;
 use App\Models\Payment;
 use App\Models\Subscription;
@@ -146,6 +146,21 @@ describe('Device Report', function () {
             ->assertJsonPath('data.summary.total', 7)
             ->assertJsonPath('data.summary.active', 5)
             ->assertJsonPath('data.summary.stolen', 2);
+    });
+
+    it('scopes store admin device reports to their branch', function () {
+        $branch = Branch::create(['name' => 'Report Branch', 'code' => 'RPB', 'is_active' => true]);
+        $otherBranch = Branch::create(['name' => 'Other Report Branch', 'code' => 'ORB', 'is_active' => true]);
+        $storeAdmin = User::factory()->create(['branch_id' => $branch->id]);
+        $storeAdmin->assignRole('store_admin');
+
+        Device::factory()->create(['branch_id' => $branch->id, 'category_id' => $this->category->id]);
+        Device::factory()->count(2)->create(['branch_id' => $otherBranch->id, 'category_id' => $this->category->id]);
+
+        $this->actingAs($storeAdmin)
+            ->getJson('/api/v1/admin/reports/devices')
+            ->assertSuccessful()
+            ->assertJsonPath('data.summary.total', 1);
     });
 });
 

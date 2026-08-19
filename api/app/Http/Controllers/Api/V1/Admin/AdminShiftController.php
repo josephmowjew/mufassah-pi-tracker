@@ -15,7 +15,9 @@ class AdminShiftController extends BaseController
      */
     public function index(Request $request): JsonResponse
     {
-        $query = Shift::with(['user', 'branch', 'sales']);
+        $branchId = $this->resolveBranchId($request);
+        $query = Shift::with(['user', 'branch', 'sales'])
+            ->when($branchId, fn ($query) => $query->where('branch_id', $branchId));
 
         // Filter by status
         if ($request->has('status')) {
@@ -28,7 +30,7 @@ class AdminShiftController extends BaseController
         }
 
         // Filter by branch
-        if ($request->has('branch_id')) {
+        if ($request->has('branch_id') && $request->user()->hasRole('super_admin')) {
             $query->where('branch_id', $request->branch_id);
         }
 
@@ -66,6 +68,12 @@ class AdminShiftController extends BaseController
      */
     public function show(Request $request, Shift $shift): JsonResponse
     {
+        abort_unless(
+            $request->user()->canAccessBranch($shift->branch_id),
+            403,
+            'You cannot access shifts for another branch.'
+        );
+
         $shift->load([
             'user',
             'branch',
@@ -82,7 +90,9 @@ class AdminShiftController extends BaseController
      */
     public function stats(Request $request): JsonResponse
     {
-        $query = Shift::query();
+        $branchId = $this->resolveBranchId($request);
+        $query = Shift::query()
+            ->when($branchId, fn ($query) => $query->where('branch_id', $branchId));
 
         // Apply date filters
         if ($request->has('date_from')) {
@@ -91,7 +101,7 @@ class AdminShiftController extends BaseController
         if ($request->has('date_to')) {
             $query->whereDate('started_at', '<=', $request->date_to);
         }
-        if ($request->has('branch_id')) {
+        if ($request->has('branch_id') && $request->user()->hasRole('super_admin')) {
             $query->where('branch_id', $request->branch_id);
         }
 
@@ -110,5 +120,14 @@ class AdminShiftController extends BaseController
         ];
 
         return $this->success($stats);
+    }
+
+    private function resolveBranchId(Request $request): ?int
+    {
+        if ($request->user()->hasRole('super_admin')) {
+            return null;
+        }
+
+        return $request->user()->requiredBranchScopeId();
     }
 }

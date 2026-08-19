@@ -13,18 +13,18 @@ beforeEach(function () {
     $this->admin = User::factory()->create();
     $this->admin->assignRole('super_admin');
 
-    $this->storeAdmin = User::factory()->create();
-    $this->storeAdmin->assignRole('store_admin');
-
-    $this->customer = User::factory()->create();
-    $this->customer->assignRole('customer');
-
     $this->branch = Branch::create([
         'name' => 'Test Branch',
         'code' => 'TST',
         'city' => 'Lilongwe',
         'is_active' => true,
     ]);
+
+    $this->storeAdmin = User::factory()->create(['branch_id' => $this->branch->id]);
+    $this->storeAdmin->assignRole('store_admin');
+
+    $this->customer = User::factory()->create(['branch_id' => $this->branch->id]);
+    $this->customer->assignRole('customer');
 });
 
 describe('User Listing', function () {
@@ -69,6 +69,21 @@ describe('User Listing', function () {
             ->getJson('/api/v1/admin/users');
 
         $response->assertForbidden();
+    });
+
+    it('scopes store admin users and blocks direct cross-branch access', function () {
+        $otherBranch = Branch::create(['name' => 'Other Branch', 'code' => 'OTH', 'is_active' => true]);
+        $otherCustomer = User::factory()->create(['branch_id' => $otherBranch->id]);
+        $otherCustomer->assignRole('customer');
+
+        $this->actingAs($this->storeAdmin)
+            ->getJson('/api/v1/admin/users?per_page=100')
+            ->assertSuccessful()
+            ->assertJsonMissing(['id' => $otherCustomer->id]);
+
+        $this->actingAs($this->storeAdmin)
+            ->getJson("/api/v1/admin/users/{$otherCustomer->id}")
+            ->assertForbidden();
     });
 });
 

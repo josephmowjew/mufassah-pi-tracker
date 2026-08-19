@@ -17,6 +17,7 @@ use Illuminate\Support\Facades\Notification;
 
 beforeEach(function () {
     $this->seed(\Database\Seeders\RolesAndPermissionsSeeder::class);
+    config(['inventory.approval_email' => 'elijahpchitedze@gmail.com']);
 
     $this->branch = Branch::create([
         'name' => 'Disposition Branch',

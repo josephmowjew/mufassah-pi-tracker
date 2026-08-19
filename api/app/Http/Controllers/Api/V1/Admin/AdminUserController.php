@@ -27,8 +27,13 @@ class AdminUserController extends Controller
      */
     public function index(Request $request): AnonymousResourceCollection
     {
+        $branchId = $request->user()->hasRole('super_admin')
+            ? null
+            : $request->user()->requiredBranchScopeId();
+
         $users = User::query()
             ->with(['roles', 'branch'])
+            ->when($branchId, fn ($query) => $query->where('branch_id', $branchId))
             ->when($request->filled('search'), function ($query) use ($request) {
                 $search = $request->input('search');
                 $query->where(function ($q) use ($search) {
@@ -79,10 +84,16 @@ class AdminUserController extends Controller
             'verify_email' => ['boolean'],
         ]);
 
-        $branchId = $validated['branch_id']
-            ?? $request->user()?->branch_id
-            ?? Branch::query()->where('is_active', true)->value('id')
-            ?? Branch::query()->value('id');
+        if (! $request->user()->hasRole('super_admin') && $validated['role'] === 'super_admin') {
+            abort(403, 'Only super admins can create super admin users.');
+        }
+
+        $branchId = $request->user()->hasRole('super_admin')
+            ? ($validated['branch_id']
+                ?? $request->user()?->branch_id
+                ?? Branch::query()->where('is_active', true)->value('id')
+                ?? Branch::query()->value('id'))
+            : $request->user()->requiredBranchScopeId();
 
         $user = User::create([
             'name' => $validated['name'],
@@ -109,8 +120,9 @@ class AdminUserController extends Controller
     /**
      * Get a specific user.
      */
-    public function show(User $user): JsonResponse
+    public function show(Request $request, User $user): JsonResponse
     {
+        $this->authorizeUserBranch($request, $user);
         $user->load(['roles', 'branch', 'devices', 'subscriptions.plan']);
         $user->loadCount(['devices', 'subscriptions', 'theftReports']);
 
@@ -131,6 +143,7 @@ class AdminUserController extends Controller
      */
     public function update(Request $request, User $user): JsonResponse
     {
+        $this->authorizeUserBranch($request, $user);
         $validated = $request->validate([
             'name' => ['sometimes', 'string', 'max:255'],
             'email' => ['sometimes', 'nullable', 'string', 'email', 'max:255', Rule::unique('users')->ignore($user->id)],
@@ -146,6 +159,10 @@ class AdminUserController extends Controller
             $validated['password'] = Hash::make($validated['password']);
         }
 
+        if (! $request->user()->hasRole('super_admin')) {
+            $validated['branch_id'] = $request->user()->requiredBranchScopeId();
+        }
+
         $user->update($validated);
         $user->load('roles');
 
@@ -159,20 +176,21 @@ class AdminUserController extends Controller
     /**
      * Delete a user.
      */
-    public function destroy(User $user): JsonResponse
+    public function destroy(Request $request, User $user): JsonResponse
     {
-        // Prevent deleting super admins or self
-        if ($user->hasRole('super_admin')) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Cannot delete super admin users.',
-            ], 403);
-        }
-
+        $this->authorizeUserBranch($request, $user);
+        // Give the more specific self-deletion error before the role guard.
         if ($user->id === auth()->id()) {
             return response()->json([
                 'success' => false,
                 'message' => 'Cannot delete your own account.',
+            ], 403);
+        }
+
+        if ($user->hasRole('super_admin')) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Cannot delete super admin users.',
             ], 403);
         }
 
@@ -189,6 +207,7 @@ class AdminUserController extends Controller
      */
     public function assignRole(Request $request, User $user): JsonResponse
     {
+        $this->authorizeUserBranch($request, $user);
         $validated = $request->validate([
             'role' => ['required', 'string', Rule::exists('roles', 'name')->where('guard_name', 'api')],
         ]);
@@ -214,8 +233,9 @@ class AdminUserController extends Controller
     /**
      * Suspend a user account.
      */
-    public function suspend(User $user): JsonResponse
+    public function suspend(Request $request, User $user): JsonResponse
     {
+        $this->authorizeUserBranch($request, $user);
         if ($user->hasRole('super_admin')) {
             return response()->json([
                 'success' => false,
@@ -244,8 +264,9 @@ class AdminUserController extends Controller
     /**
      * Unsuspend a user account.
      */
-    public function unsuspend(User $user): JsonResponse
+    public function unsuspend(Request $request, User $user): JsonResponse
     {
+        $this->authorizeUserBranch($request, $user);
         $user->update(['suspended_at' => null]);
 
         return response()->json([
@@ -271,8 +292,9 @@ class AdminUserController extends Controller
     /**
      * Verify user's email manually.
      */
-    public function verifyEmail(User $user): JsonResponse
+    public function verifyEmail(Request $request, User $user): JsonResponse
     {
+        $this->authorizeUserBranch($request, $user);
         if ($user->hasVerifiedEmail()) {
             return response()->json([
                 'success' => false,
@@ -286,5 +308,14 @@ class AdminUserController extends Controller
             'success' => true,
             'message' => 'Email verified successfully.',
         ]);
+    }
+
+    private function authorizeUserBranch(Request $request, User $target): void
+    {
+        abort_unless(
+            $request->user()->canAccessBranch($target->branch_id),
+            403,
+            'You cannot manage users for another branch.'
+        );
     }
 }

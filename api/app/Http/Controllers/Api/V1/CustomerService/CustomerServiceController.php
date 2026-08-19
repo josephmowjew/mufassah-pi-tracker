@@ -22,7 +22,7 @@ class CustomerServiceController extends BaseController
     {
         $user = $request->user();
         $userId = $user->id;
-        $branchId = $user->branch_id;
+        $branchId = $user->requiredBranchScopeId();
 
         // Load branch relationship
         $user->load('branch');
@@ -105,7 +105,7 @@ class CustomerServiceController extends BaseController
             'email' => $validated['email'] ?? null,
             'phone_number' => $validated['phone_number'] ?? null,
             'password' => Hash::make($validated['password'] ?? Str::random(32)),
-            'branch_id' => $request->user()->branch_id,
+            'branch_id' => $request->user()->requiredBranchScopeId(),
             'national_id' => $validated['national_id'] ?? null,
         ]);
         $customer->assignRole('customer');

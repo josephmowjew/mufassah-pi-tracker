@@ -34,8 +34,10 @@ class TheftReportController extends Controller
         $query = TheftReport::query()
             ->with(['device', 'reporter', 'assignee']);
 
-        // Filter by user's own reports for non-admin users
-        if (! $request->user()->hasRole(['super_admin', 'store_admin', 'customer_service'])) {
+        if ($request->user()->hasRole(['store_admin', 'customer_service'])) {
+            $branchId = $request->user()->requiredBranchScopeId();
+            $query->whereHas('device', fn ($deviceQuery) => $deviceQuery->where('branch_id', $branchId));
+        } elseif (! $request->user()->hasRole('super_admin')) {
             $query->where(function ($q) use ($request) {
                 $q->where('reported_by', $request->user()->id)
                     ->orWhereHas('device', fn ($d) => $d->where('owner_id', $request->user()->id));
@@ -88,7 +90,9 @@ class TheftReportController extends Controller
         $device = Device::findOrFail($request->device_id);
 
         // Verify user owns the device or is admin
-        if ($device->owner_id !== $request->user()->id && ! $request->user()->hasRole(['super_admin', 'store_admin'])) {
+        if ($device->owner_id !== $request->user()->id
+            && ! $request->user()->hasRole('super_admin')
+            && ! ($request->user()->hasRole('store_admin') && $request->user()->canAccessBranch($device->branch_id))) {
             return response()->json([
                 'success' => false,
                 'message' => 'You can only report theft for your own devices.',

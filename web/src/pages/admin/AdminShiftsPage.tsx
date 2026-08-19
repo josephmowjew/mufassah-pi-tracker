@@ -5,6 +5,7 @@ import { Authorize } from '@/components/auth/Authorize'
 import { PERMISSIONS } from '@/stores/auth-store'
 import apiClient from '@/api/client'
 import type { Shift, Branch, User as UserType } from '@/types'
+import { useAuthStore } from '@/stores/auth-store'
 
 interface PaginatedResponse {
   data: Shift[]
@@ -53,6 +54,7 @@ const formatCurrency = (amount: number | string) => {
 }
 
 export default function AdminShiftsPage() {
+  const isSuperAdmin = useAuthStore((state) => state.isSuperAdmin())
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
   const [statusFilter, setStatusFilter] = useState('')
@@ -245,7 +247,7 @@ export default function AdminShiftsPage() {
               <option value="completed">Completed</option>
               <option value="cancelled">Cancelled</option>
             </select>
-            <select
+            {isSuperAdmin && <select
               value={branchFilter}
               onChange={(e) => { setBranchFilter(e.target.value); setPage(1) }}
               className="px-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -256,7 +258,7 @@ export default function AdminShiftsPage() {
                   {branch.name}
                 </option>
               ))}
-            </select>
+            </select>}
             <select
               value={userFilter}
               onChange={(e) => { setUserFilter(e.target.value); setPage(1) }}

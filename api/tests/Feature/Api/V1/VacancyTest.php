@@ -9,9 +9,9 @@ beforeEach(function () {
     Role::firstOrCreate(['name' => 'store_admin', 'guard_name' => 'api']);
 });
 
-it('lets both admin roles manage vacancies', function () {
+it('lets super admins manage vacancies', function () {
     $admin = User::factory()->create();
-    $admin->assignRole('store_admin');
+    $admin->assignRole('super_admin');
 
     $response = $this->actingAs($admin)->postJson('/api/v1/admin/vacancies', [
         'title' => 'Home Theatre Sales Advisor',
@@ -30,6 +30,17 @@ it('lets both admin roles manage vacancies', function () {
         'title' => 'Home Theatre Sales Advisor',
         'is_published' => true,
     ]);
+});
+
+it('prevents store admins from managing global vacancies', function () {
+    $admin = User::factory()->create();
+    $admin->assignRole('store_admin');
+
+    $this->actingAs($admin)->postJson('/api/v1/admin/vacancies', [
+        'title' => 'Unauthorized Vacancy',
+        'employment_type' => 'Full-time',
+        'description' => 'Store admins cannot publish global vacancies.',
+    ])->assertForbidden();
 });
 
 it('only exposes published, unexpired vacancies to the public', function () {

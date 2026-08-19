@@ -18,6 +18,7 @@ use App\Models\Subscription;
 use App\Models\TheftReport;
 use App\Models\User;
 use Carbon\Carbon;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -34,13 +35,14 @@ class AdminReportController extends Controller
      */
     public function theft(Request $request): JsonResponse
     {
+        $branchId = $this->resolveReportBranchId($request, null);
         $validated = $request->validate([
             'from' => ['nullable', 'date'],
             'to' => ['nullable', 'date', 'after_or_equal:from'],
             'status' => ['nullable', 'string'],
         ]);
 
-        $query = TheftReport::query()
+        $query = $this->theftReportsQuery($branchId)
             ->with(['device:id,name,brand,model', 'reporter:id,name'])
             ->when(isset($validated['from']), fn ($q) => $q->where('created_at', '>=', $validated['from']))
             ->when(isset($validated['to']), fn ($q) => $q->where('created_at', '<=', $validated['to']))
@@ -80,6 +82,7 @@ class AdminReportController extends Controller
      */
     public function revenue(Request $request): JsonResponse
     {
+        $branchId = $this->resolveReportBranchId($request, null);
         $validated = $request->validate([
             'from' => ['nullable', 'date'],
             'to' => ['nullable', 'date', 'after_or_equal:from'],
@@ -94,7 +97,7 @@ class AdminReportController extends Controller
             'year' => 'Y',
         };
 
-        $payments = Payment::completed()
+        $payments = $this->paymentsQuery($branchId)->completed()
             ->when(isset($validated['from']), fn ($q) => $q->where('paid_at', '>=', $validated['from']))
             ->when(isset($validated['to']), fn ($q) => $q->where('paid_at', '<=', $validated['to']))
             ->get();
@@ -111,7 +114,7 @@ class AdminReportController extends Controller
             ->sortKeys()
             ->values();
 
-        $revenueByMethod = Payment::completed()
+        $revenueByMethod = $this->paymentsQuery($branchId)->completed()
             ->when(isset($validated['from']), fn ($q) => $q->where('paid_at', '>=', $validated['from']))
             ->when(isset($validated['to']), fn ($q) => $q->where('paid_at', '<=', $validated['to']))
             ->groupBy('payment_method')
@@ -124,7 +127,7 @@ class AdminReportController extends Controller
                 ],
             ]);
 
-        $revenueByPlan = Payment::query()
+        $revenueByPlan = $this->paymentsQuery($branchId)
             ->where('payments.status', PaymentStatus::Completed)
             ->join('subscriptions', 'payments.subscription_id', '=', 'subscriptions.id')
             ->join('subscription_plans', 'subscriptions.plan_id', '=', 'subscription_plans.id')
@@ -160,18 +163,19 @@ class AdminReportController extends Controller
      */
     public function devices(Request $request): JsonResponse
     {
+        $branchId = $this->resolveReportBranchId($request, null);
         $validated = $request->validate([
             'from' => ['nullable', 'date'],
             'to' => ['nullable', 'date', 'after_or_equal:from'],
         ]);
 
-        $query = Device::query()
+        $query = $this->devicesQuery($branchId)
             ->when(isset($validated['from']), fn ($q) => $q->where('created_at', '>=', $validated['from']))
             ->when(isset($validated['to']), fn ($q) => $q->where('created_at', '<=', $validated['to']));
 
         $total = $query->count();
 
-        $byStatus = Device::query()
+        $byStatus = $this->devicesQuery($branchId)
             ->when(isset($validated['from']), fn ($q) => $q->where('created_at', '>=', $validated['from']))
             ->when(isset($validated['to']), fn ($q) => $q->where('created_at', '<=', $validated['to']))
             ->groupBy('status')
@@ -179,7 +183,7 @@ class AdminReportController extends Controller
             ->get()
             ->mapWithKeys(fn ($row) => [$row->status->value => $row->count]);
 
-        $byCategory = Device::query()
+        $byCategory = $this->devicesQuery($branchId)
             ->join('device_categories', 'devices.category_id', '=', 'device_categories.id')
             ->when(isset($validated['from']), fn ($q) => $q->where('devices.created_at', '>=', $validated['from']))
             ->when(isset($validated['to']), fn ($q) => $q->where('devices.created_at', '<=', $validated['to']))
@@ -188,7 +192,7 @@ class AdminReportController extends Controller
             ->get()
             ->pluck('count', 'name');
 
-        $devices = Device::query()
+        $devices = $this->devicesQuery($branchId)
             ->when(isset($validated['from']), fn ($q) => $q->where('created_at', '>=', $validated['from']))
             ->when(isset($validated['to']), fn ($q) => $q->where('created_at', '<=', $validated['to']))
             ->get(['created_at']);
@@ -198,9 +202,9 @@ class AdminReportController extends Controller
             ->sortKeys();
 
         $iotCoverage = [
-            'with_module' => Device::whereNotNull('iot_module_id')->count(),
-            'without_module' => Device::whereNull('iot_module_id')->count(),
-            'percentage' => $total > 0 ? round((Device::whereNotNull('iot_module_id')->count() / $total) * 100, 2) : 0,
+            'with_module' => $this->devicesQuery($branchId)->whereNotNull('iot_module_id')->count(),
+            'without_module' => $this->devicesQuery($branchId)->whereNull('iot_module_id')->count(),
+            'percentage' => $total > 0 ? round(($this->devicesQuery($branchId)->whereNotNull('iot_module_id')->count() / $total) * 100, 2) : 0,
         ];
 
         return response()->json([
@@ -430,12 +434,13 @@ class AdminReportController extends Controller
      */
     public function subscriptions(Request $request): JsonResponse
     {
+        $branchId = $this->resolveReportBranchId($request, null);
         $validated = $request->validate([
             'from' => ['nullable', 'date'],
             'to' => ['nullable', 'date', 'after_or_equal:from'],
         ]);
 
-        $byStatus = Subscription::query()
+        $byStatus = $this->subscriptionsQuery($branchId)
             ->when(isset($validated['from']), fn ($q) => $q->where('created_at', '>=', $validated['from']))
             ->when(isset($validated['to']), fn ($q) => $q->where('created_at', '<=', $validated['to']))
             ->groupBy('status')
@@ -443,7 +448,7 @@ class AdminReportController extends Controller
             ->get()
             ->mapWithKeys(fn ($row) => [$row->status->value => $row->count]);
 
-        $byPlan = Subscription::query()
+        $byPlan = $this->subscriptionsQuery($branchId)
             ->join('subscription_plans', 'subscriptions.plan_id', '=', 'subscription_plans.id')
             ->when(isset($validated['from']), fn ($q) => $q->where('subscriptions.created_at', '>=', $validated['from']))
             ->when(isset($validated['to']), fn ($q) => $q->where('subscriptions.created_at', '<=', $validated['to']))
@@ -452,7 +457,7 @@ class AdminReportController extends Controller
             ->get()
             ->pluck('count', 'name');
 
-        $subscriptions = Subscription::query()
+        $subscriptions = $this->subscriptionsQuery($branchId)
             ->when(isset($validated['from']), fn ($q) => $q->where('created_at', '>=', $validated['from']))
             ->when(isset($validated['to']), fn ($q) => $q->where('created_at', '<=', $validated['to']))
             ->get(['created_at', 'status']);
@@ -466,14 +471,14 @@ class AdminReportController extends Controller
             ->sortKeys()
             ->values();
 
-        $churnRate = $this->calculateChurnRate();
+        $churnRate = $this->calculateChurnRate($branchId);
 
         return response()->json([
             'success' => true,
             'data' => [
                 'summary' => [
-                    'total' => Subscription::count(),
-                    'active' => Subscription::where('status', SubscriptionStatus::Active)->count(),
+                    'total' => $this->subscriptionsQuery($branchId)->count(),
+                    'active' => $this->subscriptionsQuery($branchId)->where('status', SubscriptionStatus::Active)->count(),
                     'churn_rate' => $churnRate,
                 ],
                 'by_status' => $byStatus,
@@ -488,12 +493,13 @@ class AdminReportController extends Controller
      */
     public function users(Request $request): JsonResponse
     {
+        $branchId = $this->resolveReportBranchId($request, null);
         $validated = $request->validate([
             'from' => ['nullable', 'date'],
             'to' => ['nullable', 'date', 'after_or_equal:from'],
         ]);
 
-        $total = User::query()
+        $total = $this->usersQuery($branchId)
             ->when(isset($validated['from']), fn ($q) => $q->where('created_at', '>=', $validated['from']))
             ->when(isset($validated['to']), fn ($q) => $q->where('created_at', '<=', $validated['to']))
             ->count();
@@ -502,6 +508,7 @@ class AdminReportController extends Controller
             ->join('model_has_roles', 'users.id', '=', 'model_has_roles.model_id')
             ->join('roles', 'model_has_roles.role_id', '=', 'roles.id')
             ->where('model_has_roles.model_type', User::class)
+            ->when($branchId, fn ($query) => $query->where('users.branch_id', $branchId))
             ->when(isset($validated['from']), fn ($q) => $q->where('users.created_at', '>=', $validated['from']))
             ->when(isset($validated['to']), fn ($q) => $q->where('users.created_at', '<=', $validated['to']))
             ->groupBy('roles.name')
@@ -509,7 +516,7 @@ class AdminReportController extends Controller
             ->get()
             ->pluck('count', 'role');
 
-        $users = User::query()
+        $users = $this->usersQuery($branchId)
             ->when(isset($validated['from']), fn ($q) => $q->where('created_at', '>=', $validated['from']))
             ->when(isset($validated['to']), fn ($q) => $q->where('created_at', '<=', $validated['to']))
             ->get(['created_at']);
@@ -518,18 +525,18 @@ class AdminReportController extends Controller
             ->map->count()
             ->sortKeys();
 
-        $withSubscriptions = User::whereHas('subscriptions', function ($q) {
+        $withSubscriptions = $this->usersQuery($branchId)->whereHas('subscriptions', function ($q) {
             $q->where('status', SubscriptionStatus::Active);
         })->count();
 
-        $withDevices = User::whereHas('devices')->count();
+        $withDevices = $this->usersQuery($branchId)->whereHas('devices')->count();
 
         return response()->json([
             'success' => true,
             'data' => [
                 'summary' => [
                     'total' => $total,
-                    'verified' => User::whereNotNull('email_verified_at')->count(),
+                    'verified' => $this->usersQuery($branchId)->whereNotNull('email_verified_at')->count(),
                     'with_active_subscription' => $withSubscriptions,
                     'with_devices' => $withDevices,
                 ],
@@ -567,7 +574,7 @@ class AdminReportController extends Controller
             return $requestedBranchId;
         }
 
-        return $user?->branch_id ? (int) $user->branch_id : $requestedBranchId;
+        return $user?->requiredBranchScopeId();
     }
 
     /**
@@ -592,16 +599,16 @@ class AdminReportController extends Controller
     /**
      * Calculate subscription churn rate.
      */
-    private function calculateChurnRate(): float
+    private function calculateChurnRate(?int $branchId): float
     {
         $startOfMonth = now()->startOfMonth();
         $endOfMonth = now()->endOfMonth();
 
-        $activeAtStart = Subscription::where('status', SubscriptionStatus::Active)
+        $activeAtStart = $this->subscriptionsQuery($branchId)->where('status', SubscriptionStatus::Active)
             ->where('created_at', '<', $startOfMonth)
             ->count();
 
-        $cancelledThisMonth = Subscription::where('status', SubscriptionStatus::Cancelled)
+        $cancelledThisMonth = $this->subscriptionsQuery($branchId)->where('status', SubscriptionStatus::Cancelled)
             ->whereBetween('updated_at', [$startOfMonth, $endOfMonth])
             ->count();
 
@@ -610,5 +617,39 @@ class AdminReportController extends Controller
         }
 
         return round(($cancelledThisMonth / $activeAtStart) * 100, 2);
+    }
+
+    private function usersQuery(?int $branchId): Builder
+    {
+        return User::query()->when($branchId, fn ($query) => $query->where('branch_id', $branchId));
+    }
+
+    private function devicesQuery(?int $branchId): Builder
+    {
+        return Device::query()->when($branchId, fn ($query) => $query->where('branch_id', $branchId));
+    }
+
+    private function paymentsQuery(?int $branchId): Builder
+    {
+        return Payment::query()->when(
+            $branchId,
+            fn ($query) => $query->whereHas('user', fn ($userQuery) => $userQuery->where('branch_id', $branchId))
+        );
+    }
+
+    private function subscriptionsQuery(?int $branchId): Builder
+    {
+        return Subscription::query()->when(
+            $branchId,
+            fn ($query) => $query->whereHas('user', fn ($userQuery) => $userQuery->where('branch_id', $branchId))
+        );
+    }
+
+    private function theftReportsQuery(?int $branchId): Builder
+    {
+        return TheftReport::query()->when(
+            $branchId,
+            fn ($query) => $query->whereHas('device', fn ($deviceQuery) => $deviceQuery->where('branch_id', $branchId))
+        );
     }
 }

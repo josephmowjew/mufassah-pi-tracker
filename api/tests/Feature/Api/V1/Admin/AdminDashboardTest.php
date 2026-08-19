@@ -4,6 +4,7 @@ use App\Enums\DeviceStatus;
 use App\Enums\PaymentStatus;
 use App\Enums\SubscriptionStatus;
 use App\Enums\TheftReportStatus;
+use App\Models\Branch;
 use App\Models\Device;
 use App\Models\DeviceCategory;
 use App\Models\InventoryMovement;
@@ -19,10 +20,13 @@ beforeEach(function () {
     Role::firstOrCreate(['name' => 'super_admin', 'guard_name' => 'api']);
     Role::firstOrCreate(['name' => 'store_admin', 'guard_name' => 'api']);
 
+    $this->branch = Branch::create(['name' => 'Dashboard Branch', 'code' => 'DSH', 'is_active' => true]);
+    $this->otherBranch = Branch::create(['name' => 'Other Dashboard Branch', 'code' => 'ODB', 'is_active' => true]);
+
     $this->admin = User::factory()->create();
     $this->admin->assignRole('super_admin');
 
-    $this->storeAdmin = User::factory()->create();
+    $this->storeAdmin = User::factory()->create(['branch_id' => $this->branch->id]);
     $this->storeAdmin->assignRole('store_admin');
 
     $this->customer = User::factory()->create();
@@ -57,6 +61,31 @@ describe('Dashboard Access Control', function () {
             ->getJson('/api/v1/admin/dashboard');
 
         $response->assertSuccessful();
+    });
+
+    it('scopes store admin dashboard totals to their branch', function () {
+        Device::factory()->create(['category_id' => $this->category->id, 'branch_id' => $this->branch->id]);
+        Device::factory()->count(2)->create(['category_id' => $this->category->id, 'branch_id' => $this->otherBranch->id]);
+
+        $this->actingAs($this->storeAdmin)
+            ->getJson('/api/v1/admin/dashboard')
+            ->assertSuccessful()
+            ->assertJsonPath('data.devices.total', 1);
+
+        $this->actingAs($this->admin)
+            ->getJson('/api/v1/admin/dashboard')
+            ->assertSuccessful()
+            ->assertJsonPath('data.devices.total', 3);
+    });
+
+    it('fails closed for an unassigned store admin', function () {
+        $unassigned = User::factory()->create(['branch_id' => null]);
+        $unassigned->assignRole('store_admin');
+
+        $this->actingAs($unassigned)
+            ->getJson('/api/v1/admin/dashboard')
+            ->assertForbidden()
+            ->assertJsonPath('message', 'Your account must be assigned to a branch before accessing branch data.');
     });
 
     it('prevents customer from accessing dashboard', function () {

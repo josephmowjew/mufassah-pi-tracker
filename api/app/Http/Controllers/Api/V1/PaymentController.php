@@ -25,6 +25,10 @@ class PaymentController extends Controller
         $this->authorize('viewAny', Payment::class);
 
         $query = Payment::query()->with(['subscription.plan', 'user']);
+        if (! $request->user()->hasRole('super_admin')) {
+            $branchId = $request->user()->requiredBranchScopeId();
+            $query->whereHas('user', fn ($userQuery) => $userQuery->where('branch_id', $branchId));
+        }
 
         if ($request->has('status')) {
             $query->where('status', $request->status);

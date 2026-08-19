@@ -394,7 +394,8 @@ class InventoryDispositionController extends BaseController
         if ($user->hasRole('super_admin')) {
             return;
         }
-        if (! $user->branch_id || (int) $user->branch_id !== (int) $device->branch_id) {
+        $userBranchId = $user->branchScopeId();
+        if (! $userBranchId || (int) $userBranchId !== (int) $device->branch_id) {
             abort(403, 'You are not authorized to manage devices in this branch.');
         }
     }

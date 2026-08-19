@@ -38,3 +38,21 @@ it('counts inventory by the brand and model identity used by inventory records',
         ->assertJsonPath('data.0.id', $model->id)
         ->assertJsonPath('data.0.devices_count', 3);
 });
+
+it('allows shared catalog reads but reserves global catalog writes for super admins', function () {
+    $category = DeviceCategory::factory()->create();
+    Brand::create(['category_id' => $category->id, 'name' => 'Shared Brand', 'is_active' => true]);
+    $storeAdmin = User::factory()->create();
+    $storeAdmin->assignRole('store_admin');
+
+    $this->actingAs($storeAdmin)
+        ->getJson('/api/v1/admin/catalog/brands')
+        ->assertOk();
+
+    $this->actingAs($storeAdmin)
+        ->postJson('/api/v1/admin/catalog/brands', [
+            'category_id' => $category->id,
+            'name' => 'Unauthorized Brand',
+        ])
+        ->assertForbidden();
+});

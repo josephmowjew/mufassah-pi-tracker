@@ -24,6 +24,10 @@ class IotModuleController extends BaseController
     {
         $this->authorize('viewAny', IotModule::class);
         $query = IotModule::query()->with('device');
+        if (! $request->user()->hasRole('super_admin')) {
+            $branchId = $request->user()->requiredBranchScopeId();
+            $query->whereHas('device', fn ($deviceQuery) => $deviceQuery->where('branch_id', $branchId));
+        }
 
         // Filter by status
         if ($request->has('status')) {

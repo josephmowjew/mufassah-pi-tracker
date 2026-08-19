@@ -25,8 +25,10 @@ class WarrantyClaimPolicy
             return true;
         }
 
-        // Admins can view any claim
-        return $user->hasRole(['super_admin', 'store_admin', 'customer_service']);
+        return $user->hasRole('super_admin')
+            || ($user->hasAnyRole(['store_admin', 'customer_service'])
+                && $claim->warranty?->device
+                && $user->canAccessBranch($claim->warranty->device->branch_id));
     }
 
     /**
@@ -47,7 +49,7 @@ class WarrantyClaimPolicy
      */
     public function process(User $user, WarrantyClaim $claim): bool
     {
-        return $user->hasRole(['super_admin', 'store_admin', 'customer_service']);
+        return $this->view($user, $claim);
     }
 
     /**
@@ -79,6 +81,6 @@ class WarrantyClaimPolicy
             return true;
         }
 
-        return $user->hasRole(['super_admin', 'store_admin', 'customer_service']);
+        return $this->view($user, $claim);
     }
 }

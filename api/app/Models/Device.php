@@ -283,8 +283,8 @@ class Device extends Model
     public function scopeForCurrentUserBranch($query)
     {
         $user = auth()->user();
-        if ($user?->branch_id && $user->hasRole('customer_service')) {
-            return $query->where('branch_id', $user->branch_id);
+        if ($user?->hasRole('customer_service')) {
+            return $query->where('branch_id', $user->requiredBranchScopeId());
         }
 
         return $query;

@@ -25,6 +25,13 @@ class WarrantyClaimController extends Controller
         $this->authorize('viewAny', WarrantyClaim::class);
 
         $query = WarrantyClaim::query()->with(['warranty.device', 'processor']);
+        if (! $request->user()->hasRole('super_admin')) {
+            $branchId = $request->user()->requiredBranchScopeId();
+            $query->whereHas(
+                'warranty.device',
+                fn ($deviceQuery) => $deviceQuery->where('branch_id', $branchId)
+            );
+        }
 
         // Filter by status
         if ($request->has('status')) {

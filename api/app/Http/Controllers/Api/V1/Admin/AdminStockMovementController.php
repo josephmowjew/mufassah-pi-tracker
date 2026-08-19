@@ -282,7 +282,7 @@ class AdminStockMovementController extends BaseController
             return $requestedBranchId ?: ($user->branch_id ? (int) $user->branch_id : null);
         }
 
-        return $user?->branch_id ? (int) $user->branch_id : null;
+        return $user?->requiredBranchScopeId();
     }
 
     private function authorizeMovementBranch(Request $request, InventoryMovement $movement): void
@@ -293,7 +293,7 @@ class AdminStockMovementController extends BaseController
             return;
         }
 
-        $branchId = (int) $user?->branch_id;
+        $branchId = (int) $user?->branchScopeId();
         if ($branchId && in_array($branchId, array_filter([
             $movement->branch_id,
             $movement->from_branch_id,
@@ -313,7 +313,7 @@ class AdminStockMovementController extends BaseController
             return;
         }
 
-        if ($user?->hasRole('store_admin') && (int) $user->branch_id === (int) $device->branch_id) {
+        if ($user?->hasRole('store_admin') && (int) $user->branchScopeId() === (int) $device->branch_id) {
             return;
         }
 

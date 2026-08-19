@@ -2,6 +2,7 @@
 
 use App\Enums\IotModuleStatus;
 use App\Enums\ModemType;
+use App\Models\Branch;
 use App\Models\Device;
 use App\Models\DeviceCategory;
 use App\Models\IotModule;
@@ -38,7 +39,7 @@ describe('IoT Module Listing (Admin)', function () {
 
     it('filters modules by status', function () {
         $admin = User::factory()->create();
-        $admin->assignRole('store_admin');
+        $admin->assignRole('super_admin');
 
         IotModule::factory()->count(3)->create(['status' => IotModuleStatus::Active]);
         IotModule::factory()->count(2)->create(['status' => IotModuleStatus::Inactive]);
@@ -144,7 +145,7 @@ describe('IoT Module Creation (Admin)', function () {
 
     it('returns API token only during creation', function () {
         $admin = User::factory()->create();
-        $admin->assignRole('store_admin');
+        $admin->assignRole('super_admin');
 
         $response = actingAs($admin, 'sanctum')
             ->postJson(apiUrl('admin/iot-modules'), [
@@ -254,7 +255,7 @@ describe('IoT Module Update (Admin)', function () {
 
     it('allows updating module configuration', function () {
         $admin = User::factory()->create();
-        $admin->assignRole('store_admin');
+        $admin->assignRole('super_admin');
         $module = IotModule::factory()->create();
 
         actingAs($admin, 'sanctum')
@@ -364,7 +365,7 @@ describe('IoT Module Activation (Admin)', function () {
 
     it('preserves original activation date on reactivation', function () {
         $admin = User::factory()->create();
-        $admin->assignRole('store_admin');
+        $admin->assignRole('super_admin');
         $originalDate = now()->subMonth();
         $module = IotModule::factory()->create([
             'status' => IotModuleStatus::Inactive,
@@ -392,4 +393,25 @@ describe('IoT Module Activation (Admin)', function () {
         $module->refresh();
         expect($module->status)->toBe(IotModuleStatus::Inactive);
     });
+});
+
+it('limits store admins to IoT modules linked to their branch', function () {
+    $branch = Branch::create(['name' => 'IoT Branch', 'code' => 'IOT', 'is_active' => true]);
+    $otherBranch = Branch::create(['name' => 'Other IoT Branch', 'code' => 'OIT', 'is_active' => true]);
+    $admin = User::factory()->create(['branch_id' => $branch->id]);
+    $admin->assignRole('store_admin');
+    $ownModule = IotModule::factory()->create();
+    $otherModule = IotModule::factory()->create();
+    Device::factory()->create(['branch_id' => $branch->id, 'iot_module_id' => $ownModule->id]);
+    Device::factory()->create(['branch_id' => $otherBranch->id, 'iot_module_id' => $otherModule->id]);
+
+    actingAs($admin, 'sanctum')
+        ->getJson(apiUrl('admin/iot-modules'))
+        ->assertOk()
+        ->assertJsonCount(1, 'data')
+        ->assertJsonPath('data.0.id', $ownModule->id);
+
+    actingAs($admin, 'sanctum')
+        ->getJson(apiUrl("admin/iot-modules/{$otherModule->id}"))
+        ->assertForbidden();
 });

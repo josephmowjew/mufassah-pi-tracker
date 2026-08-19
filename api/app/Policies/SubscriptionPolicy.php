@@ -14,8 +14,12 @@ class SubscriptionPolicy
 
     public function view(User $user, Subscription $subscription): bool
     {
-        if ($user->hasRole(['super_admin', 'store_admin', 'customer_service'])) {
+        if ($user->hasRole('super_admin')) {
             return true;
+        }
+
+        if ($user->hasAnyRole(['store_admin', 'customer_service'])) {
+            return $subscription->user && $user->canAccessBranch($subscription->user->branch_id);
         }
 
         return $user->id === $subscription->user_id;
@@ -28,7 +32,10 @@ class SubscriptionPolicy
 
     public function update(User $user, Subscription $subscription): bool
     {
-        if ($user->hasRole(['super_admin', 'store_admin'])) {
+        if ($user->hasRole('super_admin')
+            || ($user->hasRole('store_admin')
+                && $subscription->user
+                && $user->canAccessBranch($subscription->user->branch_id))) {
             return true;
         }
 
@@ -37,7 +44,10 @@ class SubscriptionPolicy
 
     public function cancel(User $user, Subscription $subscription): bool
     {
-        if ($user->hasRole(['super_admin', 'store_admin'])) {
+        if ($user->hasRole('super_admin')
+            || ($user->hasRole('store_admin')
+                && $subscription->user
+                && $user->canAccessBranch($subscription->user->branch_id))) {
             return true;
         }
 
@@ -51,11 +61,11 @@ class SubscriptionPolicy
 
     public function suspend(User $user, Subscription $subscription): bool
     {
-        return $user->hasRole(['super_admin', 'store_admin']);
+        return $this->update($user, $subscription);
     }
 
     public function reactivate(User $user, Subscription $subscription): bool
     {
-        return $user->hasRole(['super_admin', 'store_admin']);
+        return $this->update($user, $subscription);
     }
 }

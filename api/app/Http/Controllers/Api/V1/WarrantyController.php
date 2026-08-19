@@ -25,8 +25,10 @@ class WarrantyController extends Controller
 
         $query = Warranty::query()->with(['device']);
 
-        // Filter by user's devices for non-admin users
-        if (! $request->user()->hasRole(['super_admin', 'store_admin', 'customer_service'])) {
+        if ($request->user()->hasRole(['store_admin', 'customer_service'])) {
+            $branchId = $request->user()->requiredBranchScopeId();
+            $query->whereHas('device', fn ($deviceQuery) => $deviceQuery->where('branch_id', $branchId));
+        } elseif (! $request->user()->hasRole('super_admin')) {
             $query->whereHas('device', fn ($d) => $d->where('owner_id', $request->user()->id));
         }
 
@@ -62,6 +64,12 @@ class WarrantyController extends Controller
     public function store(StoreWarrantyRequest $request): JsonResponse
     {
         $this->authorize('create', Warranty::class);
+        $device = Device::findOrFail($request->integer('device_id'));
+        abort_unless(
+            $request->user()->canAccessBranch($device->branch_id),
+            403,
+            'You cannot create warranties for another branch.'
+        );
 
         $startDate = \Carbon\Carbon::parse($request->start_date);
         $endDate = $startDate->copy()->addMonths($request->duration_months);

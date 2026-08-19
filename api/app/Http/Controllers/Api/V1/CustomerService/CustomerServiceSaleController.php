@@ -78,7 +78,7 @@ class CustomerServiceSaleController extends BaseController
         $user = $request->user();
 
         // Ensure the sale belongs to the current user and branch
-        if ($sale->sold_by_id !== $user->id || $sale->branch_id !== $user->branch_id) {
+        if ($sale->sold_by_id !== $user->id || ! $user->canAccessBranch($sale->branch_id)) {
             return $this->error('You do not have permission to view this sale', 403);
         }
 

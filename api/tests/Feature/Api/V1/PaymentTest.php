@@ -1,6 +1,7 @@
 <?php
 
 use App\Enums\PaymentStatus;
+use App\Models\Branch;
 use App\Models\Payment;
 use App\Models\Subscription;
 use App\Models\SubscriptionPlan;
@@ -268,5 +269,26 @@ describe('Admin Payment Management', function () {
 
         $response->assertSuccessful()
             ->assertJsonPath('meta.total', 1);
+    });
+
+    it('limits store admins to payments for users in their branch', function () {
+        $branch = Branch::create(['name' => 'Payment Branch', 'code' => 'PAY', 'is_active' => true]);
+        $otherBranch = Branch::create(['name' => 'Other Payment Branch', 'code' => 'OPY', 'is_active' => true]);
+        $storeAdmin = User::factory()->create(['branch_id' => $branch->id]);
+        $storeAdmin->assignRole('store_admin');
+        $ownUser = User::factory()->create(['branch_id' => $branch->id]);
+        $otherUser = User::factory()->create(['branch_id' => $otherBranch->id]);
+        $ownPayment = Payment::factory()->create(['user_id' => $ownUser->id]);
+        $otherPayment = Payment::factory()->create(['user_id' => $otherUser->id]);
+
+        $this->actingAs($storeAdmin)
+            ->getJson('/api/v1/admin/payments')
+            ->assertSuccessful()
+            ->assertJsonPath('meta.total', 1)
+            ->assertJsonPath('data.0.id', $ownPayment->id);
+
+        $this->actingAs($storeAdmin)
+            ->postJson("/api/v1/admin/payments/{$otherPayment->id}/refund", ['reason' => 'Cross branch'])
+            ->assertForbidden();
     });
 });

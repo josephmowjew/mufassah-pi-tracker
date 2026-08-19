@@ -113,7 +113,7 @@ describe('Device Category Creation (Admin)', function () {
 
     it('auto-generates slug from name', function () {
         $admin = User::factory()->create();
-        $admin->assignRole('store_admin');
+        $admin->assignRole('super_admin');
 
         actingAs($admin, 'sanctum')
             ->postJson(apiUrl('admin/device-categories'), [
@@ -197,7 +197,7 @@ describe('Device Category Update (Admin)', function () {
 
     it('allows toggling category active status', function () {
         $admin = User::factory()->create();
-        $admin->assignRole('store_admin');
+        $admin->assignRole('super_admin');
         $category = DeviceCategory::factory()->create(['is_active' => true]);
 
         actingAs($admin, 'sanctum')

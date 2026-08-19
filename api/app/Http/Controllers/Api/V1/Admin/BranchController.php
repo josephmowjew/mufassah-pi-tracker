@@ -10,16 +10,23 @@ use App\Models\Branch;
 use App\Models\InventoryBatch;
 use App\Models\InventoryMovement;
 use App\Models\InventoryReceipt;
-use App\Models\StockTransferRequest;
 use App\Models\Shift;
+use App\Models\StockTransferRequest;
+use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
 
 class BranchController extends Controller
 {
     public function index(Request $request)
     {
-        $query = Branch::with('manager')->withCount('devices', 'users', 'sales');
+        $branchId = $request->user()->hasRole('super_admin')
+            ? null
+            : $request->user()->requiredBranchScopeId();
+        $query = Branch::with('manager')
+            ->withCount('devices', 'users', 'sales')
+            ->when($branchId, fn ($query) => $query->whereKey($branchId));
 
         // Filter by status
         if ($request->has('is_active')) {
@@ -45,28 +52,43 @@ class BranchController extends Controller
 
     public function store(StoreBranchRequest $request)
     {
-        $branch = Branch::create($request->validated());
+        $this->authorizeGlobalBranchManagement($request);
+        $validated = $request->validated();
+        $this->validateManagerAssignment($validated['manager_id'] ?? null);
+        $branch = Branch::create($validated);
+        $this->syncManagerBranch($branch, $validated['manager_id'] ?? null);
 
         return new BranchResource($branch->load('manager'));
     }
 
-    public function show(Branch $branch)
+    public function show(Request $request, Branch $branch)
     {
+        $this->authorizeBranchView($request, $branch);
+
         return new BranchResource($branch->load('manager', 'devices', 'users', 'sales'));
     }
 
     public function update(UpdateBranchRequest $request, Branch $branch)
     {
+        $this->authorizeGlobalBranchManagement($request);
         if ($request->has('is_active') && ! $request->boolean('is_active') && StockTransferRequest::where('status', StockTransferRequest::PENDING)->where(fn ($query) => $query->where('from_branch_id', $branch->id)->orWhere('to_branch_id', $branch->id))->exists()) {
             return response()->json(['message' => 'Cancel or decide pending stock transfer requests before deactivating this branch.'], 422);
         }
-        $branch->update($request->validated());
+        $validated = $request->validated();
+        if (array_key_exists('manager_id', $validated)) {
+            $this->validateManagerAssignment($validated['manager_id'], $branch);
+        }
+        $branch->update($validated);
+        if (array_key_exists('manager_id', $validated)) {
+            $this->syncManagerBranch($branch, $validated['manager_id']);
+        }
 
         return new BranchResource($branch->load('manager'));
     }
 
-    public function destroy(Branch $branch)
+    public function destroy(Request $request, Branch $branch)
     {
+        $this->authorizeGlobalBranchManagement($request);
         $linkedRecords = [
             'devices' => $branch->devices()->count(),
             'users' => $branch->users()->count(),
@@ -98,8 +120,9 @@ class BranchController extends Controller
         return response()->noContent();
     }
 
-    public function stats(Branch $branch): JsonResponse
+    public function stats(Request $request, Branch $branch): JsonResponse
     {
+        $this->authorizeBranchView($request, $branch);
         $stats = [
             'total_devices' => $branch->devices()->count(),
             'in_stock' => $branch->devices()->where('inventory_status', 'in_stock')->count(),
@@ -112,5 +135,67 @@ class BranchController extends Controller
         ];
 
         return response()->json($stats);
+    }
+
+    public function options(): JsonResponse
+    {
+        return response()->json([
+            'success' => true,
+            'data' => Branch::query()
+                ->where('is_active', true)
+                ->orderBy('name')
+                ->get(['id', 'name', 'code']),
+        ]);
+    }
+
+    private function syncManagerBranch(Branch $branch, ?int $managerId): void
+    {
+        if (! $managerId) {
+            return;
+        }
+
+        $manager = $branch->manager()->first();
+        if ($manager && ! $manager->hasRole('super_admin') && (int) $manager->branch_id !== (int) $branch->id) {
+            $manager->update(['branch_id' => $branch->id]);
+        }
+    }
+
+    private function authorizeGlobalBranchManagement(Request $request): void
+    {
+        abort_unless($request->user()->hasRole('super_admin'), 403, 'Only super admins can manage branches.');
+    }
+
+    private function authorizeBranchView(Request $request, Branch $branch): void
+    {
+        abort_unless(
+            $request->user()->canAccessBranch($branch->id),
+            403,
+            'You cannot access another branch.'
+        );
+    }
+
+    private function validateManagerAssignment(?int $managerId, ?Branch $currentBranch = null): void
+    {
+        if (! $managerId) {
+            return;
+        }
+
+        $manager = User::findOrFail($managerId);
+        if (! $manager->hasAnyRole(['super_admin', 'store_admin'])) {
+            throw ValidationException::withMessages([
+                'manager_id' => ['The branch manager must be a store admin or super admin.'],
+            ]);
+        }
+
+        $alreadyAssigned = Branch::query()
+            ->where('manager_id', $managerId)
+            ->when($currentBranch, fn ($query) => $query->where('id', '!=', $currentBranch->id))
+            ->exists();
+
+        if ($alreadyAssigned) {
+            throw ValidationException::withMessages([
+                'manager_id' => ['This administrator already manages another branch.'],
+            ]);
+        }
     }
 }
