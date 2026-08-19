@@ -10,8 +10,10 @@ use App\Models\InventoryMovement;
 use App\Models\Sale;
 use App\Models\User;
 use App\Notifications\InventoryActionApprovalPinNotification;
+use App\Notifications\InventoryActionPinAvailableNotification;
 use App\Services\InventoryMovementService;
 use Illuminate\Routing\Middleware\ThrottleRequests;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Notification;
 
@@ -90,6 +92,157 @@ it('records an administrative sale with financial snapshots and no POS sale', fu
         ->and((float) $movement->profit_amount)->toBe(50000.0)
         ->and($movement->sale_id)->toBeNull()
         ->and(Sale::count())->toBe(0);
+});
+
+it('delivers metadata-only in-app PIN notifications to the initiating administrator', function () {
+    $device = dispositionDevice();
+    Notification::fake();
+
+    $response = $this->actingAs($this->admin)
+        ->postJson("/api/v1/admin/inventory/{$device->id}/administrative-sale/request", [
+            'selling_price' => 150000,
+            'reason' => 'In-app delivery test',
+        ])
+        ->assertCreated()
+        ->assertJsonMissing(['pin']);
+
+    $challengeId = $response->json('data.challenge_id');
+    $plainPin = null;
+    Notification::assertSentOnDemand(InventoryActionApprovalPinNotification::class, function ($notification) use (&$plainPin) {
+        $plainPin = $notification->pin;
+
+        return true;
+    });
+    Notification::assertSentTo($this->admin, InventoryActionPinAvailableNotification::class, function ($notification) use ($challengeId) {
+        $data = $notification->toArray($this->admin);
+
+        return $data['challenge_id'] === $challengeId
+            && $data['type'] === 'inventory_action_pin'
+            && ! array_key_exists('pin', $data);
+    });
+
+    $challenge = InventoryActionChallenge::findOrFail($challengeId);
+    $cached = Cache::get("inventory-action-pin:{$challengeId}");
+    expect($plainPin)->toMatch('/^\d{6}$/')
+        ->and($challenge->toArray())->not->toHaveKey('pin')
+        ->and($challenge->pin_hash)->not->toContain($plainPin)
+        ->and($cached)->toBeString()
+        ->and($cached)->not->toContain($plainPin);
+});
+
+it('reveals the emailed PIN after password confirmation without consuming a verification attempt', function () {
+    $device = dispositionDevice();
+    Notification::fake();
+    $emailedPin = null;
+
+    $challengeId = $this->actingAs($this->admin)
+        ->postJson("/api/v1/admin/devices/{$device->id}/delete/request", [
+            'reason' => 'Secure reveal test',
+        ])
+        ->assertCreated()
+        ->json('data.challenge_id');
+
+    Notification::assertSentOnDemand(InventoryActionApprovalPinNotification::class, function ($notification) use (&$emailedPin) {
+        $emailedPin = $notification->pin;
+
+        return true;
+    });
+
+    $this->actingAs($this->admin)
+        ->postJson("/api/v1/admin/action-challenges/{$challengeId}/reveal", ['password' => 'wrong-password'])
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors('password');
+    expect(InventoryActionChallenge::findOrFail($challengeId)->attempts)->toBe(0);
+
+    $response = $this->actingAs($this->admin)
+        ->postJson("/api/v1/admin/action-challenges/{$challengeId}/reveal", ['password' => 'password'])
+        ->assertSuccessful()
+        ->assertJsonPath('data.pin', $emailedPin);
+
+    expect($response->json('data.pin'))->toBe($emailedPin)
+        ->and($response->headers->get('Cache-Control'))->toContain('no-store')
+        ->and(InventoryActionChallenge::findOrFail($challengeId)->attempts)->toBe(0);
+});
+
+it('does not allow another administrator to reveal an initiators PIN', function () {
+    $device = dispositionDevice();
+    Notification::fake();
+    $challengeId = $this->actingAs($this->admin)
+        ->postJson("/api/v1/admin/devices/{$device->id}/delete/request", ['reason' => 'Ownership test'])
+        ->assertCreated()
+        ->json('data.challenge_id');
+
+    $otherAdmin = User::factory()->create(['branch_id' => $this->branch->id]);
+    $otherAdmin->assignRole('super_admin');
+
+    $this->actingAs($otherAdmin)
+        ->postJson("/api/v1/admin/action-challenges/{$challengeId}/reveal", ['password' => 'password'])
+        ->assertForbidden();
+});
+
+it('marks the persisted in-app notification read on reveal and completed on verification', function () {
+    $device = dispositionDevice();
+    $challengeId = $this->actingAs($this->admin)
+        ->postJson("/api/v1/admin/devices/{$device->id}/delete/request", ['reason' => 'Notification lifecycle test'])
+        ->assertCreated()
+        ->json('data.challenge_id');
+
+    $notification = $this->admin->notifications()
+        ->where('data->type', 'inventory_action_pin')
+        ->where('data->challenge_id', $challengeId)
+        ->firstOrFail();
+    expect($notification->data['status'])->toBe('active')
+        ->and($notification->data)->not->toHaveKey('pin')
+        ->and($notification->read_at)->toBeNull();
+
+    $pin = $this->actingAs($this->admin)
+        ->postJson("/api/v1/admin/action-challenges/{$challengeId}/reveal", ['password' => 'password'])
+        ->assertSuccessful()
+        ->json('data.pin');
+    expect($notification->fresh()->read_at)->not->toBeNull();
+
+    $this->actingAs($this->admin)
+        ->postJson("/api/v1/admin/action-challenges/{$challengeId}/verify", ['pin' => $pin])
+        ->assertSuccessful();
+    expect($notification->fresh()->data['status'])->toBe('completed')
+        ->and(Cache::get("inventory-action-pin:{$challengeId}"))->toBeNull();
+});
+
+it('replaces the in-app PIN on resend and allows resending an expired challenge', function () {
+    $this->withoutMiddleware(ThrottleRequests::class);
+    $device = dispositionDevice();
+    Notification::fake();
+    $challengeId = $this->actingAs($this->admin)
+        ->postJson("/api/v1/admin/devices/{$device->id}/delete/request", ['reason' => 'Resend test'])
+        ->assertCreated()
+        ->json('data.challenge_id');
+
+    $firstPin = $this->actingAs($this->admin)
+        ->postJson("/api/v1/admin/action-challenges/{$challengeId}/reveal", ['password' => 'password'])
+        ->assertSuccessful()
+        ->json('data.pin');
+
+    InventoryActionChallenge::whereKey($challengeId)->update([
+        'last_sent_at' => now()->subMinutes(2),
+        'expires_at' => now()->subMinute(),
+    ]);
+    $this->actingAs($this->admin)
+        ->postJson("/api/v1/admin/action-challenges/{$challengeId}/resend")
+        ->assertSuccessful();
+
+    $secondPin = $this->actingAs($this->admin)
+        ->postJson("/api/v1/admin/action-challenges/{$challengeId}/reveal", ['password' => 'password'])
+        ->assertSuccessful()
+        ->json('data.pin');
+
+    expect($secondPin)->not->toBe($firstPin);
+    $this->actingAs($this->admin)
+        ->postJson("/api/v1/admin/action-challenges/{$challengeId}/verify", ['pin' => $firstPin])
+        ->assertUnprocessable();
+    $this->actingAs($this->admin)
+        ->postJson("/api/v1/admin/action-challenges/{$challengeId}/verify", ['pin' => $secondPin])
+        ->assertSuccessful();
+    expect(Cache::get("inventory-action-pin:{$challengeId}"))->toBeNull();
 });
 
 it('defaults an administrative sale to purchase cost when no batch target price exists', function () {

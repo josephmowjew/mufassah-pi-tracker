@@ -15,6 +15,7 @@ import ProductDetailsModal from '@/components/inventory/ProductDetailsModal'
 import BulkAddDeviceModal from '@/components/inventory/BulkAddDeviceModal'
 import { CheckCircle, Clock, Tag, RotateCcw, AlertTriangle } from 'lucide-react'
 import { appendBranchScope } from '@/lib/branch-scope'
+import { useInventoryPinStore } from '@/stores/inventory-pin-store'
 
 interface PaginatedResponse {
   data: Device[]
@@ -45,6 +46,10 @@ interface InventoryStats {
 
 type ViewMode = 'stock' | 'serial' | 'batches'
 
+const ADMINISTRATIVE_SALE_TITLE = 'Confirm administrative sale'
+const ADMINISTRATIVE_SALE_DESCRIPTION = 'This will mark the device sold and create an inventory financial movement without creating a POS sale or payment.'
+const ADMINISTRATIVE_SALE_RETURN_PATH = '/admin/inventory'
+
 const formatMoney = (value: number | string | null | undefined) => {
   const amount = Number(value || 0)
   return `MWK ${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -57,6 +62,9 @@ const formatDate = (value: string | null | undefined) => {
 
 export default function AdminInventoryPage() {
   const queryClient = useQueryClient()
+  const setActiveChallenge = useInventoryPinStore((state) => state.setActiveChallenge)
+  const clearActiveChallenge = useInventoryPinStore((state) => state.clearActiveChallenge)
+  const clearPin = useInventoryPinStore((state) => state.clearPin)
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
   const [inventoryStatus, setInventoryStatus] = useState('')
@@ -75,7 +83,11 @@ export default function AdminInventoryPage() {
   const [administrativeSaleAmount, setAdministrativeSaleAmount] = useState('')
   const [administrativeSaleReason, setAdministrativeSaleReason] = useState('')
   const [administrativeSaleNotes, setAdministrativeSaleNotes] = useState('')
-  const [saleChallenge, setSaleChallenge] = useState<ActionChallengeInfo | null>(null)
+  const [saleChallenge, setSaleChallenge] = useState<ActionChallengeInfo | null>(() => {
+    const activeChallenge = Object.values(useInventoryPinStore.getState().activeChallenges)
+      .find((item) => item.returnPath === ADMINISTRATIVE_SALE_RETURN_PATH && item.challenge.action === 'administrative_sale')
+    return activeChallenge?.challenge || null
+  })
   const [saleChallengeError, setSaleChallengeError] = useState<string | null>(null)
 
   // View mode with localStorage persistence
@@ -230,9 +242,17 @@ export default function AdminInventoryPage() {
     },
     onSuccess: (challenge) => {
       setSaleChallenge(challenge)
+      setActiveChallenge({
+        challenge,
+        title: ADMINISTRATIVE_SALE_TITLE,
+        description: ADMINISTRATIVE_SALE_DESCRIPTION,
+        returnPath: ADMINISTRATIVE_SALE_RETURN_PATH,
+      })
       setSaleChallengeError(null)
       setAdministrativeSaleDevice(null)
-      toast.success('Verification PIN sent to the admin approval mailbox')
+      queryClient.invalidateQueries({ queryKey: ['notifications'] })
+      queryClient.invalidateQueries({ queryKey: ['notifications-unread-count'] })
+      toast.success('Verification PIN sent by email and available securely in notifications')
     },
     onError: (error: Error & { response?: { data?: { message?: string } } }) => {
       toast.error(error.response?.data?.message || 'Unable to request administrative sale')
@@ -244,7 +264,7 @@ export default function AdminInventoryPage() {
       const response = await apiClient.post(`/admin/action-challenges/${challengeId}/verify`, { pin })
       return response.data
     },
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['admin-inventory'] })
       queryClient.invalidateQueries({ queryKey: ['inventory-grouped'] })
       queryClient.invalidateQueries({ queryKey: ['inventory-stats'] })
@@ -252,6 +272,8 @@ export default function AdminInventoryPage() {
       queryClient.invalidateQueries({ queryKey: ['inventory-batch'] })
       queryClient.invalidateQueries({ queryKey: ['stock-movements'] })
       setSaleChallenge(null)
+      clearPin(variables.challengeId)
+      clearActiveChallenge(variables.challengeId)
       setSaleChallengeError(null)
       setAdministrativeSaleBatch(null)
       toast.success('Administrative sale recorded with profit/loss tracking')
@@ -268,8 +290,17 @@ export default function AdminInventoryPage() {
     },
     onSuccess: (challenge) => {
       setSaleChallenge(challenge)
+      clearPin(challenge.challenge_id)
+      setActiveChallenge({
+        challenge,
+        title: ADMINISTRATIVE_SALE_TITLE,
+        description: ADMINISTRATIVE_SALE_DESCRIPTION,
+        returnPath: ADMINISTRATIVE_SALE_RETURN_PATH,
+      })
       setSaleChallengeError(null)
-      toast.success('A new PIN was sent')
+      queryClient.invalidateQueries({ queryKey: ['notifications'] })
+      queryClient.invalidateQueries({ queryKey: ['notifications-unread-count'] })
+      toast.success('A new PIN was sent and is available securely in notifications')
     },
     onError: (error: Error & { response?: { data?: { message?: string } } }) => {
       setSaleChallengeError(error.response?.data?.message || 'Unable to resend PIN')
@@ -929,8 +960,8 @@ export default function AdminInventoryPage() {
         {saleChallenge && (
           <ActionChallengePinModal
             challenge={saleChallenge}
-            title="Confirm administrative sale"
-            description="This will mark the device sold and create an inventory financial movement without creating a POS sale or payment."
+            title={ADMINISTRATIVE_SALE_TITLE}
+            description={ADMINISTRATIVE_SALE_DESCRIPTION}
             error={saleChallengeError}
             isVerifying={verifyAdministrativeSaleMutation.isPending}
             isResending={resendAdministrativeSaleMutation.isPending}

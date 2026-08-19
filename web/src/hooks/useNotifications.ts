@@ -1,10 +1,12 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import notificationsApi, { type NotificationFilters } from '@/api/notifications'
 
-export function useNotifications(filters: NotificationFilters = {}) {
+export function useNotifications(filters: NotificationFilters = {}, refetchInterval?: number | false, enabled = true) {
   return useQuery({
     queryKey: ['notifications', filters],
     queryFn: () => notificationsApi.getNotifications(filters),
+    refetchInterval,
+    enabled,
   })
 }
 

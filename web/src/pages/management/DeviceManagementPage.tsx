@@ -12,6 +12,7 @@ import BranchScopeFilter from '@/components/admin/BranchScopeFilter'
 import DeviceDeletionDialog from '@/components/admin/DeviceDeletionDialog'
 import { getApiErrorMessage, requiresApiConfirmation } from '@/lib/utils'
 import { appendBranchScope } from '@/lib/branch-scope'
+import { useInventoryPinStore } from '@/stores/inventory-pin-store'
 
 interface PaginatedResponse {
   data: Device[]
@@ -23,9 +24,21 @@ interface PaginatedResponse {
   }
 }
 
+const DEVICE_DELETE_RETURN_PATH = '/admin/devices'
+
+const deletionChallengeCopy = (deviceCount = 1) => ({
+  title: deviceCount > 1 ? 'Confirm bulk device deletion' : 'Confirm device deletion',
+  description: deviceCount > 1
+    ? 'Deletion is irreversible. Enter the PIN sent by email or revealed securely in notifications to remove all selected devices.'
+    : 'Device deletion is irreversible. Enter the PIN sent by email or revealed securely in notifications to continue.',
+})
+
 export default function DeviceManagementPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const setActiveChallenge = useInventoryPinStore((state) => state.setActiveChallenge)
+  const clearActiveChallenge = useInventoryPinStore((state) => state.clearActiveChallenge)
+  const clearPin = useInventoryPinStore((state) => state.clearPin)
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
   const [selectedBranchId, setSelectedBranchId] = useState('')
@@ -36,7 +49,11 @@ export default function DeviceManagementPage() {
   const [deleteTargets, setDeleteTargets] = useState<Device[]>([])
   const [deleteReason, setDeleteReason] = useState('')
   const [deleteNotes, setDeleteNotes] = useState('')
-  const [deleteChallenge, setDeleteChallenge] = useState<ActionChallengeInfo | null>(null)
+  const [deleteChallenge, setDeleteChallenge] = useState<ActionChallengeInfo | null>(() => {
+    const activeChallenge = Object.values(useInventoryPinStore.getState().activeChallenges)
+      .find((item) => item.returnPath === DEVICE_DELETE_RETURN_PATH && ['device_deletion', 'bulk_device_deletion'].includes(item.challenge.action))
+    return activeChallenge?.challenge || null
+  })
   const [deleteChallengeError, setDeleteChallengeError] = useState<string | null>(null)
   const [deleteWarning, setDeleteWarning] = useState<string | null>(null)
   const [newStatus, setNewStatus] = useState('')
@@ -131,10 +148,14 @@ export default function DeviceManagementPage() {
       return response.data.data
     },
     onSuccess: (challenge, variables) => {
+      const copy = deletionChallengeCopy(variables.devices.length)
       setDeleteChallenge(challenge)
+      setActiveChallenge({ challenge, ...copy, returnPath: DEVICE_DELETE_RETURN_PATH })
       setDeleteChallengeError(null)
       setDeleteWarning(null)
-      toast.success('Verification PIN sent for ' + variables.devices.length + ' device' + (variables.devices.length === 1 ? '' : 's') + ' to the admin approval mailbox')
+      queryClient.invalidateQueries({ queryKey: ['notifications'] })
+      queryClient.invalidateQueries({ queryKey: ['notifications-unread-count'] })
+      toast.success('Verification PIN sent for ' + variables.devices.length + ' device' + (variables.devices.length === 1 ? '' : 's') + ' by email and available securely in notifications')
     },
     onError: (error) => {
       if (requiresApiConfirmation(error)) {
@@ -151,10 +172,13 @@ export default function DeviceManagementPage() {
       const response = await apiClient.post(`/admin/action-challenges/${challengeId}/verify`, { pin })
       return response.data
     },
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['admin-devices'] })
-      toast.success(deleteTargets.length + ' device' + (deleteTargets.length === 1 ? '' : 's') + ' deleted successfully')
+      const deletedCount = deleteChallenge?.device_count || deleteTargets.length || 1
+      toast.success(deletedCount + ' device' + (deletedCount === 1 ? '' : 's') + ' deleted successfully')
       setDeleteChallenge(null)
+      clearPin(variables.challengeId)
+      clearActiveChallenge(variables.challengeId)
       setDeleteChallengeError(null)
       setDeleteTargets([])
       setSelectedDevices([])
@@ -172,9 +196,14 @@ export default function DeviceManagementPage() {
       return response.data.data
     },
     onSuccess: (challenge) => {
+      const copy = deletionChallengeCopy(challenge.device_count)
       setDeleteChallenge(challenge)
+      clearPin(challenge.challenge_id)
+      setActiveChallenge({ challenge, ...copy, returnPath: DEVICE_DELETE_RETURN_PATH })
       setDeleteChallengeError(null)
-      toast.success('A new PIN was sent')
+      queryClient.invalidateQueries({ queryKey: ['notifications'] })
+      queryClient.invalidateQueries({ queryKey: ['notifications-unread-count'] })
+      toast.success('A new PIN was sent and is available securely in notifications')
     },
     onError: (error) => {
       setDeleteChallengeError(getApiErrorMessage(error, 'Unable to resend PIN'))
@@ -924,10 +953,8 @@ export default function DeviceManagementPage() {
       {deleteChallenge && (
         <ActionChallengePinModal
           challenge={deleteChallenge}
-          title={deleteTargets.length > 1 ? 'Confirm bulk device deletion' : 'Confirm device deletion'}
-          description={deleteTargets.length > 1
-            ? 'Deletion is irreversible. Enter the PIN sent to the administrator approval mailbox to remove all selected devices.'
-            : 'Device deletion is irreversible. Enter the PIN sent to the administrator approval mailbox to continue.'}
+          title={deletionChallengeCopy(deleteChallenge.device_count).title}
+          description={deletionChallengeCopy(deleteChallenge.device_count).description}
           error={deleteChallengeError}
           isVerifying={verifyDeleteMutation.isPending}
           isResending={resendDeleteMutation.isPending}

@@ -2,14 +2,20 @@
 
 namespace App\Services;
 
+use App\Models\ActivityLog;
 use App\Models\Device;
 use App\Models\InventoryActionChallenge;
 use App\Models\User;
 use App\Notifications\InventoryActionApprovalPinNotification;
+use App\Notifications\InventoryActionPinAvailableNotification;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Validation\ValidationException;
+use Throwable;
 
 class InventoryActionApprovalService
 {
@@ -47,14 +53,9 @@ class InventoryActionApprovalService
             ]);
         });
 
-        // Send only after the challenge has been durably stored. The clear PIN
-        // exists only in memory while the mail is being generated.
-        $this->sendPin(new InventoryActionApprovalPinNotification(
-            $pin,
-            $this->labelFor($action),
-            $targetLabel ?: trim("{$device->brand} {$device->model} ({$device->serial_number})"),
-            $expiresAt,
-        ));
+        $resolvedTargetLabel = $targetLabel ?: trim("{$device->brand} {$device->model} ({$device->serial_number})");
+        $this->storePin($challenge, $pin);
+        $this->deliverPin($challenge, $user, $pin, $this->labelFor($action), $resolvedTargetLabel, $expiresAt);
 
         return $challenge;
     }
@@ -72,7 +73,7 @@ class InventoryActionApprovalService
             if ($locked->requested_by_id !== $user->id) {
                 abort(403, 'Only the initiating administrator can resend this PIN.');
             }
-            if ($locked->consumed_at || $locked->invalidated_at || $locked->expires_at?->isPast()) {
+            if ($locked->consumed_at || $locked->invalidated_at) {
                 throw ValidationException::withMessages(['challenge' => ['This challenge is no longer active. Request a new PIN.']]);
             }
             if ($locked->last_sent_at && $locked->last_sent_at->diffInSeconds(now()) < self::RESEND_COOLDOWN_SECONDS) {
@@ -89,12 +90,10 @@ class InventoryActionApprovalService
             return $locked->fresh();
         });
 
-        $this->sendPin(new InventoryActionApprovalPinNotification(
-            $pin,
-            $this->labelFor($challenge->action),
-            $targetLabel ?: trim("{$device->brand} {$device->model} ({$device->serial_number})"),
-            $expiresAt,
-        ));
+        $resolvedTargetLabel = $targetLabel ?: trim("{$device->brand} {$device->model} ({$device->serial_number})");
+        $this->updateInAppNotificationStatus($challenge, 'superseded');
+        $this->storePin($challenge, $pin);
+        $this->deliverPin($challenge, $user, $pin, $this->labelFor($challenge->action), $resolvedTargetLabel, $expiresAt);
 
         return $challenge;
     }
@@ -150,8 +149,59 @@ class InventoryActionApprovalService
                 'verified_at' => now(),
             ]);
 
+            $this->forgetPin($locked);
+            $this->updateInAppNotificationStatus($locked, 'completed', true);
+
             return ['verified' => true, 'result' => $result];
         });
+    }
+
+    public function reveal(InventoryActionChallenge $challenge, User $user, string $password): string
+    {
+        $locked = InventoryActionChallenge::query()->lockForUpdate()->findOrFail($challenge->id);
+
+        if ($locked->requested_by_id !== $user->id) {
+            abort(403, 'Only the initiating administrator can reveal this PIN.');
+        }
+
+        if (! Hash::check($password, $user->password)) {
+            $this->logReveal($locked, $user, false, 'invalid_password');
+            throw ValidationException::withMessages(['password' => ['The password is incorrect.']]);
+        }
+
+        if ($locked->consumed_at || $locked->invalidated_at) {
+            throw ValidationException::withMessages(['challenge' => ['This challenge is no longer active. Request a new PIN.']]);
+        }
+        if ($locked->expires_at?->isPast()) {
+            $this->forgetPin($locked);
+            $this->updateInAppNotificationStatus($locked, 'expired');
+            throw ValidationException::withMessages(['challenge' => ['This PIN has expired. Request a new PIN.']]);
+        }
+        if ($locked->attempts >= $locked->max_attempts) {
+            throw ValidationException::withMessages(['challenge' => ['Too many failed PIN attempts. Request a new PIN.']]);
+        }
+
+        $encryptedPin = Cache::get($this->pinCacheKey($locked));
+        if (! is_string($encryptedPin) || $encryptedPin === '') {
+            throw ValidationException::withMessages(['challenge' => ['The in-app PIN is no longer available. Resend the PIN to continue.']]);
+        }
+
+        try {
+            $pin = Crypt::decryptString($encryptedPin);
+        } catch (Throwable $exception) {
+            Log::warning('Unable to decrypt an inventory action PIN.', ['challenge_id' => $locked->id]);
+            throw ValidationException::withMessages(['challenge' => ['The in-app PIN is no longer available. Resend the PIN to continue.']]);
+        }
+
+        if (! preg_match('/^\d{6}$/', $pin) || ! Hash::check($pin, $locked->pin_hash)) {
+            $this->forgetPin($locked);
+            throw ValidationException::withMessages(['challenge' => ['The in-app PIN is no longer available. Resend the PIN to continue.']]);
+        }
+
+        $this->updateInAppNotificationStatus($locked, 'active', true);
+        $this->logReveal($locked, $user, true, 'password_confirmed');
+
+        return $pin;
     }
 
     public function maskedEmail(?string $email): string
@@ -190,9 +240,63 @@ class InventoryActionApprovalService
         }
     }
 
-    private function sendPin(InventoryActionApprovalPinNotification $notification): void
+    private function deliverPin(
+        InventoryActionChallenge $challenge,
+        User $user,
+        string $pin,
+        string $actionLabel,
+        string $targetLabel,
+        \DateTimeInterface $expiresAt,
+    ): void {
+        $inAppDelivered = false;
+        $emailDelivered = false;
+
+        try {
+            $user->notify(new InventoryActionPinAvailableNotification($challenge, $actionLabel, $targetLabel));
+            $inAppDelivered = true;
+        } catch (Throwable $exception) {
+            Log::error('Unable to create an in-app inventory PIN notification.', [
+                'challenge_id' => $challenge->id,
+                'user_id' => $user->id,
+                'exception' => $exception::class,
+            ]);
+        }
+
+        try {
+            Notification::route('mail', $this->approvalEmail())->notify(new InventoryActionApprovalPinNotification(
+                $pin,
+                $actionLabel,
+                $targetLabel,
+                $expiresAt,
+            ));
+            $emailDelivered = true;
+        } catch (Throwable $exception) {
+            Log::error('Unable to send an inventory PIN email.', [
+                'challenge_id' => $challenge->id,
+                'exception' => $exception::class,
+            ]);
+        }
+
+        if (! $inAppDelivered && ! $emailDelivered) {
+            $challenge->update(['invalidated_at' => now()]);
+            $this->forgetPin($challenge);
+            abort(503, 'The verification PIN could not be delivered. Please try again.');
+        }
+    }
+
+    private function storePin(InventoryActionChallenge $challenge, string $pin): void
     {
-        Notification::route('mail', $this->approvalEmail())->notify($notification);
+        Cache::put($this->pinCacheKey($challenge), Crypt::encryptString($pin), $challenge->expires_at);
+    }
+
+    private function forgetPin(InventoryActionChallenge $challenge): void
+    {
+        Cache::forget($this->pinCacheKey($challenge));
+    }
+
+    private function pinCacheKey(InventoryActionChallenge $challenge): string
+    {
+        return "inventory-action-pin:{$challenge->id}";
     }
 
     private function generatePin(): string
@@ -201,7 +305,7 @@ class InventoryActionApprovalService
     }
 
     /**
-     * @param array<int, int>|null $deviceIds
+     * @param  array<int, int>|null  $deviceIds
      */
     private function invalidatePendingChallenges(User $user, string $action, ?array $deviceIds): void
     {
@@ -221,8 +325,47 @@ class InventoryActionApprovalService
             $pendingDeviceIds = $this->payloadDeviceIds($payload) ?? [];
             if ($deviceIds === null || array_intersect($deviceIds, $pendingDeviceIds) !== []) {
                 $challenge->update(['invalidated_at' => now()]);
+                $this->forgetPin($challenge);
+                $this->updateInAppNotificationStatus($challenge, 'invalidated');
             }
         }
+    }
+
+    private function updateInAppNotificationStatus(InventoryActionChallenge $challenge, string $status, bool $markAsRead = false): void
+    {
+        $notifications = $challenge->requestedBy()
+            ->first()?->notifications()
+            ->where('data->type', 'inventory_action_pin')
+            ->where('data->challenge_id', $challenge->id)
+            ->get() ?? collect();
+
+        foreach ($notifications as $notification) {
+            $data = $notification->data;
+            $data['status'] = $status;
+            $notification->forceFill([
+                'data' => $data,
+                'read_at' => $markAsRead ? ($notification->read_at ?? now()) : $notification->read_at,
+            ])->save();
+        }
+    }
+
+    private function logReveal(InventoryActionChallenge $challenge, User $user, bool $successful, string $reason): void
+    {
+        ActivityLog::create([
+            'log_name' => 'inventory_security',
+            'description' => $successful ? 'Inventory action PIN revealed in app' : 'Inventory action PIN reveal rejected',
+            'subject_type' => InventoryActionChallenge::class,
+            'subject_id' => $challenge->id,
+            'causer_type' => User::class,
+            'causer_id' => $user->id,
+            'event' => $successful ? 'inventory_pin_revealed' : 'inventory_pin_reveal_failed',
+            'properties' => [
+                'action' => $challenge->action,
+                'successful' => $successful,
+                'reason' => $reason,
+            ],
+            'created_at' => now(),
+        ]);
     }
 
     /**

@@ -71,7 +71,7 @@ class InventoryDispositionController extends BaseController
             'total_amount' => $unitPrice,
             'profit_amount' => round($unitPrice - $unitCost, 2),
             'pricing_source' => $pricingSource,
-        ]), 'A verification PIN was sent to the admin approval mailbox.', 201);
+        ]), 'A verification PIN was sent by email and is available securely in notifications.', 201);
     }
 
     public function requestDeviceDeletion(Request $request, Device $device): JsonResponse
@@ -100,7 +100,7 @@ class InventoryDispositionController extends BaseController
         ];
         $challenge = $this->approvalService->create($request->user(), InventoryActionChallenge::ACTION_DEVICE_DELETION, $payload, $device);
 
-        return $this->success($this->challengeData($challenge), 'A verification PIN was sent to the admin approval mailbox.', 201);
+        return $this->success($this->challengeData($challenge), 'A verification PIN was sent by email and is available securely in notifications.', 201);
     }
 
     public function requestBulkDeviceDeletion(Request $request): JsonResponse
@@ -156,7 +156,7 @@ class InventoryDispositionController extends BaseController
             count($deviceIds).' devices',
         );
 
-        return $this->success($this->challengeData($challenge), 'A verification PIN was sent to the admin approval mailbox.', 201);
+        return $this->success($this->challengeData($challenge), 'A verification PIN was sent by email and is available securely in notifications.', 201);
     }
 
     public function resend(Request $request, InventoryActionChallenge $challenge): JsonResponse
@@ -177,7 +177,7 @@ class InventoryDispositionController extends BaseController
             count($deviceIds) > 1 ? count($deviceIds).' devices' : null,
         );
 
-        return $this->success($this->challengeData($challenge), 'A new verification PIN was sent to the admin approval mailbox.');
+        return $this->success($this->challengeData($challenge), 'A new verification PIN was sent by email and is available securely in notifications.');
     }
 
     public function verify(Request $request, InventoryActionChallenge $challenge): JsonResponse
@@ -209,6 +209,35 @@ class InventoryDispositionController extends BaseController
         }
 
         return $this->success($result['result'] ?? null, 'Inventory action verified and completed.');
+    }
+
+    public function reveal(Request $request, InventoryActionChallenge $challenge): JsonResponse
+    {
+        $validated = $request->validate([
+            'password' => ['required', 'string'],
+        ]);
+        $this->authorizeChallengeAction($request, $challenge);
+
+        abort_unless($challenge->requested_by_id === $request->user()->id, 403, 'Only the initiating administrator can reveal this PIN.');
+
+        $deviceIds = $this->challengeDeviceIds($challenge->payload ?? []);
+        $devices = Device::query()->whereIn('id', $deviceIds)->get();
+        if ($devices->count() !== count($deviceIds)) {
+            throw ValidationException::withMessages(['challenge' => ['One or more devices in this challenge no longer exist. Request a new PIN.']]);
+        }
+        foreach ($devices as $device) {
+            $this->authorizeInventoryBranch($request, $device);
+        }
+
+        $pin = $this->approvalService->reveal($challenge, $request->user(), $validated['password']);
+
+        return $this->success([
+            'challenge_id' => $challenge->id,
+            'pin' => $pin,
+            'expires_at' => $challenge->expires_at?->toIso8601String(),
+        ], 'PIN revealed securely.')
+            ->header('Cache-Control', 'no-store, no-cache, must-revalidate, private')
+            ->header('Pragma', 'no-cache');
     }
 
     private function executeAdministrativeSale(Request $request, array $payload, InventoryActionChallenge $challenge): array

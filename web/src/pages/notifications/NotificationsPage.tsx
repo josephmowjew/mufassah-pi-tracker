@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   Bell,
   BellOff,
@@ -11,9 +12,12 @@ import {
   Shield,
   Smartphone,
   CreditCard,
+  KeyRound,
+  ArrowRight,
 } from 'lucide-react'
 import { useNotifications, useMarkAsRead, useMarkAllAsRead, useDeleteNotification } from '@/hooks/useNotifications'
 import type { Notification } from '@/types'
+import { useInventoryPinStore } from '@/stores/inventory-pin-store'
 
 const notificationIcons: Record<string, typeof Bell> = {
   'geofence_entry': Shield,
@@ -22,6 +26,7 @@ const notificationIcons: Record<string, typeof Bell> = {
   'theft_alert': AlertTriangle,
   'device_status': Smartphone,
   'payment': CreditCard,
+  'inventory_action_pin': KeyRound,
   'default': Bell,
 }
 
@@ -32,10 +37,12 @@ const notificationColors: Record<string, { bg: string; icon: string }> = {
   'theft_alert': { bg: 'bg-red-50', icon: 'text-red-500' },
   'device_status': { bg: 'bg-slate-100', icon: 'text-slate-500' },
   'payment': { bg: 'bg-emerald-50', icon: 'text-emerald-500' },
+  'inventory_action_pin': { bg: 'bg-violet-50', icon: 'text-violet-600' },
   'default': { bg: 'bg-slate-100', icon: 'text-slate-500' },
 }
 
 export default function NotificationsPage() {
+  const navigate = useNavigate()
   const [filter, setFilter] = useState<'all' | 'unread'>('all')
 
   const { data, isLoading, error } = useNotifications({
@@ -45,6 +52,8 @@ export default function NotificationsPage() {
   const markAsRead = useMarkAsRead()
   const markAllAsRead = useMarkAllAsRead()
   const deleteNotification = useDeleteNotification()
+  const openPinReveal = useInventoryPinStore((state) => state.openReveal)
+  const activeChallenges = useInventoryPinStore((state) => state.activeChallenges)
 
   const notifications = data?.notifications || []
   const unreadCount = data?.unread_count || 0
@@ -62,6 +71,7 @@ export default function NotificationsPage() {
   }
 
   const getNotificationType = (type: string): string => {
+    if (type === 'inventory_action_pin') return 'inventory_action_pin'
     // Extract type from notification class name
     const parts = type.split('\\')
     const className = parts[parts.length - 1]
@@ -170,6 +180,21 @@ export default function NotificationsPage() {
                 type={getNotificationType(notification.type)}
                 onMarkAsRead={() => handleMarkAsRead(notification.id)}
                 onDelete={() => handleDelete(notification.id)}
+                onRevealPin={() => {
+                  const item = notification.data as Record<string, unknown>
+                  openPinReveal({
+                    challengeId: Number(item.challenge_id),
+                    actionLabel: String(item.action_label || 'Inventory action'),
+                    targetLabel: String(item.target_label || ''),
+                    expiresAt: String(item.expires_at || ''),
+                    notificationId: notification.id,
+                  })
+                }}
+                onReturnToAction={(() => {
+                  const item = notification.data as Record<string, unknown>
+                  const activeChallenge = activeChallenges[Number(item.challenge_id)]
+                  return activeChallenge ? () => navigate(activeChallenge.returnPath) : undefined
+                })()}
                 isMarking={markAsRead.isPending}
                 isDeleting={deleteNotification.isPending}
               />
@@ -186,6 +211,8 @@ function NotificationItem({
   type,
   onMarkAsRead,
   onDelete,
+  onRevealPin,
+  onReturnToAction,
   isMarking,
   isDeleting,
 }: {
@@ -193,6 +220,8 @@ function NotificationItem({
   type: string
   onMarkAsRead: () => void
   onDelete: () => void
+  onRevealPin: () => void
+  onReturnToAction?: () => void
   isMarking: boolean
   isDeleting: boolean
 }) {
@@ -200,6 +229,11 @@ function NotificationItem({
   const colors = notificationColors[type] || notificationColors.default
   const isUnread = !notification.read_at
   const data = notification.data as Record<string, unknown>
+  const [renderedAt] = useState(() => Date.now())
+  const isPinNotification = notification.type === 'inventory_action_pin'
+  const pinStatus = String(data.status || 'active')
+  const pinExpired = isPinNotification && (!data.expires_at || new Date(String(data.expires_at)).getTime() <= renderedAt)
+  const canRevealPin = isPinNotification && pinStatus === 'active' && !pinExpired
 
   return (
     <div
@@ -223,6 +257,23 @@ function NotificationItem({
               <p className="text-sm text-slate-500 mt-0.5">
                 {data.description}
               </p>
+            )}
+            {isPinNotification && (
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <span className={`rounded-full px-2 py-1 text-xs font-medium ${canRevealPin ? 'bg-violet-100 text-violet-700' : 'bg-slate-100 text-slate-600'}`}>
+                  {pinExpired ? 'Expired' : pinStatus.charAt(0).toUpperCase() + pinStatus.slice(1)}
+                </span>
+                {canRevealPin && (
+                  <button type="button" onClick={onRevealPin} className="inline-flex items-center gap-1.5 rounded-lg bg-violet-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-violet-700">
+                    <KeyRound className="h-3.5 w-3.5" /> Reveal PIN
+                  </button>
+                )}
+                {canRevealPin && onReturnToAction && (
+                  <button type="button" onClick={onReturnToAction} className="inline-flex items-center gap-1.5 rounded-lg border border-violet-200 bg-white px-3 py-1.5 text-xs font-medium text-violet-700 hover:bg-violet-50">
+                    Return to action <ArrowRight className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
             )}
             <p className="text-xs text-slate-400 mt-1">
               {formatTimeAgo(new Date(notification.created_at))}

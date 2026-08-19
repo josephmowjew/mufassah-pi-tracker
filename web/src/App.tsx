@@ -24,6 +24,7 @@ import LoadingSpinner from '@/components/ui/LoadingSpinner'
 import { getDefaultRedirectPath } from '@/hooks/useAuth'
 import { useAuthStore } from '@/stores/auth-store'
 import StockTransferAlerts from '@/components/notifications/StockTransferAlerts'
+import InventoryPinAlerts from '@/components/notifications/InventoryPinAlerts'
 
 // Lazy load pages
 const LoginPage = lazy(() => import('@/pages/auth/LoginPage'))
@@ -120,6 +121,7 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
         <StockTransferAlerts />
+        <InventoryPinAlerts />
         <ErrorBoundary>
           <Suspense fallback={<LoadingSpinner fullScreen />}>
             <Routes>

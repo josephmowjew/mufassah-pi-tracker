@@ -105,7 +105,9 @@ export default function AdminDevicesPage() {
       setDeleteChallenge(challenge)
       setDeleteChallengeError(null)
       setDeleteWarning(null)
-      toast.success('Verification PIN sent to the admin approval mailbox')
+      queryClient.invalidateQueries({ queryKey: ['notifications'] })
+      queryClient.invalidateQueries({ queryKey: ['notifications-unread-count'] })
+      toast.success('Verification PIN sent by email and available securely in notifications')
     },
     onError: (error) => {
       if (requiresApiConfirmation(error)) {
@@ -144,7 +146,9 @@ export default function AdminDevicesPage() {
     onSuccess: (challenge) => {
       setDeleteChallenge(challenge)
       setDeleteChallengeError(null)
-      toast.success('A new PIN was sent')
+      queryClient.invalidateQueries({ queryKey: ['notifications'] })
+      queryClient.invalidateQueries({ queryKey: ['notifications-unread-count'] })
+      toast.success('A new PIN was sent and is available securely in notifications')
     },
     onError: (error) => {
       setDeleteChallengeError(getApiErrorMessage(error, 'Unable to resend PIN'))

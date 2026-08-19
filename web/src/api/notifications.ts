@@ -10,6 +10,7 @@ export interface NotificationFilters {
   page?: number
   per_page?: number
   unread_only?: boolean
+  type?: string
 }
 
 export const notificationsApi = {
@@ -19,6 +20,7 @@ export const notificationsApi = {
     if (filters.page) params.append('page', String(filters.page))
     if (filters.per_page) params.append('per_page', String(filters.per_page))
     if (filters.unread_only) params.append('unread_only', 'true')
+    if (filters.type) params.append('type', filters.type)
 
     const response = await apiClient.get<ApiResponse<NotificationsResponse>>(`/notifications?${params}`)
     const payload = response.data.data
@@ -47,6 +49,14 @@ export const notificationsApi = {
   // Delete notification
   deleteNotification: async (id: string): Promise<void> => {
     await apiClient.delete(`/notifications/${id}`)
+  },
+
+  revealInventoryPin: async (challengeId: number, password: string): Promise<{ challenge_id: number; pin: string; expires_at: string }> => {
+    const response = await apiClient.post<ApiResponse<{ challenge_id: number; pin: string; expires_at: string }>>(
+      `/admin/action-challenges/${challengeId}/reveal`,
+      { password },
+    )
+    return response.data.data
   },
 }
 

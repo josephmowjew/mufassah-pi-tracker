@@ -411,6 +411,9 @@ Route::middleware('auth:sanctum')->group(function () {
             ->name('devices.delete.request');
 
         Route::prefix('action-challenges')->name('action-challenges.')->group(function () {
+            Route::post('/{challenge}/reveal', [InventoryDispositionController::class, 'reveal'])
+                ->middleware('throttle:5,1')
+                ->name('reveal');
             Route::post('/{challenge}/verify', [InventoryDispositionController::class, 'verify'])
                 ->middleware('throttle:10,1')
                 ->name('verify');
