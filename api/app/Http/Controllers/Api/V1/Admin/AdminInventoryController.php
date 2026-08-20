@@ -11,11 +11,10 @@ use App\Http\Resources\DeviceResource;
 use App\Http\Resources\InventoryBatchResource;
 use App\Http\Resources\InventoryReceiptResource;
 use App\Models\ActivityLog;
-use App\Models\Brand;
 use App\Models\Device;
 use App\Models\InventoryBatch;
 use App\Models\InventoryReceipt;
-use App\Models\ProductModel;
+use App\Services\InventoryCatalogResolver;
 use App\Services\InventoryMovementService;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
@@ -26,7 +25,10 @@ use Illuminate\Validation\Rule;
 
 class AdminInventoryController extends BaseController
 {
-    public function __construct(private readonly InventoryMovementService $movementService) {}
+    public function __construct(
+        private readonly InventoryMovementService $movementService,
+        private readonly InventoryCatalogResolver $catalogResolver,
+    ) {}
 
     /**
      * List all devices in inventory with filtering.
@@ -436,10 +438,15 @@ class AdminInventoryController extends BaseController
         ]);
 
         $validated['branch_id'] = $this->resolveInventoryWriteBranchId($request, (int) $validated['branch_id']);
+        $catalog = $this->catalogResolver->resolve(
+            (int) $validated['category_id'],
+            $validated['brand'],
+            $validated['model'],
+        );
 
         $device = Device::create([
             ...$validated,
-            ...$this->catalogIdsForInventoryLine($validated),
+            ...$catalog,
             'unique_device_code' => $this->generateDeviceCode(),
             'status' => DeviceStatus::INACTIVE,
             'inventory_status' => InventoryStatus::IN_STOCK,
@@ -810,6 +817,13 @@ class AdminInventoryController extends BaseController
      */
     private function createInventoryBatchDevices(int $branchId, array $line, ?InventoryReceipt $receipt = null): array
     {
+        $catalog = $this->catalogResolver->resolve(
+            (int) $line['category_id'],
+            $line['brand'],
+            $line['model'],
+        );
+        $line = array_merge($line, $catalog);
+
         $quantity = (int) $line['quantity'];
         $autoGenerate = $line['auto_generate_serials'] ?? true;
         $providedSerials = $line['serial_numbers'] ?? [];
@@ -830,7 +844,6 @@ class AdminInventoryController extends BaseController
         ]);
 
         $devices = [];
-        $catalogIds = $this->catalogIdsForInventoryLine($line);
         for ($i = 0; $i < $quantity; $i++) {
             $serialNumber = $autoGenerate
                 ? $this->generateSerialNumber($line['brand'], $line['model'])
@@ -838,7 +851,8 @@ class AdminInventoryController extends BaseController
 
             $devices[] = Device::create([
                 'category_id' => $line['category_id'],
-                ...$catalogIds,
+                'brand_id' => $line['brand_id'],
+                'product_model_id' => $line['product_model_id'],
                 'branch_id' => $branchId,
                 'iot_module_id' => $line['iot_module_id'] ?? null,
                 'brand' => $line['brand'],
@@ -858,24 +872,6 @@ class AdminInventoryController extends BaseController
         }
 
         return [$batch, $devices];
-    }
-
-    /** @return array{brand_id: int|null, product_model_id: int|null} */
-    private function catalogIdsForInventoryLine(array $line): array
-    {
-        $brand = Brand::query()
-            ->where('category_id', $line['category_id'])
-            ->where('name', $line['brand'])
-            ->first();
-
-        $model = $brand
-            ? ProductModel::query()->where('brand_id', $brand->id)->where('name', $line['model'])->first()
-            : null;
-
-        return [
-            'brand_id' => $brand?->id,
-            'product_model_id' => $model?->id,
-        ];
     }
 
     private function isUniqueConstraintViolation(QueryException $e): bool

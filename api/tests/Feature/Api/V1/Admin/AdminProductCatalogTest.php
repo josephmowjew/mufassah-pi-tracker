@@ -39,6 +39,38 @@ it('counts inventory by the brand and model identity used by inventory records',
         ->assertJsonPath('data.0.devices_count', 3);
 });
 
+it('backfills catalog links for existing inventory records idempotently', function () {
+    $category = DeviceCategory::factory()->create(['name' => 'Televisions']);
+    $device = Device::factory()->create([
+        'category_id' => $category->id,
+        'brand' => 'Samsung',
+        'model' => 'Crystal UHD 55"',
+        'brand_id' => null,
+        'product_model_id' => null,
+    ]);
+
+    $migration = require database_path('migrations/2026_08_20_000001_sync_inventory_catalog_links.php');
+    $migration->up();
+    $migration->up();
+
+    $device->refresh();
+    $brand = Brand::query()
+        ->where('category_id', $category->id)
+        ->where('name', 'Samsung')
+        ->first();
+    $model = ProductModel::query()
+        ->where('brand_id', $brand?->id)
+        ->where('name', 'Crystal UHD 55"')
+        ->first();
+
+    expect($brand)->not->toBeNull()
+        ->and($model)->not->toBeNull()
+        ->and(Brand::query()->where('category_id', $category->id)->count())->toBe(1)
+        ->and(ProductModel::query()->where('brand_id', $brand->id)->count())->toBe(1)
+        ->and($device->brand_id)->toBe($brand->id)
+        ->and($device->product_model_id)->toBe($model->id);
+});
+
 it('allows shared catalog reads but reserves global catalog writes for super admins', function () {
     $category = DeviceCategory::factory()->create();
     Brand::create(['category_id' => $category->id, 'name' => 'Shared Brand', 'is_active' => true]);

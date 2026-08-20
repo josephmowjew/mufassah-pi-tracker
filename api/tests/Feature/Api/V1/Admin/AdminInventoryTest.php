@@ -1,8 +1,8 @@
 <?php
 
 use App\Enums\InventoryStatus;
-use App\Models\Brand;
 use App\Models\Branch;
+use App\Models\Brand;
 use App\Models\Device;
 use App\Models\DeviceCategory;
 use App\Models\InventoryBatch;
@@ -536,6 +536,86 @@ describe('Bulk Store Devices', function () {
         foreach ($serials as $serial) {
             expect(Device::where('serial_number', $serial)->exists())->toBeTrue();
         }
+    });
+
+    it('automatically creates and links missing catalog entries', function () {
+        $response = $this->actingAs($this->admin)
+            ->postJson('/api/v1/admin/inventory/bulk', [
+                'category_id' => $this->category->id,
+                'branch_id' => $this->branch->id,
+                'brand' => 'Samsung',
+                'model' => 'Crystal UHD 55"',
+                'quantity' => 2,
+                'buying_price' => 500000,
+                'target_selling_price' => 650000,
+            ]);
+
+        $response->assertCreated();
+
+        $brand = Brand::query()
+            ->where('category_id', $this->category->id)
+            ->where('name', 'Samsung')
+            ->first();
+        $model = ProductModel::query()
+            ->where('brand_id', $brand?->id)
+            ->where('name', 'Crystal UHD 55"')
+            ->first();
+
+        expect($brand)->not->toBeNull()
+            ->and($model)->not->toBeNull();
+
+        $devices = Device::query()
+            ->where('brand', 'Samsung')
+            ->where('model', 'Crystal UHD 55"')
+            ->get();
+
+        expect($devices)->toHaveCount(2);
+        foreach ($devices as $device) {
+            expect($device->brand_id)->toBe($brand->id)
+                ->and($device->product_model_id)->toBe($model->id);
+        }
+
+        $this->actingAs($this->admin)
+            ->getJson("/api/v1/admin/catalog/models?brand_id={$brand->id}&with_devices_count=true")
+            ->assertSuccessful()
+            ->assertJsonPath('data.0.devices_count', 2);
+    });
+
+    it('reuses catalog entries when inventory names differ only by whitespace or case', function () {
+        $brand = Brand::create([
+            'category_id' => $this->category->id,
+            'name' => 'Samsung',
+            'is_active' => true,
+        ]);
+        $model = ProductModel::create([
+            'brand_id' => $brand->id,
+            'name' => 'Galaxy S24',
+            'is_active' => true,
+        ]);
+
+        $response = $this->actingAs($this->admin)
+            ->postJson('/api/v1/admin/inventory/bulk', [
+                'category_id' => $this->category->id,
+                'branch_id' => $this->branch->id,
+                'brand' => ' samsung ',
+                'model' => '  Galaxy   S24 ',
+                'quantity' => 1,
+                'buying_price' => 500000,
+                'target_selling_price' => 650000,
+            ]);
+
+        $response->assertCreated();
+
+        expect(Brand::query()->where('category_id', $this->category->id)->get())
+            ->toHaveCount(1);
+        expect(ProductModel::query()->where('brand_id', $brand->id)->get())
+            ->toHaveCount(1);
+
+        $device = Device::query()->where('serial_number', $response->json('data.devices.0.serial_number'))->firstOrFail();
+        expect($device->brand)->toBe('Samsung')
+            ->and($device->model)->toBe('Galaxy S24')
+            ->and($device->brand_id)->toBe($brand->id)
+            ->and($device->product_model_id)->toBe($model->id);
     });
 
     it('validates required fields', function () {

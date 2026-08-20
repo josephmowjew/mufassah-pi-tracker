@@ -6,12 +6,15 @@ use App\Enums\DeviceStatus;
 use App\Http\Controllers\Api\V1\BaseController;
 use App\Http\Resources\DeviceResource;
 use App\Models\Device;
+use App\Services\InventoryCatalogResolver;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 
 class AdminDeviceController extends BaseController
 {
+    public function __construct(private readonly InventoryCatalogResolver $catalogResolver) {}
+
     /**
      * List all devices in the system with filtering and pagination.
      */
@@ -120,6 +123,17 @@ class AdminDeviceController extends BaseController
             'purchase_location' => 'nullable|string|max:255',
             'category_id' => 'sometimes|exists:device_categories,id',
         ]);
+
+        if (array_key_exists('category_id', $validated)
+            || array_key_exists('brand', $validated)
+            || array_key_exists('model', $validated)) {
+            $catalog = $this->catalogResolver->resolve(
+                (int) ($validated['category_id'] ?? $device->category_id),
+                $validated['brand'] ?? $device->brand,
+                $validated['model'] ?? $device->model,
+            );
+            $validated = array_merge($validated, $catalog);
+        }
 
         $device->update($validated);
         $device->load(['category', 'owner', 'iotModule', 'lastLocation']);
