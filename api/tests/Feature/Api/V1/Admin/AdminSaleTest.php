@@ -5,11 +5,16 @@ use App\Enums\PaymentMethod;
 use App\Enums\PaymentStatus;
 use App\Enums\SaleStatus;
 use App\Models\Branch;
+use App\Models\CommunicationSettings;
 use App\Models\Device;
 use App\Models\DeviceCategory;
 use App\Models\InventoryBatch;
+use App\Models\InventoryMovement;
 use App\Models\Sale;
 use App\Models\User;
+use App\Notifications\NewSaleNotification;
+use Illuminate\Support\Facades\Notification;
+use Illuminate\Support\Facades\Mail;
 
 beforeEach(function () {
     $this->seed(\Database\Seeders\RolesAndPermissionsSeeder::class);
@@ -50,6 +55,118 @@ function salePayload(Device $device, User $customer, array $overrides = []): arr
 }
 
 describe('Admin Sales', function () {
+    it('sends completed POS sale notifications to the approval email', function () {
+        config(['inventory.approval_email' => 'approval@example.test']);
+        CommunicationSettings::current()->update([
+            'admin_emails' => [],
+            'sale_notifications_enabled' => true,
+        ]);
+        Notification::fake();
+
+        $device = Device::factory()->create([
+            'category_id' => $this->category->id,
+            'branch_id' => $this->branch->id,
+            'brand' => 'Sony',
+            'model' => 'Bravia X85L',
+            'color' => 'Black',
+            'owner_id' => null,
+            'purchase_price' => 800,
+            'inventory_status' => InventoryStatus::IN_STOCK,
+        ]);
+
+        $this->actingAs($this->admin)
+            ->postJson('/api/v1/admin/sales', salePayload($device, $this->customer))
+            ->assertCreated();
+
+        Notification::assertSentOnDemand(NewSaleNotification::class, function ($notification, $channels, $notifiable) {
+            return $notifiable->routes['mail'] === 'approval@example.test';
+        });
+    });
+
+    it('stores an in-app notification for super admins when a store admin makes a sale', function () {
+        config(['inventory.approval_email' => 'approval@example.test']);
+        CommunicationSettings::current()->update([
+            'admin_emails' => [],
+            'sale_notifications_enabled' => true,
+        ]);
+        Mail::fake();
+
+        $storeAdmin = User::factory()->create(['branch_id' => $this->branch->id]);
+        $storeAdmin->assignRole('store_admin');
+        $secondSuperAdmin = User::factory()->create(['branch_id' => $this->branch->id]);
+        $secondSuperAdmin->assignRole('super_admin');
+        $device = Device::factory()->create([
+            'category_id' => $this->category->id,
+            'branch_id' => $this->branch->id,
+            'brand' => 'Sony',
+            'model' => 'Bravia X85L',
+            'color' => 'Black',
+            'owner_id' => null,
+            'purchase_price' => 800,
+            'inventory_status' => InventoryStatus::IN_STOCK,
+        ]);
+
+        $saleId = $this->actingAs($storeAdmin)
+            ->postJson('/api/v1/admin/sales', salePayload($device, $this->customer))
+            ->assertCreated()
+            ->json('data.id');
+
+        foreach ([$this->admin, $secondSuperAdmin] as $superAdmin) {
+            $notification = $superAdmin->notifications()
+                ->where('data->type', 'sale_completed')
+                ->where('data->sale_id', $saleId)
+                ->first();
+
+            expect($notification)->not->toBeNull()
+                ->and($notification->data)->toMatchArray([
+                    'type' => 'sale_completed',
+                    'sale_id' => $saleId,
+                    'sold_by_id' => $storeAdmin->id,
+                    'branch_id' => $this->branch->id,
+                ]);
+        }
+
+        expect($storeAdmin->notifications()->where('data->sale_id', $saleId)->exists())->toBeFalse();
+    });
+
+    it('stores an in-app notification for super admins when customer service completes a sale', function () {
+        config(['inventory.approval_email' => 'approval@example.test']);
+        CommunicationSettings::current()->update([
+            'admin_emails' => [],
+            'sale_notifications_enabled' => true,
+        ]);
+        Mail::fake();
+
+        $customerService = User::factory()->create(['branch_id' => $this->branch->id]);
+        $customerService->assignRole('customer_service');
+        $device = Device::factory()->create([
+            'category_id' => $this->category->id,
+            'branch_id' => $this->branch->id,
+            'brand' => 'Sony',
+            'model' => 'Bravia X85L',
+            'color' => 'Silver',
+            'owner_id' => null,
+            'purchase_price' => 800,
+            'inventory_status' => InventoryStatus::IN_STOCK,
+        ]);
+
+        $saleId = $this->actingAs($customerService)
+            ->postJson('/api/v1/customer-service/sales', salePayload($device, $this->customer))
+            ->assertCreated()
+            ->json('data.id');
+
+        $notification = $this->admin->notifications()
+            ->where('data->type', 'sale_completed')
+            ->where('data->sale_id', $saleId)
+            ->first();
+
+        expect($notification)->not->toBeNull()
+            ->and($notification->data)->toMatchArray([
+                'sale_id' => $saleId,
+                'sold_by_id' => $customerService->id,
+            ]);
+    });
+
     it('creates a completed paid sale and snapshots profit', function () {
         $batch = InventoryBatch::create([
             'batch_number' => 'BATCH-TEST-SALE-PRICE',
@@ -160,6 +277,13 @@ describe('Admin Sales', function () {
     });
 
     it('creates a draft sale that reserves stock only', function () {
+        config(['inventory.approval_email' => 'approval@example.test']);
+        CommunicationSettings::current()->update([
+            'admin_emails' => [],
+            'sale_notifications_enabled' => true,
+        ]);
+        Notification::fake();
+
         $device = Device::factory()->create([
             'category_id' => $this->category->id,
             'branch_id' => $this->branch->id,
@@ -185,9 +309,17 @@ describe('Admin Sales', function () {
         expect($device->inventory_status)->toBe(InventoryStatus::RESERVED);
         expect($device->owner_id)->toBeNull();
         expect($device->sold_at)->toBeNull();
+        Notification::assertSentOnDemandTimes(NewSaleNotification::class, 0);
     });
 
     it('completes a draft sale and marks reserved devices sold', function () {
+        config(['inventory.approval_email' => 'approval@example.test']);
+        CommunicationSettings::current()->update([
+            'admin_emails' => [],
+            'sale_notifications_enabled' => true,
+        ]);
+        Notification::fake();
+
         $device = Device::factory()->create([
             'category_id' => $this->category->id,
             'branch_id' => $this->branch->id,
@@ -214,6 +346,10 @@ describe('Admin Sales', function () {
         $response->assertSuccessful()
             ->assertJsonPath('data.status.value', 'completed')
             ->assertJsonPath('data.payment_status.value', 'completed');
+
+        Notification::assertSentOnDemand(NewSaleNotification::class, function ($notification, $channels, $notifiable) {
+            return $notifiable->routes['mail'] === 'approval@example.test';
+        });
 
         $device->refresh();
         expect($device->inventory_status)->toBe(InventoryStatus::SOLD);
@@ -620,13 +756,36 @@ describe('Admin Sales', function () {
             ]);
         }
 
+        InventoryMovement::create([
+            'movement_number' => 'MOVE-2026-SUMMARY-ADMIN-01',
+            'movement_type' => InventoryMovement::TYPE_ADMINISTRATIVE_SALE,
+            'branch_id' => $this->branch->id,
+            'quantity' => 1,
+            'total_amount' => 75,
+            'created_at' => $matchingDate,
+            'updated_at' => $matchingDate,
+        ]);
+
+        InventoryMovement::create([
+            'movement_number' => 'MOVE-2026-SUMMARY-ADMIN-02',
+            'movement_type' => InventoryMovement::TYPE_ADMINISTRATIVE_SALE,
+            'branch_id' => $otherBranch->id,
+            'quantity' => 1,
+            'total_amount' => 125,
+            'created_at' => $matchingDate,
+            'updated_at' => $matchingDate,
+        ]);
+
         $date = $matchingDate->toDateString();
         $this->actingAs($this->admin)
             ->getJson("/api/v1/admin/sales/summary?branch_id={$this->branch->id}&date_from={$date}&date_to={$date}")
             ->assertSuccessful()
             ->assertJsonPath('data.sales_count', 2)
             ->assertJsonPath('data.total_amount', 300)
-            ->assertJsonPath('data.average_amount', 150);
+            ->assertJsonPath('data.average_amount', 150)
+            ->assertJsonPath('data.administrative_sale_amount', 75)
+            ->assertJsonPath('data.administrative_sale_transactions', 1)
+            ->assertJsonPath('data.combined_total_amount', 375);
     });
 
     it('rejects a sales date range whose end precedes its start', function () {

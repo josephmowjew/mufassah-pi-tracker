@@ -33,6 +33,9 @@ interface SalesSummary {
   sales_count: number
   total_amount: number | string
   average_amount: number | string
+  administrative_sale_amount?: number | string
+  administrative_sale_transactions?: number
+  combined_total_amount?: number | string
 }
 
 interface CartItem {
@@ -689,6 +692,8 @@ export default function SalesPage() {
     ? Number(productOptions.selling_price)
     : null
   const hasValidSellingPrice = sellingPrice !== null && Number.isFinite(sellingPrice) && sellingPrice > 0
+  const administrativeSaleAmount = Number(summaryValues?.administrative_sale_amount || 0)
+  const combinedSalesAmount = Number(summaryValues?.combined_total_amount || summaryValues?.total_amount || 0)
 
   // Check if we can add to cart (all required fields selected)
   const canAddToCart = selectedCategoryId && selectedBrand && selectedModel &&
@@ -715,7 +720,7 @@ export default function SalesPage() {
       </div>
 
         {/* Filter-aware summary */}
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
           <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
             <div className="flex items-start gap-3">
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
@@ -727,6 +732,36 @@ export default function SalesPage() {
                   {summaryLoading || summaryUnavailable ? '—' : formatMoney(summaryValues.total_amount)}
                 </p>
                 <p className="mt-1 truncate text-xs text-slate-500">Matches the current filters</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-violet-200 bg-violet-50/60 p-4 shadow-sm">
+            <div className="flex items-start gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-violet-100 text-violet-600">
+                <Receipt className="h-5 w-5" aria-hidden="true" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs font-semibold uppercase tracking-wide text-violet-700">Administrative sales</p>
+                <p className="mt-1 text-2xl font-semibold tracking-tight text-slate-900">
+                  {summaryLoading || summaryUnavailable ? '—' : formatMoney(administrativeSaleAmount)}
+                </p>
+                <p className="mt-1 truncate text-xs text-violet-700">Completed inventory dispositions</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-4 shadow-sm">
+            <div className="flex items-start gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-emerald-100 text-emerald-600">
+                <DollarSign className="h-5 w-5" aria-hidden="true" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Combined realized value</p>
+                <p className="mt-1 text-2xl font-semibold tracking-tight text-slate-900">
+                  {summaryLoading || summaryUnavailable ? '—' : formatMoney(combinedSalesAmount)}
+                </p>
+                <p className="mt-1 truncate text-xs text-emerald-700">POS plus administrative sales</p>
               </div>
             </div>
           </div>

@@ -14,6 +14,7 @@ import {
   CreditCard,
   KeyRound,
   ArrowRight,
+  Receipt,
 } from 'lucide-react'
 import { useNotifications, useMarkAsRead, useMarkAllAsRead, useDeleteNotification } from '@/hooks/useNotifications'
 import type { Notification } from '@/types'
@@ -27,6 +28,8 @@ const notificationIcons: Record<string, typeof Bell> = {
   'device_status': Smartphone,
   'payment': CreditCard,
   'inventory_action_pin': KeyRound,
+  'sale_completed': Receipt,
+  'administrative_sale_completed': Receipt,
   'default': Bell,
 }
 
@@ -38,6 +41,8 @@ const notificationColors: Record<string, { bg: string; icon: string }> = {
   'device_status': { bg: 'bg-slate-100', icon: 'text-slate-500' },
   'payment': { bg: 'bg-emerald-50', icon: 'text-emerald-500' },
   'inventory_action_pin': { bg: 'bg-violet-50', icon: 'text-violet-600' },
+  'sale_completed': { bg: 'bg-emerald-50', icon: 'text-emerald-600' },
+  'administrative_sale_completed': { bg: 'bg-purple-50', icon: 'text-purple-600' },
   'default': { bg: 'bg-slate-100', icon: 'text-slate-500' },
 }
 
@@ -71,7 +76,7 @@ export default function NotificationsPage() {
   }
 
   const getNotificationType = (type: string): string => {
-    if (type === 'inventory_action_pin') return 'inventory_action_pin'
+    if (['inventory_action_pin', 'sale_completed', 'administrative_sale_completed'].includes(type)) return type
     // Extract type from notification class name
     const parts = type.split('\\')
     const className = parts[parts.length - 1]

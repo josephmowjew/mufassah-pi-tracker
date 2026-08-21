@@ -1,5 +1,63 @@
 import apiClient, { type ApiResponse, type PaginatedResponse } from './client'
-import type { User, Subscription, Payment } from '@/types'
+import type { Branch, User, Subscription, Payment } from '@/types'
+
+export interface AdminDashboardFilters {
+  branch_id?: string | number | null
+  all_branches?: boolean
+  date_from?: string
+  date_to?: string
+}
+
+export type AdminDashboardScopeFilters = Pick<AdminDashboardFilters, 'branch_id' | 'all_branches'>
+
+export interface SalesDashboardBranch {
+  branch_id: number | null
+  branch_name: string
+  branch_code: string | null
+  pos_total_amount: number
+  pos_transactions: number
+  administrative_sale_amount: number
+  administrative_sale_transactions: number
+  combined_total_amount: number
+}
+
+export interface SalesDashboardDaily {
+  date: string
+  pos_total_amount: number
+  pos_transactions: number
+  administrative_sale_amount: number
+  administrative_sale_transactions: number
+  combined_total_amount: number
+  by_branch: SalesDashboardBranch[]
+}
+
+export interface SalesDashboardStats {
+  date_from: string
+  date_to: string
+  total_amount: number
+  total_transactions: number
+  average_amount: number
+  previous_total_amount: number
+  change_percentage: number | null
+  administrative_sale_amount: number
+  administrative_sale_transactions: number
+  previous_administrative_sale_amount: number
+  administrative_sale_change_percentage: number | null
+  combined_total_amount: number
+  by_branch: SalesDashboardBranch[]
+  trend: Record<string, number>
+  combined_trend: Record<string, number>
+  daily_breakdown: SalesDashboardDaily[]
+}
+
+const dashboardQueryString = (filters: AdminDashboardFilters = {}): string => {
+  const params = new URLSearchParams()
+  if (filters.branch_id) params.append('branch_id', String(filters.branch_id))
+  if (filters.all_branches) params.append('all_branches', '1')
+  if (filters.date_from) params.append('date_from', filters.date_from)
+  if (filters.date_to) params.append('date_to', filters.date_to)
+  return params.toString()
+}
 
 // Dashboard statistics types - matches backend response structure
 export interface DashboardStats {
@@ -31,6 +89,16 @@ export interface DashboardStats {
     this_month: number
     last_month: number
     month_over_month_change_percentage: number | null
+    selected_range_total?: number
+    selected_range_transactions?: number
+    selected_range_change_percentage?: number | null
+  }
+  sales: SalesDashboardStats
+  filters: {
+    date_from: string
+    date_to: string
+    branch_id: number | null
+    all_branches: boolean
   }
   theft_reports: {
     total: number
@@ -70,6 +138,7 @@ export interface RevenueStats {
   by_method: Record<string, { count: number; total: number }>
   by_plan: Record<string, number>
   trend: Record<string, number>
+  sales: SalesDashboardStats
 }
 
 export interface TheftReportStats {
@@ -96,23 +165,32 @@ export interface AdminUserFilters {
 
 export const adminApi = {
   // Dashboard
-  getDashboardStats: async (): Promise<DashboardStats> => {
-    const response = await apiClient.get<ApiResponse<DashboardStats>>('/admin/dashboard')
+  getDashboardStats: async (filters: AdminDashboardFilters = {}): Promise<DashboardStats> => {
+    const query = dashboardQueryString(filters)
+    const response = await apiClient.get<ApiResponse<DashboardStats>>(`/admin/dashboard${query ? `?${query}` : ''}`)
     return response.data.data
   },
 
-  getUserStats: async (): Promise<UserStats> => {
-    const response = await apiClient.get<ApiResponse<UserStats>>('/admin/dashboard/users')
+  getUserStats: async (filters: AdminDashboardScopeFilters = {}): Promise<UserStats> => {
+    const query = dashboardQueryString(filters)
+    const response = await apiClient.get<ApiResponse<UserStats>>(`/admin/dashboard/users${query ? `?${query}` : ''}`)
     return response.data.data
   },
 
-  getDeviceStats: async (): Promise<DeviceStats> => {
-    const response = await apiClient.get<ApiResponse<DeviceStats>>('/admin/dashboard/devices')
+  getDeviceStats: async (filters: AdminDashboardScopeFilters = {}): Promise<DeviceStats> => {
+    const query = dashboardQueryString(filters)
+    const response = await apiClient.get<ApiResponse<DeviceStats>>(`/admin/dashboard/devices${query ? `?${query}` : ''}`)
     return response.data.data
   },
 
-  getRevenueStats: async (): Promise<RevenueStats> => {
-    const response = await apiClient.get<ApiResponse<RevenueStats>>('/admin/dashboard/revenue')
+  getRevenueStats: async (filters: AdminDashboardFilters = {}): Promise<RevenueStats> => {
+    const query = dashboardQueryString(filters)
+    const response = await apiClient.get<ApiResponse<RevenueStats>>(`/admin/dashboard/revenue${query ? `?${query}` : ''}`)
+    return response.data.data
+  },
+
+  getBranchOptions: async (): Promise<Pick<Branch, 'id' | 'name' | 'code'>[]> => {
+    const response = await apiClient.get<ApiResponse<Pick<Branch, 'id' | 'name' | 'code'>[]>>('/admin/branch-options')
     return response.data.data
   },
 

@@ -9,6 +9,7 @@ use App\Models\InventoryBatch;
 use App\Models\InventoryMovement;
 use App\Models\Sale;
 use App\Models\User;
+use App\Notifications\AdministrativeSaleCompletedNotification;
 use App\Notifications\InventoryActionApprovalPinNotification;
 use App\Notifications\InventoryActionPinAvailableNotification;
 use App\Services\InventoryMovementService;
@@ -81,6 +82,10 @@ it('records an administrative sale with financial snapshots and no POS sale', fu
     $device->refresh();
     $movement = InventoryMovement::where('movement_type', InventoryMovement::TYPE_ADMINISTRATIVE_SALE)->firstOrFail();
 
+    Notification::assertSentTo($this->admin, AdministrativeSaleCompletedNotification::class, function ($notification) use ($movement) {
+        return $notification->movement->id === $movement->id;
+    });
+
     expect($device->inventory_status)->toBe(InventoryStatus::SOLD)
         ->and($device->sale_id)->toBeNull()
         ->and($device->owner_id)->toBeNull()
@@ -92,6 +97,30 @@ it('records an administrative sale with financial snapshots and no POS sale', fu
         ->and((float) $movement->profit_amount)->toBe(50000.0)
         ->and($movement->sale_id)->toBeNull()
         ->and(Sale::count())->toBe(0);
+});
+
+it('notifies super admins when a store admin completes an administrative sale', function () {
+    $storeAdmin = User::factory()->create([
+        'email' => 'store-admin@example.test',
+        'branch_id' => $this->branch->id,
+    ]);
+    $storeAdmin->assignRole('store_admin');
+    $device = dispositionDevice();
+    Notification::fake();
+
+    $challenge = $this->actingAs($storeAdmin)
+        ->postJson("/api/v1/admin/inventory/{$device->id}/administrative-sale/request", [
+            'selling_price' => 150000,
+            'reason' => 'Store admin sale',
+        ])
+        ->assertCreated()
+        ->json('data.challenge_id');
+
+    verifyDispositionChallenge($challenge, $storeAdmin)->assertSuccessful();
+
+    Notification::assertSentTo($this->admin, AdministrativeSaleCompletedNotification::class, function ($notification) use ($device) {
+        return $notification->movement->device_id === $device->id;
+    });
 });
 
 it('delivers metadata-only in-app PIN notifications to the initiating administrator', function () {

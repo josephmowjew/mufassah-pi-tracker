@@ -12,6 +12,7 @@ use App\Models\InventoryActionChallenge;
 use App\Models\InventoryMovement;
 use App\Services\InventoryActionApprovalService;
 use App\Services\InventoryMovementService;
+use App\Services\SuperAdminSaleNotificationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -22,6 +23,7 @@ class InventoryDispositionController extends BaseController
     public function __construct(
         private readonly InventoryActionApprovalService $approvalService,
         private readonly InventoryMovementService $movementService,
+        private readonly SuperAdminSaleNotificationService $superAdminSaleNotificationService,
     ) {}
 
     public function requestAdministrativeSale(Request $request, Device $device): JsonResponse
@@ -288,6 +290,8 @@ class InventoryDispositionController extends BaseController
             'profit_amount' => $movement->profit_amount,
             'pricing_source' => $pricingSource,
         ]);
+
+        $this->superAdminSaleNotificationService->notifyAdministrativeSale($movement->fresh(['device', 'branch', 'createdBy']));
 
         return [
             'device' => new DeviceResource($device->fresh(['category', 'branch', 'soldBy', 'inventoryBatch'])),

@@ -1,35 +1,41 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import adminApi, { type AdminUserFilters } from '@/api/admin'
+import adminApi, {
+  type AdminDashboardFilters,
+  type AdminDashboardScopeFilters,
+  type AdminUserFilters,
+} from '@/api/admin'
 
 // Dashboard Stats
-export function useAdminDashboard() {
+export function useAdminDashboard(filters: AdminDashboardFilters = {}, enabled = true) {
   return useQuery({
-    queryKey: ['admin-dashboard'],
-    queryFn: () => adminApi.getDashboardStats(),
+    queryKey: ['admin-dashboard', filters],
+    queryFn: () => adminApi.getDashboardStats(filters),
+    enabled,
     staleTime: 1000 * 60 * 5, // 5 minutes
   })
 }
 
-export function useAdminUserStats() {
+export function useAdminUserStats(filters: AdminDashboardScopeFilters = {}) {
   return useQuery({
-    queryKey: ['admin-user-stats'],
-    queryFn: () => adminApi.getUserStats(),
+    queryKey: ['admin-user-stats', filters],
+    queryFn: () => adminApi.getUserStats(filters),
     staleTime: 1000 * 60 * 5,
   })
 }
 
-export function useAdminDeviceStats() {
+export function useAdminDeviceStats(filters: AdminDashboardScopeFilters = {}) {
   return useQuery({
-    queryKey: ['admin-device-stats'],
-    queryFn: () => adminApi.getDeviceStats(),
+    queryKey: ['admin-device-stats', filters],
+    queryFn: () => adminApi.getDeviceStats(filters),
     staleTime: 1000 * 60 * 5,
   })
 }
 
-export function useAdminRevenueStats() {
+export function useAdminRevenueStats(filters: AdminDashboardFilters = {}, enabled = true) {
   return useQuery({
-    queryKey: ['admin-revenue-stats'],
-    queryFn: () => adminApi.getRevenueStats(),
+    queryKey: ['admin-revenue-stats', filters],
+    queryFn: () => adminApi.getRevenueStats(filters),
+    enabled,
     staleTime: 1000 * 60 * 5,
   })
 }

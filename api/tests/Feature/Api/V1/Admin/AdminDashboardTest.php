@@ -1,7 +1,9 @@
 <?php
 
 use App\Enums\DeviceStatus;
+use App\Enums\PaymentMethod;
 use App\Enums\PaymentStatus;
+use App\Enums\SaleStatus;
 use App\Enums\SubscriptionStatus;
 use App\Enums\TheftReportStatus;
 use App\Models\Branch;
@@ -9,6 +11,7 @@ use App\Models\Device;
 use App\Models\DeviceCategory;
 use App\Models\InventoryMovement;
 use App\Models\Payment;
+use App\Models\Sale;
 use App\Models\Subscription;
 use App\Models\SubscriptionPlan;
 use App\Models\TheftReport;
@@ -49,7 +52,9 @@ describe('Dashboard Access Control', function () {
                     'devices',
                     'subscriptions',
                     'revenue',
+                    'sales',
                     'administrative_sales',
+                    'filters',
                     'theft_reports',
                     'iot_modules',
                 ],
@@ -224,6 +229,161 @@ describe('Dashboard Statistics', function () {
             ->assertJsonPath('data.administrative_sales.this_month', 300)
             ->assertJsonPath('data.administrative_sales.last_month', 200)
             ->assertJsonPath('data.administrative_sales.month_over_month_change_percentage', 50);
+    });
+
+    it('returns completed POS sales for the selected range with a branch breakdown', function () {
+        $otherBranch = Branch::create([
+            'name' => 'Second Sales Branch',
+            'code' => 'SSB',
+            'is_active' => true,
+        ]);
+        $from = now()->subDays(3)->toDateString();
+        $to = now()->subDay()->toDateString();
+
+        foreach ([
+            ['number' => 'SALE-DASHBOARD-01', 'branch_id' => $this->branch->id, 'amount' => 125],
+            ['number' => 'SALE-DASHBOARD-02', 'branch_id' => $otherBranch->id, 'amount' => 275],
+        ] as $saleData) {
+            Sale::create([
+                'sale_number' => $saleData['number'],
+                'customer_id' => $this->customer->id,
+                'branch_id' => $saleData['branch_id'],
+                'sold_by_id' => $this->admin->id,
+                'payment_method' => PaymentMethod::Cash,
+                'payment_status' => PaymentStatus::Completed,
+                'status' => SaleStatus::COMPLETED,
+                'sale_date' => now()->subDay(),
+                'subtotal' => $saleData['amount'],
+                'tax_amount' => 0,
+                'discount_amount' => 0,
+                'total_amount' => $saleData['amount'],
+            ]);
+        }
+
+        Sale::create([
+            'sale_number' => 'SALE-DASHBOARD-OUTSIDE-RANGE',
+            'customer_id' => $this->customer->id,
+            'branch_id' => $this->branch->id,
+            'sold_by_id' => $this->admin->id,
+            'payment_method' => PaymentMethod::Cash,
+            'payment_status' => PaymentStatus::Completed,
+            'status' => SaleStatus::COMPLETED,
+            'sale_date' => now()->subDays(10),
+            'subtotal' => 999,
+            'tax_amount' => 0,
+            'discount_amount' => 0,
+            'total_amount' => 999,
+        ]);
+
+        InventoryMovement::create([
+            'movement_number' => 'MOVE-DASHBOARD-ADMIN-SALE',
+            'movement_type' => InventoryMovement::TYPE_ADMINISTRATIVE_SALE,
+            'branch_id' => $otherBranch->id,
+            'quantity' => 1,
+            'total_amount' => 80,
+            'created_at' => now()->subDay(),
+            'updated_at' => now()->subDay(),
+        ]);
+
+        $response = $this->actingAs($this->admin)
+            ->getJson("/api/v1/admin/dashboard?all_branches=1&date_from={$from}&date_to={$to}");
+
+        $response->assertSuccessful()
+            ->assertJsonPath('data.sales.total_amount', 400)
+            ->assertJsonPath('data.sales.total_transactions', 2)
+            ->assertJsonPath('data.sales.administrative_sale_amount', 80)
+            ->assertJsonPath('data.sales.combined_total_amount', 480)
+            ->assertJsonPath('data.sales.date_from', $from)
+            ->assertJsonPath('data.sales.date_to', $to)
+            ->assertJsonPath('data.filters.all_branches', true);
+
+        $breakdown = collect($response->json('data.sales.by_branch'))->keyBy('branch_id');
+        expect((float) $breakdown[$this->branch->id]['pos_total_amount'])->toBe(125.0)
+            ->and((float) $breakdown[$otherBranch->id]['pos_total_amount'])->toBe(275.0)
+            ->and((float) $breakdown[$otherBranch->id]['administrative_sale_amount'])->toBe(80.0);
+
+        $daily = collect($response->json('data.sales.daily_breakdown'))->keyBy('date');
+        $combinedTrend = $response->json('data.sales.combined_trend');
+        expect($daily->has($to))->toBeTrue()
+            ->and((float) $daily[$to]['pos_total_amount'])->toBe(400.0)
+            ->and((float) $daily[$to]['administrative_sale_amount'])->toBe(80.0)
+            ->and((float) $daily[$to]['combined_total_amount'])->toBe(480.0)
+            ->and((float) ($combinedTrend[$to] ?? 0))->toBe(480.0);
+
+        $dailyBranches = collect($daily[$to]['by_branch'])->keyBy('branch_id');
+        expect((float) $dailyBranches[$otherBranch->id]['combined_total_amount'])->toBe(355.0)
+            ->and((float) $dailyBranches[$otherBranch->id]['administrative_sale_amount'])->toBe(80.0);
+
+        $this->actingAs($this->admin)
+            ->getJson("/api/v1/admin/dashboard?branch_id={$this->branch->id}&date_from={$from}&date_to={$to}")
+            ->assertSuccessful()
+            ->assertJsonPath('data.sales.total_amount', 125)
+            ->assertJsonPath('data.sales.total_transactions', 1)
+            ->assertJsonPath('data.sales.by_branch.0.branch_id', $this->branch->id);
+    });
+
+    it('scopes dashboard sales to a store admin branch even when all branches is requested', function () {
+        $otherBranch = Branch::create([
+            'name' => 'Store Admin Other Branch',
+            'code' => 'SAO',
+            'is_active' => true,
+        ]);
+
+        foreach ([
+            ['number' => 'SALE-STORE-DASHBOARD-01', 'branch_id' => $this->branch->id, 'amount' => 150],
+            ['number' => 'SALE-STORE-DASHBOARD-02', 'branch_id' => $otherBranch->id, 'amount' => 850],
+        ] as $saleData) {
+            Sale::create([
+                'sale_number' => $saleData['number'],
+                'customer_id' => $this->customer->id,
+                'branch_id' => $saleData['branch_id'],
+                'sold_by_id' => $this->admin->id,
+                'payment_method' => PaymentMethod::Cash,
+                'payment_status' => PaymentStatus::Completed,
+                'status' => SaleStatus::COMPLETED,
+                'sale_date' => now(),
+                'subtotal' => $saleData['amount'],
+                'tax_amount' => 0,
+                'discount_amount' => 0,
+                'total_amount' => $saleData['amount'],
+            ]);
+        }
+
+        InventoryMovement::create([
+            'movement_number' => 'MOVE-STORE-DASHBOARD-ADMIN-01',
+            'movement_type' => InventoryMovement::TYPE_ADMINISTRATIVE_SALE,
+            'branch_id' => $this->branch->id,
+            'quantity' => 1,
+            'total_amount' => 45,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        InventoryMovement::create([
+            'movement_number' => 'MOVE-STORE-DASHBOARD-ADMIN-02',
+            'movement_type' => InventoryMovement::TYPE_ADMINISTRATIVE_SALE,
+            'branch_id' => $otherBranch->id,
+            'quantity' => 1,
+            'total_amount' => 900,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $this->actingAs($this->storeAdmin)
+            ->getJson('/api/v1/admin/dashboard?all_branches=1')
+            ->assertSuccessful()
+            ->assertJsonPath('data.sales.total_amount', 150)
+            ->assertJsonPath('data.sales.total_transactions', 1)
+            ->assertJsonPath('data.sales.administrative_sale_amount', 45)
+            ->assertJsonPath('data.sales.combined_total_amount', 195)
+            ->assertJsonCount(1, 'data.sales.by_branch');
+    });
+
+    it('rejects a dashboard date range whose end precedes its start', function () {
+        $this->actingAs($this->admin)
+            ->getJson('/api/v1/admin/dashboard?date_from=2026-08-13&date_to=2026-08-12')
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('date_to');
     });
 
     it('returns correct theft report statistics', function () {

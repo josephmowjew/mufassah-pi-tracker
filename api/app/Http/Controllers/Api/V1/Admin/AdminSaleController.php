@@ -11,11 +11,14 @@ use App\Http\Resources\SaleResource;
 use App\Models\ActivityLog;
 use App\Models\CommunicationSettings;
 use App\Models\Device;
+use App\Models\InventoryMovement;
 use App\Models\Sale;
 use App\Models\SaleItem;
 use App\Notifications\NewSaleNotification;
 use App\Services\InventoryMovementService;
 use App\Services\ReceiptService;
+use App\Services\SuperAdminSaleNotificationService;
+use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
@@ -29,7 +32,10 @@ use Illuminate\Validation\ValidationException;
 
 class AdminSaleController extends BaseController
 {
-    public function __construct(private readonly InventoryMovementService $movementService) {}
+    public function __construct(
+        private readonly InventoryMovementService $movementService,
+        private readonly SuperAdminSaleNotificationService $superAdminSaleNotificationService,
+    ) {}
 
     /**
      * List all sales with filtering and pagination.
@@ -59,14 +65,37 @@ class AdminSaleController extends BaseController
     public function summary(Request $request): JsonResponse
     {
         $validated = $this->validateSaleListFilters($request);
-        $summary = $this->buildSaleReadQuery($request, $validated)
+        $saleQuery = $this->buildSaleReadQuery($request, $validated);
+        $summary = (clone $saleQuery)
             ->selectRaw('COUNT(*) as sales_count, COALESCE(SUM(total_amount), 0) as total_amount, COALESCE(AVG(total_amount), 0) as average_amount')
             ->first();
 
+        $branchId = $this->resolveSaleReadBranchId(
+            $request,
+            $request->filled('branch_id') ? $request->integer('branch_id') : null,
+        );
+        $administrativeSaleQuery = InventoryMovement::query()
+            ->where('movement_type', InventoryMovement::TYPE_ADMINISTRATIVE_SALE)
+            ->when($branchId, fn ($query) => $query->where('branch_id', $branchId));
+
+        if (! empty($validated['date_from'])) {
+            $administrativeSaleQuery->where('created_at', '>=', Carbon::parse($validated['date_from'])->startOfDay());
+        }
+        if (! empty($validated['date_to'])) {
+            $administrativeSaleQuery->where('created_at', '<=', Carbon::parse($validated['date_to'])->endOfDay());
+        }
+
+        $administrativeSaleAmount = (float) (clone $administrativeSaleQuery)->sum('total_amount');
+        $administrativeSaleTransactions = (int) (clone $administrativeSaleQuery)->count();
+        $posTotalAmount = round((float) ($summary?->total_amount ?? 0), 2);
+
         return $this->success([
             'sales_count' => (int) ($summary?->sales_count ?? 0),
-            'total_amount' => round((float) ($summary?->total_amount ?? 0), 2),
+            'total_amount' => $posTotalAmount,
             'average_amount' => round((float) ($summary?->average_amount ?? 0), 2),
+            'administrative_sale_amount' => round($administrativeSaleAmount, 2),
+            'administrative_sale_transactions' => $administrativeSaleTransactions,
+            'combined_total_amount' => round($posTotalAmount + $administrativeSaleAmount, 2),
         ]);
     }
 
@@ -309,12 +338,8 @@ class AdminSaleController extends BaseController
 
             $sale->load(['customer', 'soldBy', 'branch', 'items.device.category']);
 
-            // Send notification to admin emails if enabled
-            $settings = CommunicationSettings::current();
-            if ($settings->sale_notifications_enabled && ! empty($settings->getEmailsArray())) {
-                foreach ($settings->getEmailsArray() as $email) {
-                    Notification::route('mail', $email)->notify(new NewSaleNotification($sale));
-                }
+            if ($shouldComplete) {
+                $this->notifyCompletedSale($sale);
             }
 
             return $this->success(new SaleResource($sale), 'Sale created successfully', 201);
@@ -403,6 +428,8 @@ class AdminSaleController extends BaseController
             ]);
 
             $sale->load(['customer', 'soldBy', 'branch', 'items.device.category']);
+
+            $this->notifyCompletedSale($sale);
 
             return $this->success(new SaleResource($sale), 'Sale completed successfully');
         });
@@ -898,6 +925,31 @@ class AdminSaleController extends BaseController
                 'event' => $event,
                 'error' => $e->getMessage(),
             ]);
+        }
+    }
+
+    private function notifyCompletedSale(Sale $sale): void
+    {
+        $this->superAdminSaleNotificationService->notifySale($sale);
+
+        $settings = CommunicationSettings::current();
+
+        if (! $settings->sale_notifications_enabled) {
+            return;
+        }
+
+        $emails = [
+            ...$settings->getEmailsArray(),
+            config('inventory.approval_email'),
+        ];
+
+        $recipients = array_values(array_unique(array_filter(
+            array_map(fn ($email) => trim((string) $email), $emails),
+            fn (string $email): bool => filter_var($email, FILTER_VALIDATE_EMAIL) !== false,
+        )));
+
+        foreach ($recipients as $email) {
+            Notification::route('mail', $email)->notify(new NewSaleNotification($sale));
         }
     }
 }
