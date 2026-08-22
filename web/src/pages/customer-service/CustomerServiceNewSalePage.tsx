@@ -7,6 +7,7 @@ import { devicesApi } from '@/api/devices'
 import { toast } from 'sonner'
 import type { User as UserType, SubscriptionPlan, ProductOptions, Sale } from '@/types'
 import ReceiptModal from '@/components/sales/ReceiptModal'
+import { useAuthStore } from '@/stores/auth-store'
 
 interface NewCustomerFormData {
   name: string
@@ -40,6 +41,8 @@ const isNonNegativeNumberInput = (value: string) => {
 export default function CustomerServiceNewSalePage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const currentUser = useAuthStore((state) => state.user)
+  const inventoryScopeKey = `${currentUser?.id ?? 'anonymous'}:${currentUser?.branch_id ?? 'unassigned'}`
   const [cart, setCart] = useState<CartItem[]>([])
   const [selectedCustomer, setSelectedCustomer] = useState<UserType | null>(null)
   const [customerSearch, setCustomerSearch] = useState('')
@@ -83,14 +86,14 @@ export default function CustomerServiceNewSalePage() {
 
   // Fetch categories (simple list for dropdown)
   const { data: categoriesData, isLoading: categoriesLoading } = useQuery({
-    queryKey: ['device-categories-with-stock'],
+    queryKey: ['customer-service-device-categories-with-stock', inventoryScopeKey],
     queryFn: () => devicesApi.getCategories({ withStock: true }),
     staleTime: 1000 * 60 * 5, // 5 minutes
   })
 
   // Fetch product options based on selected filters (cascading data)
   const { data: productOptions, isLoading: productOptionsLoading } = useQuery({
-    queryKey: ['product-options', selectedCategoryId, selectedBrand, selectedModel],
+    queryKey: ['customer-service-product-options', inventoryScopeKey, selectedCategoryId, selectedBrand, selectedModel],
     queryFn: async () => {
       if (!selectedCategoryId) return null
 
@@ -165,8 +168,8 @@ export default function CustomerServiceNewSalePage() {
       queryClient.invalidateQueries({ queryKey: ['current-shift'] })
       queryClient.invalidateQueries({ queryKey: ['customer-service-dashboard'] })
       queryClient.invalidateQueries({ queryKey: ['customer-service-sales'] })
-      queryClient.invalidateQueries({ queryKey: ['product-options'] })
-      queryClient.invalidateQueries({ queryKey: ['device-categories-with-stock'] })
+      queryClient.invalidateQueries({ queryKey: ['customer-service-product-options'] })
+      queryClient.invalidateQueries({ queryKey: ['customer-service-device-categories-with-stock'] })
 
       toast.success('Sale created successfully')
       // Fetch the full sale details with items
@@ -454,7 +457,8 @@ export default function CustomerServiceNewSalePage() {
                     {cat.name} ({cat.available_count ?? 0} available)
                   </option>
                 ))}
-              </select>
+                </select>
+                <p className="mt-1 text-xs text-slate-500">Availability is limited to your assigned branch.</p>
             </div>
 
             {/* Brand Dropdown */}
@@ -478,6 +482,9 @@ export default function CustomerServiceNewSalePage() {
                     </option>
                   ))}
                 </select>
+                {!productOptionsLoading && brands.length === 0 && (
+                  <p className="mt-1 text-xs text-amber-700">No available products from this category are stocked in your branch.</p>
+                )}
               </div>
             )}
 

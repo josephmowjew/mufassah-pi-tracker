@@ -22,6 +22,7 @@ class DeviceCategoryController extends BaseController
     public function index(Request $request): JsonResponse
     {
         $query = DeviceCategory::query();
+        $branchId = $this->resolveStockBranchId($request);
 
         // Only show active categories for non-admin users
         if (! $request->user()?->hasRole(['super_admin', 'store_admin'])) {
@@ -30,13 +31,17 @@ class DeviceCategoryController extends BaseController
 
         // Optionally include device count
         if ($request->has('with_count')) {
-            $query->withCount('devices');
+            $query->withCount(['devices' => function ($deviceQuery) use ($branchId) {
+                $deviceQuery->when($branchId, fn ($query) => $query->where('branch_id', $branchId));
+            }]);
         }
 
         // Optionally include available (in-stock) device count for sales
         if ($request->boolean('with_stock')) {
-            $query->withCount(['devices as available_count' => function ($q) {
+            $query->withCount(['devices as available_count' => function ($q) use ($branchId) {
                 $q->whereIn('inventory_status', ['in_stock', 'returned']);
+                $q->whereNull('stock_transfer_request_id');
+                $q->when($branchId, fn ($query) => $query->where('branch_id', $branchId));
             }]);
         }
 
@@ -68,6 +73,17 @@ class DeviceCategoryController extends BaseController
     public function show(DeviceCategory $deviceCategory): JsonResponse
     {
         return $this->success(new DeviceCategoryResource($deviceCategory));
+    }
+
+    private function resolveStockBranchId(Request $request): ?int
+    {
+        $user = $request->user();
+
+        if ($user?->hasRole(['customer_service', 'store_admin'])) {
+            return $user->requiredBranchScopeId();
+        }
+
+        return null;
     }
 
     /**

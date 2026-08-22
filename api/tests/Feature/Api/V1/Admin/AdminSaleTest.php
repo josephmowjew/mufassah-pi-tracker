@@ -561,6 +561,42 @@ describe('Admin Sales', function () {
         expect($device->fresh()->inventory_status)->toBe(InventoryStatus::IN_STOCK);
     });
 
+    it('does not allow customer service to sell stock from another branch', function () {
+        $otherBranch = Branch::create([
+            'name' => 'Other Branch',
+            'code' => 'OTH',
+            'is_active' => true,
+        ]);
+
+        $customerService = User::factory()->create(['branch_id' => $this->branch->id]);
+        $customerService->assignRole('customer_service');
+
+        $device = Device::factory()->create([
+            'category_id' => $this->category->id,
+            'branch_id' => $otherBranch->id,
+            'brand' => 'Sony',
+            'model' => 'Bravia X85L',
+            'color' => 'Black',
+            'owner_id' => null,
+            'inventory_status' => InventoryStatus::IN_STOCK,
+        ]);
+
+        $this->actingAs($customerService)
+            ->postJson('/api/v1/customer-service/sales', salePayload($device, $this->customer, [
+                'items' => [[
+                    'device_id' => $device->id,
+                    'unit_price' => 1200,
+                    'discount' => 0,
+                    'tax' => 0,
+                ]],
+            ]))
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('items');
+
+        expect(Sale::count())->toBe(0)
+            ->and($device->fresh()->inventory_status)->toBe(InventoryStatus::IN_STOCK);
+    });
+
     it('scopes store admin sale listings to their branch', function () {
         $otherBranch = Branch::create([
             'name' => 'Other Branch',

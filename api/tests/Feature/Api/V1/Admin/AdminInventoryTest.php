@@ -282,6 +282,51 @@ describe('Product Options', function () {
             ->assertJsonPath('data.available_count', 1)
             ->assertJsonPath('data.selling_price', 500000);
     });
+
+    it('scopes customer service product availability to their assigned branch', function () {
+        $otherBranch = Branch::create([
+            'name' => 'Other Branch',
+            'code' => 'OTH',
+            'is_active' => true,
+        ]);
+
+        $this->customerService->update(['branch_id' => $this->branch->id]);
+
+        Device::factory()->create([
+            'category_id' => $this->category->id,
+            'branch_id' => $this->branch->id,
+            'brand' => 'Samsung',
+            'model' => 'QN90C',
+            'owner_id' => null,
+            'inventory_status' => InventoryStatus::IN_STOCK,
+        ]);
+
+        Device::factory()->create([
+            'category_id' => $this->category->id,
+            'branch_id' => $otherBranch->id,
+            'brand' => 'Samsung',
+            'model' => 'QN90C',
+            'owner_id' => null,
+            'inventory_status' => InventoryStatus::IN_STOCK,
+        ]);
+
+        $categoriesResponse = $this->actingAs($this->customerService)
+            ->getJson('/api/v1/device-categories?with_stock=1')
+            ->assertSuccessful();
+
+        $category = collect($categoriesResponse->json('data'))
+            ->firstWhere('id', $this->category->id);
+
+        expect($category)->not->toBeNull()
+            ->and($category['available_count'])->toBe(1);
+
+        $this->actingAs($this->customerService)
+            ->getJson("/api/v1/customer-service/inventory/product-options?category_id={$this->category->id}&brand=Samsung&model=QN90C")
+            ->assertSuccessful()
+            ->assertJsonPath('data.available_count', 1)
+            ->assertJsonPath('data.brands.0.count', 1)
+            ->assertJsonPath('data.models.0.count', 1);
+    });
 });
 
 describe('Inventory Branch Access', function () {
