@@ -1,7 +1,8 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Suspense, lazy } from 'react'
-import { Toaster } from 'sonner'
+import { Toaster, toast } from 'sonner'
+import { getApiErrorMessage } from '@/lib/utils'
 
 // Layouts
 import AuthLayout from '@/components/layout/AuthLayout'
@@ -16,6 +17,7 @@ import GuestRoute from '@/components/auth/GuestRoute'
 
 // Error boundary
 import { ErrorBoundary } from '@/components/ErrorBoundary'
+import { OnlineStatusBanner } from '@/components/OnlineStatusBanner'
 
 // Loading component
 import LoadingSpinner from '@/components/ui/LoadingSpinner'
@@ -98,6 +100,12 @@ const queryClient = new QueryClient({
       retry: 1,
       refetchOnWindowFocus: false,
     },
+    mutations: {
+      onError: (error) => {
+        const message = getApiErrorMessage(error, 'Something went wrong. Please try again.')
+        toast.error(message)
+      },
+    },
   },
 })
 
@@ -119,6 +127,7 @@ function NotFoundRedirect() {
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
+      <OnlineStatusBanner />
       <BrowserRouter>
         <StockTransferAlerts />
         <InventoryPinAlerts />

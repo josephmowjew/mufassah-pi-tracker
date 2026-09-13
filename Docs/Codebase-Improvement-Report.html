@@ -817,7 +817,7 @@ F.forEach(f => f.pri = f.pri || priority(f));
    Kept as a list rather than editing each finding object, so it is obvious at
    a glance which items are closed and trivial to extend.
    --------------------------------------------------------------------------- */
-const DONE_IDS = ['S-01','S-02','S-03','S-04','S-05','S-07','S-08','S-09','E-09','E-10','E-11','E-12','P-01','P-02'];
+const DONE_IDS = ['S-01','S-02','S-03','S-04','S-05','S-07','S-08','S-09','E-01','E-02','E-03','E-04','E-05','E-06','E-09','E-10','E-11','E-12','P-01','P-02','P-06'];
 F.forEach(f => { if (DONE_IDS.includes(f.id)) f.done = true; });
 
 const LAYER_NAME = {api:'API', web:'Web', tracker:'Tracker'};

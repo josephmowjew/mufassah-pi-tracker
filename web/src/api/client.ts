@@ -17,6 +17,7 @@ export function getStorageUrl(path: string | null | undefined): string {
 // Main API client for API requests
 export const apiClient = axios.create({
   baseURL: API_URL,
+  timeout: 10000,
   headers: {
     'Content-Type': 'application/json',
     Accept: 'application/json',
@@ -73,8 +74,18 @@ apiClient.interceptors.request.use(
 apiClient.interceptors.response.use(
   (response) => response,
   async (error: AxiosError) => {
+    // Network errors and timeouts have no response object
+    if (!error.response) {
+      if (error.code === 'ECONNABORTED') {
+        console.error('Request timed out')
+      } else {
+        console.error('Network error — you appear to be offline')
+      }
+      return Promise.reject(error)
+    }
+
     // Handle 401 Unauthorized - redirect to login
-    if (error.response?.status === 401) {
+    if (error.response.status === 401) {
       localStorage.removeItem('auth_token')
       localStorage.removeItem('auth-storage')
       // Only redirect if not already on auth pages
@@ -85,7 +96,7 @@ apiClient.interceptors.response.use(
     }
 
     // Handle 403 Forbidden
-    if (error.response?.status === 403) {
+    if (error.response.status === 403) {
       // An unverified email is a recoverable state, not a permission denial: the
       // API returns EMAIL_NOT_VERIFIED so the UI can offer to resend the link
       // rather than showing a dead end. Pair with authApi.resendVerification().
@@ -97,18 +108,34 @@ apiClient.interceptors.response.use(
     }
 
     // Handle 419 CSRF token mismatch - refetch and retry once
-    if (error.response?.status === 419) {
+    if (error.response.status === 419) {
+      const originalConfig = error.config as InternalAxiosRequestConfig & { _retryCount?: number }
+      if (!originalConfig) return Promise.reject(error)
+
+      // Prevent infinite retry loops
+      if (originalConfig._retryCount) {
+        return Promise.reject(error)
+      }
+      originalConfig._retryCount = 1
+
       csrfInitialized = false
       console.warn('CSRF token mismatch, refetching...')
+
+      try {
+        await initializeCsrf()
+        return apiClient.request(originalConfig)
+      } catch (retryError) {
+        return Promise.reject(retryError)
+      }
     }
 
     // Handle 422 Validation errors
-    if (error.response?.status === 422) {
+    if (error.response.status === 422) {
       return Promise.reject(error)
     }
 
     // Handle 500 Server errors
-    if (error.response?.status === 500) {
+    if (error.response.status === 500) {
       console.error('Server error occurred')
     }
 
