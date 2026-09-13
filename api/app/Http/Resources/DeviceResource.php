@@ -19,8 +19,22 @@ class DeviceResource extends JsonResource
             'description' => $this->description,
             'color' => $this->color,
             'purchase_date' => $this->purchase_date?->toDateString(),
-            'purchase_price' => $this->purchase_price,
-            'purchase_location' => $this->purchase_location,
+
+            // Cost and margin are internal: purchase_price doubles as the
+            // wholesale cost for inventory-sourced devices, and the admin
+            // inventory screens derive margin from it. Null rather than omitted so
+            // the field keeps its shape and clients render "not available"
+            // naturally instead of tripping over a missing key.
+            'purchase_price' => $this->when(
+                $request->user()?->can('view-device-costs'),
+                fn () => $this->purchase_price,
+                null,
+            ),
+            'purchase_location' => $this->when(
+                $request->user()?->can('view-device-costs'),
+                fn () => $this->purchase_location,
+                null,
+            ),
             'inventory_batch_id' => $this->inventory_batch_id,
             'branch_id' => $this->branch_id,
             'status' => [

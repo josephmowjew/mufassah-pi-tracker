@@ -1,6 +1,7 @@
 <?php
 
 use App\Enums\DeviceStatus;
+use App\Models\Branch;
 use App\Models\Device;
 use App\Models\DeviceCategory;
 use App\Models\DeviceOwnershipHistory;
@@ -578,5 +579,57 @@ describe('Device Ownership History', function () {
                     '*' => ['id', 'from_user', 'to_user', 'transfer_reason', 'transferred_at'],
                 ],
             ]);
+    });
+});
+
+describe('Device Cost Visibility', function () {
+    it('hides what the business paid from the device owner', function () {
+        $owner = User::factory()->create();
+        $owner->assignRole('customer');
+        $device = Device::factory()->for($owner, 'owner')->create([
+            'purchase_price' => 1250000,
+            'purchase_location' => 'Dubai',
+        ]);
+
+        actingAs($owner, 'sanctum')
+            ->getJson(apiUrl("devices/{$device->id}"))
+            ->assertOk()
+            // The key is present but null, so the field keeps its shape for clients.
+            ->assertJsonPath('data.purchase_price', null)
+            ->assertJsonPath('data.purchase_location', null);
+    });
+
+    it('hides what the business paid from customer service staff', function () {
+        Role::firstOrCreate(['name' => 'customer_service', 'guard_name' => 'api']);
+        $branch = Branch::create(['name' => 'Cost Branch', 'code' => 'CST', 'is_active' => true]);
+
+        $staff = User::factory()->create(['branch_id' => $branch->id]);
+        $staff->assignRole('customer_service');
+        $device = Device::factory()->create([
+            'branch_id' => $branch->id,
+            'purchase_price' => 1250000,
+            'purchase_location' => 'Dubai',
+        ]);
+
+        actingAs($staff, 'sanctum')
+            ->getJson(apiUrl("devices/{$device->id}"))
+            ->assertOk()
+            ->assertJsonPath('data.purchase_price', null)
+            ->assertJsonPath('data.purchase_location', null);
+    });
+
+    it('shows what the business paid to an admin', function () {
+        $admin = User::factory()->create();
+        $admin->assignRole('super_admin');
+        $device = Device::factory()->create([
+            'purchase_price' => 1250000,
+            'purchase_location' => 'Dubai',
+        ]);
+
+        actingAs($admin, 'sanctum')
+            ->getJson(apiUrl("devices/{$device->id}"))
+            ->assertOk()
+            ->assertJsonPath('data.purchase_price', '1250000.00')
+            ->assertJsonPath('data.purchase_location', 'Dubai');
     });
 });

@@ -2,8 +2,10 @@
 
 namespace App\Providers;
 
+use App\Models\User;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
 
@@ -23,6 +25,28 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         $this->configureRateLimiting();
+        $this->configureGates();
+    }
+
+    /**
+     * Define application gates.
+     */
+    protected function configureGates(): void
+    {
+        // What the business paid for a device is competitive information. The
+        // same DeviceResource is returned to customers on their own device
+        // endpoints and to customer-service staff, so these fields used to reach
+        // every viewer regardless of role.
+        //
+        // Deliberately role-only rather than device-aware: DevicePolicy's branch
+        // check goes through branchScopeId(), which queries the database on every
+        // call, so a per-device check would be an N+1 across a device list.
+        // Branch scope is already enforced by DevicePolicy::view and by the admin
+        // controllers' own query scoping, so anyone who can see a device at all
+        // is already in the right branch.
+        Gate::define('view-device-costs', function (User $user): bool {
+            return $user->hasAnyRole(['super_admin', 'store_admin']);
+        });
     }
 
     /**
