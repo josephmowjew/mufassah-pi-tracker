@@ -1,0 +1,979 @@
+<!DOCTYPE html>
+<html lang="en" data-page-node-id="QBr67gY5nElDYhBbQrkx9S">
+<head data-page-node-id="86eMBl5pgeDJSSgNyKv1Pj">
+<meta charset="UTF-8" data-page-node-id="grbfbTrljqF3A7ROPW0FZB">
+<meta name="viewport" content="width=device-width, initial-scale=1.0" data-page-node-id="jfTLIr7QMuatl4XuPBP4gk">
+<title>Mufasah Device Tracking — Codebase Improvement Report</title>
+<style>
+  :root{
+    --bg:#f6f7f9; --panel:#ffffff; --ink:#0f172a; --ink-2:#334155; --muted:#64748b;
+    --line:#e2e8f0; --line-2:#cbd5e1;
+    --crit:#b91c1c; --crit-bg:#fef2f2; --crit-line:#fecaca;
+    --high:#c2410c; --high-bg:#fff7ed; --high-line:#fed7aa;
+    --med:#a16207; --med-bg:#fefce8; --med-line:#fef08a;
+    --low:#475569; --low-bg:#f8fafc; --low-line:#e2e8f0;
+    --accent:#0d6e6e; --accent-2:#0f766e; --accent-bg:#f0fdfa;
+    --code-bg:#f1f5f9;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+    font-size:15px; line-height:1.6; -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1180px; margin:0 auto; padding:0 24px 96px}
+  code, .mono{font-family:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace; font-size:.86em}
+  code{background:var(--code-bg); padding:1px 5px; border-radius:4px; color:#0f172a; white-space:nowrap}
+
+  /* header */
+  header{background:linear-gradient(160deg,#0f172a 0%,#134e4a 100%); color:#fff; padding:52px 0 44px; margin-bottom:32px}
+  header .wrap{padding-bottom:0}
+  .eyebrow{font-size:12px; letter-spacing:.14em; text-transform:uppercase; color:#5eead4; font-weight:600; margin-bottom:14px}
+  h1{margin:0 0 12px; font-size:34px; line-height:1.2; letter-spacing:-.02em; font-weight:700}
+  .sub{color:#cbd5e1; font-size:16px; max-width:760px; margin:0}
+  .meta{margin-top:22px; display:flex; flex-wrap:wrap; gap:10px}
+  .chip{background:rgba(255,255,255,.1); border:1px solid rgba(255,255,255,.18); padding:5px 12px; border-radius:999px; font-size:12.5px; color:#e2e8f0}
+
+  /* stats */
+  .stats{display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:14px; margin-bottom:36px}
+  .stat{background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:18px 20px}
+  .stat .n{font-size:28px; font-weight:700; letter-spacing:-.02em; line-height:1.1}
+  .stat .l{font-size:12.5px; color:var(--muted); margin-top:5px; text-transform:uppercase; letter-spacing:.05em; font-weight:600}
+  .stat.crit .n{color:var(--crit)} .stat.high .n{color:var(--high)}
+  .stat.med .n{color:var(--med)} .stat.teal .n{color:var(--accent)}
+
+  h2{font-size:23px; margin:52px 0 6px; letter-spacing:-.015em; font-weight:700}
+  h2 .num{color:var(--accent); font-weight:700}
+  .lede{color:var(--ink-2); margin:0 0 22px; max-width:860px}
+
+  /* callout */
+  .callout{background:var(--panel); border:1px solid var(--line); border-left:4px solid var(--accent); border-radius:10px; padding:20px 24px; margin:22px 0}
+  .callout.warn{border-left-color:var(--crit); background:var(--crit-bg); border-color:var(--crit-line)}
+  .callout h3{margin:0 0 10px; font-size:16px}
+  .callout p{margin:0 0 10px} .callout p:last-child{margin-bottom:0}
+  .callout ol{margin:8px 0 0; padding-left:20px} .callout li{margin-bottom:9px}
+
+  /* matrix */
+  .matrix{display:grid; grid-template-columns:96px repeat(3,1fr); gap:10px; margin:26px 0 8px}
+  .mx-corner,.mx-head,.mx-side{font-size:11.5px; font-weight:700; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); display:flex; align-items:center; justify-content:center; text-align:center}
+  .mx-side{justify-content:flex-end; padding-right:6px}
+  .mx-cell{background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:12px 12px 14px; min-height:118px; display:flex; flex-direction:column; gap:8px}
+  .mx-cell .top{display:flex; align-items:baseline; gap:7px}
+  .mx-cell .cnt{font-size:24px; font-weight:700; line-height:1; letter-spacing:-.02em}
+  .mx-cell .lbl{font-size:10.5px; font-weight:700; letter-spacing:.05em; text-transform:uppercase; color:var(--muted)}
+  .mx-cell.p1{background:var(--crit-bg); border-color:var(--crit-line)}
+  .mx-cell.p2{background:var(--high-bg); border-color:var(--high-line)}
+  .mx-cell.p3{background:var(--med-bg); border-color:var(--med-line)}
+  .mx-cell.p4{background:var(--low-bg)}
+  .mx-ids{display:flex; flex-wrap:wrap; gap:4px}
+  .mx-id{font-family:ui-monospace,Menlo,monospace; font-size:10.5px; font-weight:700; padding:2px 6px; border-radius:4px; background:rgba(15,23,42,.07); color:var(--ink-2); cursor:pointer; border:1px solid transparent}
+  .mx-id:hover{border-color:var(--accent); color:var(--accent)}
+  .mx-empty{font-size:12px; color:var(--muted); font-style:italic}
+
+  /* controls */
+  .controls{position:sticky; top:0; z-index:20; background:rgba(246,247,249,.94); backdrop-filter:blur(8px); border-bottom:1px solid var(--line); padding:14px 0; margin:0 0 26px}
+  .ctrl-row{display:flex; flex-wrap:wrap; gap:8px; align-items:center}
+  .ctrl-label{font-size:11.5px; font-weight:700; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); margin-right:2px}
+  button.f{background:var(--panel); border:1px solid var(--line-2); color:var(--ink-2); padding:6px 13px; border-radius:999px; font-size:13px; font-weight:600; cursor:pointer; font-family:inherit; transition:.12s}
+  button.f:hover{border-color:var(--accent); color:var(--accent)}
+  button.f.on{background:var(--accent); border-color:var(--accent); color:#fff}
+  .spacer{flex:1}
+  #count{font-size:13px; color:var(--muted); font-weight:600}
+
+  /* finding cards */
+  .group{margin-bottom:10px}
+  .finding{background:var(--panel); border:1px solid var(--line); border-left:4px solid var(--line-2); border-radius:10px; padding:18px 22px; margin-bottom:12px}
+  .finding[data-sev="Critical"]{border-left-color:var(--crit)}
+  .finding[data-sev="High"]{border-left-color:var(--high)}
+  .finding[data-sev="Medium"]{border-left-color:var(--med)}
+  .finding[data-sev="Low"]{border-left-color:var(--line-2)}
+  .f-head{display:flex; align-items:flex-start; gap:12px; flex-wrap:wrap; margin-bottom:9px}
+  .f-id{font-family:ui-monospace,Menlo,monospace; font-size:12px; font-weight:700; color:var(--accent); background:var(--accent-bg); padding:3px 8px; border-radius:6px; flex-shrink:0}
+  .f-title{font-size:16.5px; font-weight:700; margin:0; flex:1; min-width:260px; letter-spacing:-.01em}
+  .badges{display:flex; gap:6px; flex-wrap:wrap; flex-shrink:0}
+  .badge{font-size:11px; font-weight:700; padding:3px 9px; border-radius:5px; text-transform:uppercase; letter-spacing:.04em; white-space:nowrap}
+  .b-crit{background:var(--crit-bg); color:var(--crit); border:1px solid var(--crit-line)}
+  .b-high{background:var(--high-bg); color:var(--high); border:1px solid var(--high-line)}
+  .b-med{background:var(--med-bg); color:var(--med); border:1px solid var(--med-line)}
+  .b-low{background:var(--low-bg); color:var(--low); border:1px solid var(--low-line)}
+  .b-eff{background:#eef2ff; color:#3730a3; border:1px solid #c7d2fe}
+  .b-p1{background:var(--crit); color:#fff} .b-p2{background:var(--high); color:#fff}
+  .b-p3{background:var(--med); color:#fff} .b-p4{background:var(--low); color:#fff}
+  .b-done{background:#dcfce7; color:#166534; border:1px solid #86efac}
+  .finding[data-done="1"]{border-left:3px solid #22c55e}
+
+  .f-body{display:grid; gap:11px}
+  .f-row{display:grid; grid-template-columns:104px 1fr; gap:12px; align-items:start}
+  .f-key{font-size:11.5px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); padding-top:2px}
+  .f-val{margin:0; color:var(--ink-2)}
+  .f-val.benefit{color:var(--ink); background:var(--accent-bg); border:1px solid #ccfbf1; border-radius:8px; padding:10px 13px; margin:0}
+  .ev{background:#f8fafc; border:1px solid var(--line); border-radius:8px; padding:10px 13px; overflow-x:auto; margin:0}
+  .ev code{background:none; padding:0; white-space:pre; font-size:12.5px; color:#0f172a; line-height:1.65; display:block}
+  .ev .path{color:var(--accent); font-weight:600; display:block; margin-bottom:4px; font-size:12px}
+  .ev .cmt{color:#64748b}
+
+  footer{margin-top:56px; padding-top:22px; border-top:1px solid var(--line); color:var(--muted); font-size:13px}
+  .legend{display:flex; flex-wrap:wrap; gap:18px; margin-top:10px; font-size:12.5px; color:var(--muted)}
+  .hidden{display:none !important}
+  @media(max-width:820px){
+    .matrix{grid-template-columns:1fr; gap:8px}
+    .mx-corner,.mx-head{display:none}
+    .mx-side{justify-content:flex-start}
+    .f-row{grid-template-columns:1fr; gap:4px}
+    h1{font-size:26px}
+  }
+</style>
+</head>
+<body data-page-node-id="e2YAR4jSjEjbuQPbdPTylT">
+
+<header data-page-node-id="D64poNLlAhFCoHbv1bFTx6">
+  <div class="wrap" data-page-node-id="o4lxlp3Lz9PIob8ylzT8xm">
+    <div class="eyebrow" data-page-node-id="mh6tpT8G0z7TvXKWknE8Vv">Engineering Review</div>
+    <h1 data-page-node-id="O2FXfCwFfE3ElghofTA29a">Mufasah Device Tracking<br data-page-node-id="DmrkU3O5MgV26sQ0CJrxXE">Codebase Improvement Report</h1>
+    <p class="sub" data-page-node-id="fxkYVvBCpYRHYoKSTUYODU">A prioritised plan to improve performance, reliability, maintainability and end-user experience across the Laravel API, the React web app, and the Raspberry Pi GPS tracker.</p>
+    <div class="meta" data-page-node-id="iQbxMOHX8JB9V2X2a1xcwc">
+      <span class="chip" data-page-node-id="TLeY0goEFdaQ83SRCZeZY3">api/ — Laravel 12 · MySQL · Sanctum</span>
+      <span class="chip" data-page-node-id="0GaPksjTPjgDOHB7Z0d2xb">web/ — React 19 · Vite · React Query</span>
+      <span class="chip" data-page-node-id="EsTYSW9mpB97WdzcuWuD8Y">mufassah-tracker/ — Python · systemd · SQLite</span>
+      <span class="chip" data-page-node-id="bbMbt9VnXpzRGI5wqjuUf7">Reviewed 12 Sep 2026</span>
+    </div>
+  </div>
+</header>
+
+<div class="wrap" data-page-node-id="xeEvxZcdxcEwkgQlIARroP">
+
+  <div class="stats" id="stats" data-page-node-id="1Y04khda7gOv8x4B6HgNN5"></div>
+
+  <div class="callout warn" data-page-node-id="wHX3SIvZyhqslXFByR5jsA">
+    <h3 data-page-node-id="UESxGKOAnGzhsnlC9aav43">Read this first — five defects that are live right now</h3>
+    <p data-page-node-id="ktOwFwjfsB7ZuD77iFW5xF">These are not style opinions. Each was confirmed in source and each one either breaks a headline feature or exposes the system to abuse.</p>
+    <ol data-page-node-id="0UeYNxsIWAqqxRAq1Q0VnZ">
+      <li data-page-node-id="G8uqQvdaHXOZR9UyvgEGvl"><b data-page-node-id="aBsLdINRhQj57xOnfheeQj">Geofence alerts never fire.</b> The entry/exit event write uses column names that don't exist on the model, and the notification is called with the wrong number of arguments. The INSERT fails and, even if it didn't, the constructor would throw. This is the core theft-protection feature.</li>
+      <li data-page-node-id="J4BHU8sfH98zwhY8TwGKV1"><b data-page-node-id="6KFuOyDf9d046BwZfAERKS">Suspended accounts can still log in.</b> <code data-page-node-id="joxcj1rA2IWgVZey2xo9eC">suspended_at</code> is written by the admin suspend action and never read by anything. Suspension currently does nothing.</li>
+      <li data-page-node-id="MmC5bY7zeqZqRVNdvGO0c8"><b data-page-node-id="TePNi9hbTU5JwgGG8BoKzk">The PayChangu webhook fails open.</b> If <code data-page-node-id="6zALkP6NS1xV4gBre7SnpZ">PAYCHANGU_WEBHOOK_SECRET</code> is unset, the signature check is skipped entirely — any unauthenticated caller can mark payments as completed and activate subscriptions.</li>
+      <li data-page-node-id="vZDeglbhvgxZ1ccnCzYiFl"><b data-page-node-id="uve1gngcVUEAwOGONu1sgR">The device credential file is committed to git.</b> <code data-page-node-id="C3RHUIY1tbduLmO67DyRfx">mufassah-tracker/config.env</code> is tracked, and the README instructs operators to edit it in place. The moment anyone does, the live device token enters git history.</li>
+      <li data-page-node-id="I7CG6nzdUmV2TpfOQdFVUA"><b data-page-node-id="5SEHotf6HhLtUz0DEzN7R9">Anonymous visitors get bounced to the staff login page.</b> A notification component is mounted outside every route guard on the public marketing site, fires an unauthenticated request, receives a 401, and the interceptor hard-redirects to <code data-page-node-id="HW7R0SnGkWxBZIp6fj8ZJD">/login</code>.</li>
+    </ol>
+  </div>
+
+  <h2 data-page-node-id="fJKWCvEspfoE6qY6ugvd4n"><span class="num" data-page-node-id="yjG9A5f3TvAwmIimk0vZJR">01</span> &nbsp;How to read this report</h2>
+  <p class="lede" data-page-node-id="yKvboVxmUOuPXEswalHUYg">Every finding carries an <b data-page-node-id="pP3GuXj3wUziY9VunOzYDg">Impact</b> rating (what it costs users or the business) and an <b data-page-node-id="p9uMZtD2FHiE9c9Pk8K6SB">Effort</b> rating (what it costs to fix). Priority is derived from the two together — high impact at low effort is done first, regardless of which layer it lives in.</p>
+
+  <div class="matrix" id="matrix" data-page-node-id="ZUcrJ9iZn1nHo4iwL7jQXR"></div>
+
+  <div class="legend" data-page-node-id="034nVexN7CEjTst9VHgcT9">
+    <span data-page-node-id="opPN3ljNwcNEtGjNe1a44f"><b data-page-node-id="yAexdCpMKc1ey2nV3XCHdn">Effort S</b> — hours, localised change, low regression risk</span>
+    <span data-page-node-id="kTDdflOnTxV2eIUvpoFT4H"><b data-page-node-id="8xVDzN6DEYgr8iAiAe7wFz">Effort M</b> — 1–3 days, touches multiple files, needs testing</span>
+    <span data-page-node-id="FUtcvxOkxQMu7GjCRnpyxt"><b data-page-node-id="iPwHbryKvPABgydqzS8pV7">Effort L</b> — a week or more, architectural, needs sequencing</span>
+  </div>
+
+  <div class="callout" data-page-node-id="W3lARYFvEElg3VRagcRv6f">
+    <h3 data-page-node-id="AMK2KoXWnCGD7IBpTtSH6n">The shape of the problem</h3>
+    <p data-page-node-id="dsVyPrjBPKuv8hyCp1xump">The backend is functionally broad — 40+ models, 50+ controllers, 375 tests — but its <b data-page-node-id="xORh8GS20JvbhTxiuOqtIu">integration seams are untested</b>. The geofence bug survived precisely because the test builds <code data-page-node-id="J9o0y9kkSSyosG7sA0ZqAK">GeofenceEvent</code> rows with a factory and never exercises the real <code data-page-node-id="DQVErET7YpFD1Izaf5PFDH">POST /iot/location</code> path. That's the pattern: unit coverage is good, cross-layer wiring is not.</p>
+    <p data-page-node-id="JAk5s6uwEXEwAPRPQq2gU5">The frontend has strong bones — every one of 49 routes is lazy-loaded, TypeScript is strict with almost no <code data-page-node-id="oLaw2Ts96tlHm9WUogO8Uj">any</code>, and there's no <code data-page-node-id="6AO53f57U2NDge6FseMHXK">dangerouslySetInnerHTML</code> anywhere. Its problem is the opposite: a well-built UI kit and error helper exist but are used in 6 files out of ~128, so consistency decays screen by screen.</p>
+    <p data-page-node-id="h3swcDypQOUzBUTAEsAu1Y">The tracker is a single 691-line file with no tests, deployed to hardware you can't easily reach. It has no idempotency keys, so a dropped response after a successful write produces duplicate points; and a permanent 401 is retried forever, which eventually overflows the buffer and silently deletes history.</p>
+  </div>
+
+  <div class="controls" id="controls" data-page-node-id="QNI5RC8ue1AbteKUtcui4i">
+    <div class="ctrl-row" data-page-node-id="AL4o19AXAhll5UlBvAmlKe">
+      <span class="ctrl-label" data-page-node-id="hhB5dtouT7Ngn5jczcLBE1">Layer</span>
+      <button class="f on" data-f="layer" data-v="all" data-page-node-id="9IZtwnEuWNbAycWKOm71PX">All</button>
+      <button class="f" data-f="layer" data-v="api" data-page-node-id="C94DhwAdPiR0m8LflFvHW6">API</button>
+      <button class="f" data-f="layer" data-v="web" data-page-node-id="4nwGr0Rxlrj0FodCdfcO46">Web</button>
+      <button class="f" data-f="layer" data-v="tracker" data-page-node-id="MtEmhiqytyDIttISLraCzD">Tracker</button>
+    </div>
+    <div class="ctrl-row" style="margin-top:9px" data-page-node-id="ka4QdyhA2dMZ56gZwwDKC1">
+      <span class="ctrl-label" data-page-node-id="a5QYx86MJMtll1p9QMur0m">Priority</span>
+      <button class="f on" data-f="pri" data-v="all" data-page-node-id="dfusL0IcSa5hawIMAl90va">All</button>
+      <button class="f" data-f="pri" data-v="P1" data-page-node-id="5xrLd2CcCdQjzH6GbQlB8B">P1 · Do now</button>
+      <button class="f" data-f="pri" data-v="P2" data-page-node-id="LzxxDDjaanFUCAOSasPjVi">P2 · Schedule</button>
+      <button class="f" data-f="pri" data-v="P3" data-page-node-id="xJuJi4ItSXTQWA8IENYZZ2">P3 · Plan</button>
+      <button class="f" data-f="pri" data-v="P4" data-page-node-id="NP5cAbLTqOA6JLhDmX4nmZ">P4 · Backlog</button>
+      <span class="spacer" data-page-node-id="NgVIhTFdPlzLPVyjAxJpjW"></span>
+      <span id="count" data-page-node-id="wmaEeU7pEu6YA3JJjFMmnM"></span>
+    </div>
+  </div>
+
+  <div id="findings" data-page-node-id="xwfc6QQ1JQgKrBmaWFmQtm"></div>
+
+  <h2 data-page-node-id="TBqqJSKwnj9HlP3pHn3Kv4"><span class="num" data-page-node-id="pQYrOrfbDU0Cey1zqcMJeP">02</span> &nbsp;Suggested sequencing</h2>
+  <p class="lede" data-page-node-id="W9KULycEUb9mXLhuzFRcLW">The order matters more than the individual fixes. Phase 1 is deliberately small: it closes live holes without touching architecture, so it can ship inside a day and be verified immediately.</p>
+
+  <div class="callout" data-page-node-id="3EJUECQmjf6suzT5BOFLZw">
+    <h3 data-page-node-id="HnI7C5FxIwtyTIJyIBKipq">Phase 1 — Close the live holes (about a day)</h3>
+    <p data-page-node-id="qM0msoFlVVufsimakS84aZ">Fix the geofence write and notification call, gate login on <code data-page-node-id="sFAI46i2s6mHHR0IfrVvrh">suspended_at</code>, make the webhook signature check fail closed, untrack <code data-page-node-id="Ed1TI3HN7jTxECdDBORubb">config.env</code> and rotate the token, and guard the global notification component behind <code data-page-node-id="ULCFD46jG7ZJ4bAcbVIJVr">isAuthenticated</code>. Add a regression test that drives the real <code data-page-node-id="Few9J4JhzzHVOeHTcqMCT4">POST /iot/location</code> endpoint.</p>
+    <p data-page-node-id="Lg8qYlcCNrDil7RtAnGSwZ"><b data-page-node-id="YdhloEykiBJFN11z6dhmie">Why first:</b> every item is a localised change with no schema migration and no API contract change. Users see the geofence feature start working the same day.</p>
+  </div>
+  <div class="callout" data-page-node-id="brapSP4eN57ZnBcAMeuVeH">
+    <h3 data-page-node-id="Q4BTBZIlehGZMw9QlAmvcX">Phase 2 — Stop the self-inflicted load (2–4 days)</h3>
+    <p data-page-node-id="aHtwORxolSwsibQjUhVAzm">Replace the per-device polling fan-out on the tracking pages with a single batched endpoint; cap <code data-page-node-id="xMaQAMv3eZXzbDyLlA9a1f">per_page</code> everywhere and add the composite indexes; collapse the branch dropdowns onto one canonical query; push the report aggregations into SQL.</p>
+    <p data-page-node-id="nQdTvTOrPbp6hWWAyQGaew"><b data-page-node-id="yXvoxPoTwNxutyNnhJA1ky">Why second:</b> the tracking pages currently generate over a hundred requests per client per 30 seconds. That's a capacity ceiling on the whole platform, and it also happens to be the single biggest perceived-speed win for customers.</p>
+  </div>
+  <div class="callout" data-page-node-id="3wT6qMERLDmE8ShkUf6vLs">
+    <h3 data-page-node-id="BwBks1jp27Q3t5BmgHhDF3">Phase 3 — Make failures visible (1 week)</h3>
+    <p data-page-node-id="STYdboWkalCsOmJsOzFQTg">Add the missing <code data-page-node-id="metSa7UZ1fYMEJ6lH791BJ">onError</code> handlers, a real 419 retry, an axios timeout, an offline banner, and network-aware error messages. Add a global exception handler that logs and never leaks provider text.</p>
+    <p data-page-node-id="1UWyF5LIos1FbtCOlLolBc"><b data-page-node-id="Vx0N7IRZZHO0Gl8CPPEvmd">Why third:</b> these are cheap individually but there are many of them, and they depend on Phase 1 not changing the error contract underneath them.</p>
+  </div>
+  <div class="callout" data-page-node-id="0ys4Y4eZHBh8mAbqKT0Eck">
+    <h3 data-page-node-id="J4MGHg3PBDr2oXccpXkdWj">Phase 4 — Pay down the structure (ongoing, behind feature work)</h3>
+    <p data-page-node-id="mKai2C9Zl4XrCKhBvRmhCN">Adopt the UI kit and the shared error helper across all screens, extract services from the fat controllers, delete the empty scaffolding directories, split the monolithic pages, and add tests to the community bounty flows before the next money-touching change.</p>
+    <p data-page-node-id="IksNCcqHNoopqFmgDABXCw"><b data-page-node-id="tHgKrSitHE9x1Brffjf3Gp">Why last:</b> these are real but they don't change what a user experiences this week. Doing them first would delay the fixes that do.</p>
+  </div>
+
+  <h2 data-page-node-id="PkfUKBWufGIgBcEWw3W1HU"><span class="num" data-page-node-id="zh7WWlb15BRhoRwTcHSlwH">03</span> &nbsp;What's already working well</h2>
+  <p class="lede" data-page-node-id="0u3VDVYKP73WRTdXACfNBa">Worth stating plainly, because these are the things the rest of the codebase should be pulled toward — not replaced.</p>
+  <div class="callout" data-page-node-id="AOaCA6YPXqBcAhW4A1LIdq">
+    <ul style="margin:0; padding-left:20px" data-page-node-id="As5dpyaSHzxx0EDdCDLEFe">
+      <li data-page-node-id="nj5LIF4KS95ic8HiAZxA4Z"><b data-page-node-id="9iavNpNySLzsuyUNEPBrdG">Route-level code splitting is complete.</b> All 49 pages use <code data-page-node-id="HGd3FBCqTkyE8TIJuhypob">React.lazy</code>, so Leaflet and Recharts only load on the routes that need them. This is better than most production React apps.</li>
+      <li data-page-node-id="1WG8qu1JjCegGzFLIKtdX0"><b data-page-node-id="FZlpeJZ1fhxtvByJAnF1vf">TypeScript discipline.</b> <code data-page-node-id="7KHSN5aZoEBySvGLjEKisE">strict</code>, <code data-page-node-id="Rd9HI0zTs2MvprA6CSF8CG">noUnusedLocals</code>, <code data-page-node-id="OL42bbUfwwKmg2AKc0DSlG">noUnusedParameters</code> are all on, and there are only about ten real <code data-page-node-id="sPtrAUSxvVLEcpqNeQ0FaZ">any</code> usages across 128 files.</li>
+      <li data-page-node-id="PMLCLIqGGZ5cqkdqy81H4o"><b data-page-node-id="i1ICuCnaES93U3cSzLxIPd">Secrets are correctly handled on the API.</b> <code data-page-node-id="zJZYVNU5K0GVvF4wzGrCF6">UserResource</code> hides password, national ID and 2FA secret; <code data-page-node-id="XRF0CVEvfU4LJV79NmBY0H">IotModule</code> hides <code data-page-node-id="mgMufPqOqkHh0gvOS7Mypi">api_token</code> behind a hashed cast. The token is never logged anywhere in the tracker either.</li>
+      <li data-page-node-id="Q6sRA2tf1FPM91t47WlzYu"><b data-page-node-id="lUyFKHYwDOYy60CJF14xQs">The tracker's core resilience design is sound.</b> SQLite offline buffering, GPS accuracy gating, connectivity pre-checks, graceful shutdown, and a heartbeat thread are the right architecture for a field device — the defects are in the edges, not the design.</li>
+      <li data-page-node-id="GlPHVGMNYUul3XvY6XeAKs"><b data-page-node-id="z289yCmLwqBzXXEgx87Sqt"><code data-page-node-id="qwf9eDDesvAy4SGV6cgtUk">useFamilies.ts</code> has a proper query-key factory.</b> It's the one place doing it right, and it's the pattern the other 373 inline query keys should follow.</li>
+      <li data-page-node-id="q4G1N2ACxUeIv37qTmCfSQ"><b data-page-node-id="xFvShsuHbnRsCHbOs4TS9e"><code data-page-node-id="CjgBDA5tGE1MJbALmMb47i">DeviceDetailPage.tsx</code> is the model screen</b> — real "not found" state, confirm dialog, toast feedback. New screens should be built by copying it.</li>
+    </ul>
+  </div>
+
+  <footer data-page-node-id="u8jqYt1AgWzb0WKZi0u2kf">
+    <div data-page-node-id="TiZhK6eaqTjTWpVC6Y4Y29">Generated from a full read of <code data-page-node-id="cpHpVBLzkO5FqSfqP2exFG">api/app</code>, <code data-page-node-id="qu4U6Hcze84w5ZsIPGoMWU">api/routes</code>, <code data-page-node-id="RAeiMwTChyLkXP8rzcSWNe">web/src</code> and <code data-page-node-id="nEwSVolcC5XLEkkIXlS4PH">mufassah-tracker</code>. Every finding cites a file and line number that was verified in the working tree.</div>
+    <div class="legend" style="margin-top:12px" data-page-node-id="5xvbT4cKvX1otHnnhCmsRF">
+      <span data-page-node-id="n7RS8z3PhF6QByLKBFqTDX"><b data-page-node-id="bcpDhDYmk2HAz2uFU7hwq1">Impact</b> — Critical (feature broken or exploitable) · High (user-visible harm or capacity risk) · Medium (degrades quality or trust) · Low (polish)</span>
+    </div>
+  </footer>
+</div>
+
+<script>
+const CATS = {
+  sec:   {name:'Security &amp; Correctness', num:'04'},
+  perf:  {name:'Performance Optimisation', num:'05'},
+  err:   {name:'Error Handling &amp; Reliability', num:'06'},
+  read:  {name:'Code Readability &amp; Maintainability', num:'07'},
+  ui:    {name:'User Interface &amp; Experience', num:'08'},
+  flow:  {name:'Workflow Simplification', num:'09'}
+};
+
+// layer: api | web | tracker ; cat: sec|perf|err|read|ui|flow
+// sev: Critical|High|Medium|Low ; eff: S|M|L
+const F = [
+/* ============ SECURITY & CORRECTNESS ============ */
+{id:'S-01', cat:'sec', layer:'api', sev:'Critical', eff:'S', title:'Suspended accounts can still log in',
+ prob:'The admin "suspend" action writes <code>suspended_at</code>, but nothing in the application ever reads it. The login flow only checks the email and the password hash. A suspended user simply signs in again and receives a fresh token.',
+ ev:[{p:'api/app/Http/Controllers/Api/V1/Admin/AdminUserController.php:253', c:"$user->update(['suspended_at' => now()]);   // written here and at :270\n// grep across app/, routes/, database/ finds NO read of suspended_at"},
+     {p:'api/app/Http/Controllers/Api/V1/Auth/AuthController.php:74-80', c:"$user = User::where('email', $request->email)->first();\nif (! $user || ! Hash::check($request->password, $user->password)) {\n    // no suspended_at check anywhere"}],
+ fix:'Check <code>suspended_at</code> in <code>LoginRequest::authenticate()</code> or the login controller and reject with a clear 403 message. Add the same guard to the token-refresh and password-reset paths, otherwise suspension is bypassable by resetting the password.',
+ ben:'Account suspension is a safety control for a theft-recovery platform — a bad actor is meant to be shut out. Today, suspending a compromised or abusive account changes nothing, so the operator believes they have acted when they have not.',
+ pri:'P1'},
+
+{id:'S-02', cat:'sec', layer:'api', sev:'Critical', eff:'S', title:'Geofence entry/exit alerts are completely broken',
+ prob:'The event write passes three column names that are not in the model\'s <code>$fillable</code>, so they are silently dropped, and the three columns that are actually NOT NULL (<code>device_id</code>, <code>location_id</code>, <code>event_time</code>) are never supplied — the INSERT fails. Even if it succeeded, the notification is constructed with one argument while its constructor requires two, which throws <code>ArgumentCountError</code>.',
+ ev:[{p:'api/app/Http/Controllers/Api/V1/Iot/IotLocationController.php:239-248', c:"$event = GeofenceEvent::create([\n    'geofence_id'       => $geofence->id,\n    'device_location_id'=> $location->id,   // not fillable\n    'event_type'        => $eventType,\n    'latitude'          => $location->latitude,   // not fillable\n    'longitude'         => $location->longitude,  // not fillable\n]);\n$device->owner->notify(new GeofenceViolationNotification($event));  // needs 2 args"},
+     {p:'api/app/Models/GeofenceEvent.php:16-24  (actual fillable)', c:"protected $fillable = [\n    'geofence_id','device_id','location_id','event_type',\n    'distance_from_center','alert_sent','event_time',\n];"},
+     {p:'api/app/Notifications/GeofenceViolationNotification.php:17-20', c:"public function __construct(\n    public GeofenceEvent $event,\n    public Geofence $geofence      // <-- second required argument\n) {}"}],
+ fix:'Write the correct columns (<code>device_id</code>, <code>location_id</code>, <code>event_time</code>, <code>distance_from_center</code>) and pass the geofence to the notification. Then add a feature test that posts a real location through <code>POST /api/v1/iot/location</code> and asserts an event row plus a notification — the current test builds the event with a factory and never touches this code path.',
+ ben:'Geofencing is the feature that makes this a theft-prevention product rather than a map. Customers set a boundary around a home or school expecting an alert when the device leaves it. Right now they would never receive one, and nothing in the logs would tell them why.',
+ pri:'P1'},
+
+{id:'S-03', cat:'sec', layer:'api', sev:'Critical', eff:'S', title:'Payment webhook signature check fails open',
+ prob:'The guard is written as "if a secret is configured AND the signature is invalid, reject". When the secret is unset, the first condition is false and the whole check is skipped. <code>config/services.php</code> defines the key with no default, so a missing environment variable silently disables authentication on the webhook.',
+ ev:[{p:'api/app/Http/Controllers/Api/V1/PaymentController.php:152', c:"if (config('services.paychangu.webhook_secret') && ! $this->payChanguService->validateWebhookSignature($payload, $signature)) {\n    return response()->json(['error' => 'Invalid signature'], 401);\n}   // secret unset  ->  condition false  ->  no verification at all"},
+     {p:'api/config/services.php:41', c:"'webhook_secret' => env('PAYCHANGU_WEBHOOK_SECRET'),   // no default value"}],
+ fix:'Invert the logic to fail closed — reject unless a configured secret is present <b>and</b> valid — and log a hard warning at boot when the secret is missing. The webhook is also registered twice in <code>routes/api.php</code>; collapse to one route.',
+ ben:'Any unauthenticated caller who finds the webhook URL can currently mark arbitrary payments as completed and activate subscriptions without paying. This is direct revenue loss, and it is invisible because the request looks legitimate in the logs.',
+ pri:'P1'},
+
+{id:'S-04', cat:'sec', layer:'tracker', sev:'Critical', eff:'S', title:'Device credential file is committed to git',
+ prob:'<code>mufassah-tracker/config.env</code> is tracked by git — confirmed with <code>git ls-files</code>. The root <code>.gitignore</code> has no rule for it. It currently holds only the placeholder token, but the README instructs operators to edit this file in place on the device, so the live bearer token enters git history on the next commit.',
+ ev:[{p:'git ls-files mufassah-tracker/', c:"mufassah-tracker/config.env      <-- tracked\nmufassah-tracker/tracker.py\n..."},
+     {p:'mufassah-tracker/README.md:74-75', c:"# Edit config.env with your credentials\nnano config.env\n# API_TOKEN=your_64_char_api_token_from_backend"}],
+ fix:'Add <code>config.env</code> to <code>.gitignore</code>, commit a <code>config.env.example</code> with placeholders, and run <code>git rm --cached</code> to stop tracking it. Treat the current token as compromised and rotate it — a token that was ever committed must be considered public. Note that <code>install.sh</code> also never applies <code>chmod 600</code> to this file.',
+ ben:'The device token authorises location ingestion for a physical tracker. Leaked, it lets anyone inject false positions for a tracked device — which, in a theft-recovery product, means misleading the police and the owner about where the device is.',
+ pri:'P1'},
+
+{id:'S-05', cat:'sec', layer:'api', sev:'High', eff:'S', title:'Refunds are recorded but never actually issued',
+ prob:'The refund endpoint updates the local payment row to "refunded" and writes a timestamp into metadata. It never calls the payment provider. The customer is told the money is coming back; the money does not move.',
+ ev:[{p:'api/app/Http/Controllers/Api/V1/PaymentController.php:196-221', c:"$payment->update([\n    'status' => PaymentStatus::Refunded,\n    'metadata' => array_merge($payment->metadata ?? [], [\n        'refunded_at' => now()->toIso8601String(), ...\n// no call to PayChanguService, no DB::transaction, no audit entry"}],
+ fix:'Call the provider refund API first, and only mark the payment refunded when the provider confirms. Wrap it in a transaction and record who issued the refund and why. If the provider call fails, surface that to the operator rather than reporting success.',
+ ben:'A customer who was double-charged or cancelled a subscription is currently told they have been refunded while their money stays with the business. That is a trust and a chargeback problem, and it will surface as a support ticket the agent cannot resolve because the system says it is done.',
+ pri:'P1'},
+
+{id:'S-06', cat:'sec', layer:'api', sev:'High', eff:'S', title:'Email verification is never enforced',
+ prob:'<code>User</code> implements <code>MustVerifyEmail</code> and registration sends the verification email, but no <code>verified</code> middleware is applied to any route group. An unverified account has full API access.',
+ ev:[{p:'api/app/Models/User.php:15', c:"class User extends Authenticatable implements MustVerifyEmail"},
+     {p:'api/routes/api.php:108', c:"Route::middleware('auth:sanctum')->group(function () {   // no 'verified' middleware anywhere"}],
+ fix:'Apply <code>verified</code> to the route groups that matter (device registration, theft reports, subscriptions) and keep a small unverified-accessible set for onboarding. Return a specific error code so the frontend can prompt a resend.',
+ ben:'Without this, disposable email addresses are as good as real ones. For a system where a theft report can trigger a community alert to strangers, an unverified account is a spam and false-alarm vector.',
+ pri:'P2'},
+
+{id:'S-07', cat:'sec', layer:'api', sev:'High', eff:'M', title:'Payment-to-subscription activation is neither atomic nor idempotent',
+ prob:'On payment success the code updates the payment, finds or creates a subscription, then writes the subscription ID back. There is no transaction, no row lock and no idempotency key, so a webhook arriving at the same moment as a manual verify can both pass the status guard and create two subscriptions. A separate line extends <code>ends_at</code> with <code>addMonths()</code>, which fatals if <code>ends_at</code> is null.',
+ ev:[{p:'api/app/Services/PayChanguService.php:183-241', c:"$payment->update([... 'status' => PaymentStatus::Completed ...]);\n$existingSubscription = Subscription::where('user_id', $payment->user_id)->active()->first();\nif ($existingSubscription) { $existingSubscription->update([...]); }\nelse { $subscription = Subscription::create([...]); }\n$payment->update(['subscription_id' => $subscription->id]);\n// no DB::transaction, no lockForUpdate, no idempotency key"},
+     {p:'api/app/Services/PayChanguService.php:222', c:"$existingSubscription->ends_at->addMonths($months);   // fatal if ends_at is null"}],
+ fix:'Wrap the whole activation in <code>DB::transaction</code> with <code>lockForUpdate()</code> on the payment row, and guard the extension with a null-safe default. Key the operation on the provider transaction reference so a replay is a no-op.',
+ ben:'A customer who pays once can end up with duplicate subscription records, or hit a 500 on activation and be left paid-but-inactive. Both end in a support call the agent cannot easily untangle.',
+ pri:'P2'},
+
+{id:'S-08', cat:'sec', layer:'api', sev:'High', eff:'S', title:'A store admin can reset the credentials of another admin',
+ prob:'The user-update endpoint validates only that the target user is in a branch the actor can access. There is no check that the target is of lower privilege. A store admin who shares a branch with another admin or a super admin can change that account\'s email and password, then take it over.',
+ ev:[{p:'api/app/Http/Controllers/Api/V1/Admin/AdminUserController.php:144-166', c:"$this->authorizeUserBranch($request, $user);\n$validated = $request->validate([... 'email' => [...], 'password' => ['sometimes', Password::defaults()] ...]);\n$user->update($validated);   // no privilege comparison against the actor"},
+     {p:'api/app/Http/Controllers/Api/V1/Admin/AdminUserController.php:313-320', c:"protected function authorizeUserBranch(...)   // only checks canAccessBranch($target->branch_id)"}],
+ fix:'Reject the update when the target holds a role the actor does not, and never allow a password or email change on a higher-privileged account. Move this rule into a policy so it is enforced on every path, not just this controller.',
+ ben:'Right now the role hierarchy is only a UI convention. A store admin can escalate to full system access, which is a serious problem for a platform holding device locations and customer identity data.',
+ pri:'P1'},
+
+{id:'S-09', cat:'sec', layer:'api', sev:'Medium', eff:'S', title:'Wholesale cost is exposed to customers',
+ prob:'<code>DeviceResource</code> includes <code>purchase_price</code> and <code>purchase_location</code>. The same resource is returned to customers on their own device endpoints and to customer-service staff, so internal cost and margin data leaves the business.',
+ ev:[{p:'api/app/Http/Resources/DeviceResource.php:22-23', c:"'purchase_price'    => $this->purchase_price,\n'purchase_location' => $this->purchase_location,"},
+     {p:'api/app/Http/Controllers/Api/V1/DeviceController.php — index/show use DeviceResource', c:"// customer-facing endpoints return the same resource as admin ones"}],
+ fix:'Split into a customer <code>DeviceResource</code> and an admin resource that includes cost, or gate the cost fields behind a conditional <code>when()</code> check against a view-costs permission.',
+ ben:'Cost and margin are competitive information. Exposing them to every customer through the API — not just the UI — makes it trivial to enumerate.',
+ pri:'P2'},
+
+/* ============ PERFORMANCE ============ */
+{id:'P-01', cat:'perf', layer:'web', sev:'Critical', eff:'M', title:'Admin live tracking issues 101 requests every 30 seconds',
+ prob:'This page bypasses React Query entirely. A raw <code>setInterval</code> fetches a page of devices, then <code>Promise.all</code> fans out one latest-location request per device. With a page size of 100 that is 1 + 100 HTTP requests per client every 30 seconds, with no cancellation, no dedupe and no error handling.',
+ ev:[{p:'web/src/pages/admin/AdminTrackingPage.tsx:39-73', c:"const response = await apiClient.get(`/admin/devices?page=${page}&per_page=${perPage}`)\nconst devices = response.data.data\nconst devicesWithLocations = await Promise.all(\n  devices.map(async (device) => {\n    ... apiClient.get(`/devices/${device.id}/locations/latest`)\n  })\n)"},
+     {p:'web/src/pages/admin/AdminTrackingPage.tsx:115-124', c:"useEffect(() => {\n  const interval = setInterval(() => { fetchDevices() }, 30000)\n  return () => clearInterval(interval)\n}, [])   // fetchDevices missing from deps; no cancellation on unmount"}],
+ fix:'Add a single batch endpoint — <code>POST /devices/locations/latest</code> taking an array of IDs — and replace the fan-out with one React Query call. Keep the 30-second interval but move it into <code>refetchInterval</code> so it pauses when the tab is hidden and dedupes across mounts.',
+ ben:'This is the capacity ceiling on the whole platform. Two admins with the live map open generate roughly 400 requests a minute between them. Collapsing it to two requests per cycle is a 100× reduction and makes the page actually load on a slow connection.',
+ pri:'P2'},
+
+{id:'P-02', cat:'perf', layer:'web', sev:'Critical', eff:'M', title:'Every device card on Live Tracking polls independently',
+ prob:'Each <code>DeviceLocationCard</code> calls its own latest-location hook with a 30-second refetch interval. The page renders one card per device, so a customer with 100 devices triggers 100 parallel polling queries, all on staggered timers.',
+ ev:[{p:'web/src/hooks/useDevices.ts:107-114', c:"export function useDeviceLatestLocation(id: number) {\n  return useQuery({\n    queryKey: ['device-latest-location', id],\n    queryFn: () => devicesApi.getLatestLocation(id),\n    enabled: !!id,\n    refetchInterval: 30000,   // one of these per card\n  })\n}"},
+     {p:'web/src/pages/tracking/TrackingPage.tsx:198-204 and :249', c:"{devices.map((device) => (\n  <DeviceLocationCard key={device.id} device={device} ... />\n))}\n\nfunction DeviceLocationCard({ device, isSelected }) {\n  const { data: location, isLoading } = useDeviceLatestLocation(device.id)"}],
+ fix:'Same batch endpoint as P-01. Fetch all latest locations for the visible device set in one query and pass each card its slice as a prop, so the polling count is constant regardless of device count.',
+ ben:'A customer with a large family account opens Live Tracking and the page stalls, because the browser is holding 100 open requests and the backend is serving them. Batching makes the page time-to-interactive independent of how many devices the customer owns.',
+ pri:'P2'},
+
+{id:'P-03', cat:'perf', layer:'api', sev:'High', eff:'M', title:'Report and inventory endpoints load whole tables into memory',
+ prob:'Several list and report endpoints call <code>->get()</code> with no limit, then do grouping, counting and averaging in PHP. The response is then trimmed to 100 rows — but only after every matching row has been read from the database and materialised.',
+ ev:[{p:'api/app/Http/Controllers/Api/V1/Admin/AdminInventoryController.php:165-190', c:"$devices = $query->get();                       // no pagination\n$grouped = $devices->groupBy(function ($device) { ... })\n    ->map(...);                                  // count/avg/min/max in PHP"},
+     {p:'api/app/Http/Controllers/Api/V1/Admin/AdminReportController.php:51, 103, 195, 463, 522', c:"$reports = $query->latest()->get();\n->get();                       // all payments in range\n->get(['created_at']);         // all devices\n// ...then take(100) applied to the RESPONSE only"},
+     {p:'api/app/Http/Controllers/Api/V1/DeviceLocationController.php:143, 206, 246', c:"$locations = $query->orderBy('recorded_at','asc')->get();   // statistics\n$locations = $query->get(['latitude','longitude']);          // heatmap\n// device_locations is the highest-volume table in the schema"}],
+ fix:'Push aggregation into SQL — <code>selectRaw</code> with count and avg aggregates plus a <code>groupBy</code> — and paginate or chunk the row-returning paths. For the heatmap, aggregate coordinates into a grid server-side before returning them.',
+ ben:'Reports and the inventory page are the screens admins open first thing in the morning. They are currently the slowest and the most memory-hungry, and they get proportionally worse as the business grows — the failure mode is a timeout at exactly the moment the data matters most.',
+ pri:'P2'},
+
+{id:'P-04', cat:'perf', layer:'web', sev:'High', eff:'S', title:'Branch dropdowns can silently show an incomplete list',
+ prob:'Eight places share the query key <code>[\'branches\']</code> but call two different URLs — some request the default page, others request <code>per_page=100</code>. Whichever mounts first populates the cache and the others read that dataset. A third variant exists at <code>/admin/branch-options</code>.',
+ ev:[{p:'web/src/pages/admin/AdminUsersPage.tsx:92 · AdminReportsPage.tsx:190 · AdminShiftsPage.tsx:98 · BulkAddDeviceModal.tsx:293', c:"queryKey: ['branches'],\nqueryFn: () => apiClient.get('/admin/branches'),   // default page size"},
+     {p:'web/src/pages/sales/SalesPage.tsx:161-163 · AdminInventoryPage.tsx:116-118 · DeviceManagementPage.tsx:76-78', c:"queryKey: ['branches'],                             // SAME key\nqueryFn: () => apiClient.get('/admin/branches?per_page=100')   // different URL"},
+     {p:'web/src/api/admin.ts:192-195', c:"getBranchOptions()  ->  '/admin/branch-options'   // a third variant"}],
+ fix:'Define one canonical branch query in <code>src/api/admin.ts</code>, expose it through a single hook with a proper key factory, and delete the other variants. This is the pattern <code>useFamilies.ts</code> already uses.',
+ ben:'An admin who visits Users before Inventory gets a truncated branch dropdown in Inventory and Sales — branches beyond the first page are missing. They can then filter, sell or transfer stock against the wrong branch scope without any error, and the resulting records are wrong.',
+ pri:'P1'},
+
+{id:'P-05', cat:'perf', layer:'api', sev:'High', eff:'S', title:'Missing composite indexes on the hottest filter combinations',
+ prob:'The devices table has only single-column indexes. The inventory, sales and product-options queries all filter on <code>branch_id</code> together with <code>inventory_status</code>, and frequently category, brand, model and colour as well. No index supports those combinations.',
+ ev:[{p:'api/database/migrations/2025_11_23_130641_create_devices_table.php:41-45', c:"$table->index('owner_id');\n$table->index('status');\n// single-column only"},
+     {p:'api/database/migrations/2025_11_24_091550_add_inventory_fields_to_devices_table.php:55-58', c:"$table->index('inventory_status');"},
+     {p:'api/app/Http/Controllers/Api/V1/Admin/AdminInventoryController.php:39-73', c:"// filters branch_id + inventory_status + category_id + brand + model + color together"}],
+ fix:'Add composite indexes matching the real filter order, for example <code>(branch_id, inventory_status)</code> and <code>(branch_id, inventory_status, category_id)</code>. Confirm with <code>EXPLAIN</code> on production-shaped data before and after.',
+ ben:'Inventory and product-option lookups are on the critical path for every sale. As the device table grows past a few hundred thousand rows these queries degrade from milliseconds to seconds, and the symptom will look like "the app got slow" rather than "the index is missing".',
+ pri:'P1'},
+
+{id:'P-06', cat:'perf', layer:'web', sev:'High', eff:'S', title:'No request timeout — spinners can hang forever',
+ prob:'The axios client is created with no <code>timeout</code> setting, and nothing in the API layer sets one. A request to a backend that accepts the connection but never responds never rejects, so React Query stays in its loading state indefinitely.',
+ ev:[{p:'web/src/api/client.ts:18-28', c:"export const apiClient = axios.create({\n  baseURL: API_URL,\n  headers: { 'Content-Type': 'application/json', Accept: 'application/json' },\n  withCredentials: true,\n  withXSRFToken: true,\n  // no timeout\n})"}],
+ fix:'Set a 15–20 second timeout on the client, and a longer one specifically for file uploads. Pair it with the offline handling in E-03 so a timeout produces an actionable message rather than a spinner.',
+ ben:'On a flaky mobile connection — the normal case in Malawi — a device list or dashboard can spin forever with no error and no retry. The user cannot tell whether to wait, reload, or give up, and there is no path back to a working state without closing the app.',
+ pri:'P1'},
+
+{id:'P-07', cat:'perf', layer:'api', sev:'High', eff:'S', title:'Per-row database queries inside list resources',
+ prob:'Shift revenue, sales count and cash-sales totals are computed by model accessors that each run their own aggregate query. Both the shift stats endpoint and the shift resource iterate a collection and call these accessors, so a list of 50 shifts issues up to 150 extra queries. The same pattern appears in batch summaries and stock-movement totals.',
+ ev:[{p:'api/app/Models/Shift.php:70-94', c:"public function getRevenueAttribute()   { return $this->sales()->where('status','completed')->sum('total_amount'); }\npublic function getSalesCountAttribute(){ return $this->sales()->count(); }\npublic function getCashSalesAttribute()  { return $this->sales()->where(...)->sum('total_amount'); }"},
+     {p:'api/app/Http/Resources/ShiftResource.php:28-31', c:"'revenue'     => $this->revenue,        // 1 query per row\n'sales_count' => $this->sales_count,   // 1 query per row\n'duration'    => $this->duration,"},
+     {p:'api/app/Http/Controllers/Api/V1/Admin/AdminReportController.php:365-366', c:"->map(function (InventoryBatch $batch) use ($from, $to) {\n    $summary = $batch->summary();   // InventoryBatch::summary() runs its own query, up to 50x"}],
+ fix:'Replace the accessors with <code>withSum</code>/<code>withCount</code> on the index query, or precompute the aggregates in a single grouped query and pass them into the resource. For batches, eager-load the movements once and aggregate in PHP.',
+ ben:'Shift history and batch reports are used by store managers reviewing the day. Every extra query is latency the user feels directly, and the cost scales linearly with how much history they ask to see.',
+ pri:'P1'},
+
+{id:'P-08', cat:'perf', layer:'api', sev:'Medium', eff:'S', title:'Unbounded per_page lets any client request the whole table',
+ prob:'Most list endpoints accept <code>per_page</code> straight from the query string with no ceiling. Two controllers already do this correctly, which shows the intent was there but was not applied consistently.',
+ ev:[{p:'api/app/Http/Controllers/Api/V1/TheftReportController.php:72', c:"$reports = $query->latest()->paginate($request->get('per_page', 15));   // ?per_page=1000000"},
+     {p:'api/app/Http/Controllers/Api/V1/CommunityAlertController.php:64, 79, 264, 357, 577, 596, 620', c:"->paginate($request->input('per_page', 15));   // same pattern, 7 endpoints"},
+     {p:'api/app/Http/Controllers/Api/V1/Admin/AdminStockMovementController.php:30  (the correct pattern)', c:"$perPage = min((int) $request->get('per_page', 15), 100);"}],
+ fix:'Apply the <code>min(..., 100)</code> pattern from <code>AdminStockMovementController</code> everywhere, ideally via a shared trait or a request macro so it cannot be forgotten on new endpoints.',
+ ben:'A single malformed or hostile request can ask for a million rows, exhaust PHP memory and take the API down for everyone. It also protects well-meaning clients — a frontend bug that sends <code>per_page=0</code> currently returns an unbounded result set.',
+ pri:'P2'},
+
+{id:'P-09', cat:'perf', layer:'api', sev:'Medium', eff:'M', title:'Location history endpoints load every point into memory',
+ prob:'Statistics, heatmap and track endpoints for a device all fetch the full filtered set of location rows and compute in PHP. Location data is the highest-volume table in the schema and grows continuously per tracked device.',
+ ev:[{p:'api/app/Http/Controllers/Api/V1/DeviceLocationController.php:52', c:"$locations = $query->limit($request->get('limit', 100))->get();   // caller-controlled limit"},
+     {p:'api/app/Http/Controllers/Api/V1/DeviceLocationController.php:143, 206, 246', c:"$locations = $query->orderBy('recorded_at','asc')->get();   // statistics\n$locations = $query->get(['latitude','longitude']);          // heatmap\n->get();                                                     // track"}],
+ fix:'Clamp the client-supplied limit server-side, compute statistics with SQL aggregates, and downsample the heatmap into a coordinate grid before returning it. For the track view, cap the returned points and let the client request a resolution.',
+ ben:'Opening a device\'s history after months of tracking is the most common customer action on this screen. Today it transfers every point ever recorded, which is slow on mobile data and gets slower every day the device stays online.',
+ pri:'P2'},
+
+{id:'P-10', cat:'perf', layer:'api', sev:'Medium', eff:'S', title:'A query runs per geofence on every location ping',
+ prob:'Each incoming location loops over the device\'s active geofences and, for each one, runs a separate query to find the last event. The geofence list itself is also fetched per ping with no caching.',
+ ev:[{p:'api/app/Http/Controllers/Api/V1/Iot/IotLocationController.php:210-225', c:"foreach ($geofences as $geofence) {\n    $this->checkGeofenceViolation($geofence, $location, $device);\n}\n...\n$lastEvent = GeofenceEvent::where('geofence_id', $geofence->id)\n    ->orderBy('created_at','desc')->first();   // 1 query per geofence, per ping"}],
+ fix:'Fetch the latest event for all of the device\'s geofences in one grouped query before the loop, and cache the active-geofence list per device. This is especially important because a device in "stolen" mode reports every 30 seconds.',
+ ben:'Ingestion throughput is the platform\'s real bottleneck — every tracked device pings continuously. Extra queries here multiply by device count times ping frequency, and the cost lands on the least visible but most load-bearing endpoint in the system.',
+ pri:'P2'},
+
+{id:'P-11', cat:'perf', layer:'web', sev:'Medium', eff:'S', title:'Paginated tables flash a full-page spinner on every page change',
+ prob:'No query uses <code>placeholderData</code> or <code>keepPreviousData</code>, and the page number is part of the query key, so every pagination click is treated as a brand-new loading state and replaces the table with a spinner.',
+ ev:[{p:'web/src/pages/devices/DevicesPage.tsx:53-59', c:"queryKey: ['devices', { page, ...filters }],   // page in the key -> new query per page\n..."},
+     {p:'web/src/pages/devices/DevicesPage.tsx:176-179', c:"if (isLoading) { return <LoadingSpinner /> }   // replaces the whole table"}],
+ fix:'Add <code>placeholderData: keepPreviousData</code> to paginated queries so the previous page stays visible while the next loads, and add row skeletons in place of the full-page spinner.',
+ ben:'Every "Next page" click currently blanks the table, collapses the scroll position and rebuilds it. On a slow connection that is a visible flash on each of many clicks while browsing device lists — it reads as the app being unstable.',
+ pri:'P3'},
+
+{id:'P-12', cat:'perf', layer:'web', sev:'Medium', eff:'M', title:'Long tables render every row at once',
+ prob:'The grouped inventory view requests no page size and hands the entire result to a table component that renders nested category → brand → model sections with no windowing. Serial and notification lists have the same shape.',
+ ev:[{p:'web/src/pages/admin/AdminInventoryPage.tsx:124-138', c:"const response = await apiClient.get(`/admin/inventory/grouped?${params.toString()}`)\nreturn response.data.data.data   // no per_page; whole catalogue to the table"}],
+ fix:'Paginate the grouped endpoint server-side and virtualise the rendered rows (or cap the expanded sections). The serial view already paginates at 15 — apply the same discipline to the grouped view.',
+ ben:'A branch with a large catalogue renders thousands of DOM nodes at once, so scrolling stutters and filter typing lags on the exact screen staff use to look up stock while a customer waits at the counter.',
+ pri:'P3'},
+
+{id:'P-13', cat:'perf', layer:'web', sev:'Medium', eff:'S', title:'A background poll runs every 5 seconds for every admin',
+ prob:'The inventory PIN alert component polls on a 5-second interval. It uses a distinct filter object, so it is not deduplicated against the stock-transfer query — they are separate cache entries. Two more polling loops run at 30 and 60 seconds alongside it.',
+ ev:[{p:'web/src/components/notifications/InventoryPinAlerts.tsx:26-30', c:"refetchInterval: 5000,   // 12 requests/min/admin, forever, on every admin page"},
+     {p:'web/src/hooks/useNotifications.ts:13-19', c:"export function useUnreadCount() {\n  return useQuery({ ... refetchInterval: 30000 })\n}"},
+     {p:'web/src/hooks/useShifts.ts:36', c:"refetchInterval: 60000,   // customer-service current shift"}],
+ fix:'Replace polling with the broadcast channel that already exists in the backend (<code>routes/channels.php</code> is configured), or at minimum raise the interval and pause it when the tab is hidden. A PIN approval request does not need 5-second latency.',
+ ben:'Twelve background requests per minute per admin, on every page, all day. On metered mobile data this is a real cost to the user, and it competes with the page\'s own data for a slow link.',
+ pri:'P3'},
+
+{id:'P-14', cat:'perf', layer:'web', sev:'Low', eff:'S', title:'Images are never lazy-loaded',
+ prob:'Fifteen <code>&lt;img&gt;</code> elements exist across the app and none uses <code>loading="lazy"</code>. List and avatar images in community, stories, device detail and family screens all load eagerly.',
+ ev:[{p:'web/src/pages/admin/AdminCommunityPage.tsx:799 · pages/public/SuccessStoriesPage.tsx:202 · pages/devices/DeviceDetailPage.tsx:345 · pages/families/FamilyDetailPage.tsx:169', c:"<img src={getStorageUrl(...)} className=\"...\" />   // no loading attribute, no width/height"}],
+ fix:'Add <code>loading="lazy"</code> plus explicit <code>width</code>/<code>height</code> (or aspect-ratio) to list and card images. Keep the two above-the-fold hero images eager.',
+ ben:'Opening the Community or Stories page currently downloads every card image immediately instead of as the user scrolls. On mobile data that is a slow first paint and unnecessary cost.',
+ pri:'P4'},
+
+/* ============ ERROR HANDLING ============ */
+{id:'E-01', cat:'err', layer:'web', sev:'High', eff:'S', title:'The 419 handler claims to retry and never does',
+ prob:'The comment says "refetch and retry once", but the code only resets a flag and logs a warning, then falls through to reject the promise. There is no second request anywhere in the interceptor.',
+ ev:[{p:'web/src/api/client.ts:92-96', c:"// Handle 419 CSRF token mismatch - refetch and retry once\nif (error.response?.status === 419) {\n  csrfInitialized = false\n  console.warn('CSRF token mismatch, refetching...')\n}\n// ...falls through to:\nreturn Promise.reject(error)   // line 108 — no retry"}],
+ fix:'Actually retry: reset the CSRF flag, call <code>initializeCsrf()</code>, then re-issue the original request via <code>apiClient.request(error.config)</code> once, guarded by a retry flag on the config to prevent loops.',
+ ben:'After a session or CSRF rotation, the first state-changing action — registering a device, completing a sale, filing a theft report — fails with a generic error. Staff learn to "click it twice", which is a workaround for a bug and trains them to distrust the submit buttons.',
+ pri:'P1'},
+
+{id:'E-02', cat:'err', layer:'web', sev:'High', eff:'M', title:'Sixty-three mutations fail silently',
+ prob:'Of 149 mutation hooks, 86 have an <code>onError</code> handler. The remaining 63 produce no user-visible feedback at all — no toast, no error state, no change in the UI.',
+ ev:[{p:'web/src/pages/admin/AdminUsersPage.tsx:99-147', c:"// suspend, unsuspend, verify-email, assign-role, delete — none has onError\nconst suspendMutation = useMutation({ mutationFn: ..., onSuccess: () => { ... } })"},
+     {p:'web/src/pages/customer-service/CustomerServiceDashboard.tsx:267-285', c:"handleStartShift / handleEndShift / handleCancelShift — no onError on any of them"},
+     {p:'web/src/pages/notifications/NotificationsPage.tsx:74-76', c:"const handleDelete = (id: string) => { deleteNotification.mutate(id) }   // no callbacks at all"}],
+ fix:'Add a default <code>onError</code> at the QueryClient level that surfaces a toast using the shared error helper, then override per mutation only where a specific message is needed. This closes all 63 in one change.',
+ ben:'A customer-service agent clicks "Start Shift" and nothing happens — no error, no change, the modal just stays. They retry, and retry again, potentially creating duplicate shifts. Meanwhile an admin suspends a user and believes it worked. Silent failure is worse than an error message because the user cannot even report what went wrong.',
+ pri:'P2'},
+
+{id:'E-03', cat:'err', layer:'web', sev:'High', eff:'M', title:'No offline or network-failure handling anywhere',
+ prob:'There is no <code>navigator.onLine</code> listener, no offline banner, no service worker and no network-error branch. Combined with the missing timeout, a dropped connection degrades to an indefinite spinner rather than a message.',
+ ev:[{p:'web/src/App.tsx:94-102', c:"queries: { staleTime: 1000 * 60 * 5, retry: 1, refetchOnWindowFocus: false }\n// retry: 1 applies to all errors; no network-aware branch"},
+     {p:'web/src/api/client.ts — no navigator.onLine / NetworkError handling', c:"// grep for 'offline', 'navigator.onLine', 'Network Error' across src/ -> no matches"}],
+ fix:'Add an online/offline listener that shows a persistent banner, treat network errors distinctly from server errors in the shared error helper, and queue or clearly fail writes made while offline.',
+ ben:'This is a product used by field agents and customers in low-coverage areas — the offline case is the normal case, not the edge case. Right now an agent cannot tell whether a theft report was submitted or lost, which for a recovery workflow is the difference between acting and not acting.',
+ pri:'P2'},
+
+{id:'E-04', cat:'err', layer:'api', sev:'High', eff:'S', title:'Raw exception text is returned to clients',
+ prob:'A customer-service shift handler catches any exception, rolls back and returns the exception message directly in the response body. SQL errors and file paths reach the client, and nothing is logged.',
+ ev:[{p:'api/app/Http/Controllers/Api/V1/CustomerService/ShiftController.php:94-98', c:"} catch (\\Exception $e) {\n    DB::rollBack();\n    return $this->error('Failed to end shift: '.$e->getMessage(), 500);\n}"}],
+ fix:'Log the exception with context, and return a fixed user-facing message. Add a global handler that renders any unhandled exception as the documented <code>{message, errors}</code> shape so internal detail never reaches a client.',
+ ben:'Internal detail in an error response is a reconnaissance gift — table names, column names and server paths. It also makes support harder, because the user pastes a database error the agent cannot act on.',
+ pri:'P1'},
+
+{id:'E-05', cat:'err', layer:'api', sev:'High', eff:'S', title:'Validation failures are reported as 500 errors',
+ prob:'Bulk inventory endpoints wrap the operation in <code>catch (\\Exception $e)</code>. Laravel\'s <code>ValidationException</code> extends <code>Exception</code>, so business-rule validation thrown inside the operation is swallowed and converted into a generic 500 instead of the documented 422 with field errors.',
+ ev:[{p:'api/app/Http/Controllers/Api/V1/Admin/AdminInventoryController.php:477-495 and :523-565', c:"try {\n    [$batch, $devices] = $this->createInventoryBatchDevices(...);\n    ...\n} catch (\\Exception $e) {\n    DB::rollBack();\n    Log::error('Bulk inventory creation failed', [...]);\n    return $this->error('Failed to create inventory batch. Please check the request and try again.', 500);\n}"}],
+ fix:'Catch <code>ValidationException</code> separately and rethrow it, or narrow the catch to the expected exception types. Never let a validation failure masquerade as a server fault.',
+ ben:'Bulk-adding devices is how a new stock shipment is entered. When a row is rejected the operator currently gets "something went wrong" instead of "row 12: serial number already exists" — so they cannot fix the data and cannot proceed, and the batch has already been rolled back.',
+ pri:'P1'},
+
+{id:'E-06', cat:'err', layer:'api', sev:'High', eff:'S', title:'Multi-step writes have no transaction',
+ prob:'Several controllers perform two or more dependent writes with no transaction. A failure between them leaves the database in a half-applied state.',
+ ev:[{p:'api/app/Http/Controllers/Api/V1/TheftReportController.php:202-207', c:"if ($theftReport->device && $theftReport->device->status === DeviceStatus::STOLEN) {\n    $theftReport->device->update(['status' => DeviceStatus::ACTIVE]);\n}\n$theftReport->delete();   // if this fails, device is ACTIVE but report still exists"},
+     {p:'api/app/Http/Controllers/Api/V1/DeviceController.php:91-100', c:"$device = Device::create([...]);\n// then: ownership-history create — no DB::transaction around the pair"},
+     {p:'api/app/Http/Controllers/Api/V1/Iot/IotLocationController.php:50-77 and :113-144', c:"// location insert + device update + module update, no transaction (batch path: N inserts + 2 updates)"},
+     {p:'api/app/Http/Controllers/Api/V1/Admin/AdminInventoryController.php:447-462', c:"Device::create(...);\n$this->movementService->recordDeviceMovement(...);   // no transaction"}],
+ fix:'Wrap each multi-write operation in <code>DB::transaction()</code>, and send notifications after the commit rather than inside it.',
+ ben:'A partial write in a theft workflow is the worst kind of bug: a device marked recovered while the report is still open, or a sale recorded without its stock movement. It corrupts inventory counts and case status in ways that are hard to notice and hard to unwind.',
+ pri:'P1'},
+
+{id:'E-07', cat:'err', layer:'web', sev:'Medium', eff:'S', title:'Raw HTTP error strings are shown to users',
+ prob:'Several screens render <code>error.message</code> directly. For an axios failure that is the literal string "Request failed with status code 500" or "Network Error". A shared helper that extracts the backend message already exists but is used in only three files.',
+ ev:[{p:'web/src/pages/admin/AdminDevicesPage.tsx:159-167', c:"<p className=\"text-red-500 text-sm\">Error loading devices: {error.message}</p>"},
+     {p:'web/src/lib/utils.ts:8-15  (the helper that should be used)', c:"export function getApiErrorMessage(error: unknown, fallback: string): string {\n  // extracts first validation error, then response.message, then fallback\n}"},
+     {p:'used in only 3 files: InventoryPinRevealDialog.tsx, AdminDevicesPage.tsx, DeviceManagementPage.tsx', c:"// meanwhile ~30 files hand-roll the same extraction, 32 inline 'as { response?: ... }' casts"}],
+ fix:'Adopt <code>getApiErrorMessage</code> everywhere and remove the inline casts. Have it distinguish network errors, timeouts and server errors so each produces a different, actionable sentence.',
+ ben:'"Request failed with status code 500" tells an admin nothing and offers no next step. The backend already sends a useful message for most failures — it just never reaches the screen, so every error becomes a support call.',
+ pri:'P3'},
+
+{id:'E-08', cat:'err', layer:'web', sev:'Medium', eff:'S', title:'The error boundary prints stack traces to the browser',
+ prob:'The top-level error boundary renders <code>error.stack</code> in a <code>&lt;pre&gt;</code> block. Internal file paths and implementation detail are shown to whoever is using the app, and the only reporting is a console log.',
+ ev:[{p:'web/src/components/ErrorBoundary.tsx:35-41', c:"<h2>Something went wrong</h2>\n<p>{this.state.error?.message || 'An unexpected error occurred'}</p>\n<pre className=\"bg-slate-100 rounded-lg p-3 text-xs ...\">\n  {this.state.error?.stack}\n</pre>"},
+     {p:'web/src/components/ErrorBoundary.tsx:24', c:"console.error(...)   // the only reporting; no telemetry hook"}],
+ fix:'Show a friendly message with a reload action and a support reference, log the stack to the console only in development, and add an error-reporting hook so crashes are visible to the team.',
+ ben:'Two problems at once: users see internals they should not, and because there is no telemetry the team never learns a crash happened. A user hits a white screen, screenshots a stack trace, and the developer has no data to reproduce it.',
+ pri:'P3'},
+
+{id:'E-09', cat:'err', layer:'tracker', sev:'Critical', eff:'S', title:'Permanent HTTP errors are retried forever, then history is deleted',
+ prob:'The API client calls <code>raise_for_status()</code> and catches <code>requests.RequestException</code>. Because <code>HTTPError</code> subclasses <code>RequestException</code>, a permanent 401 (rotated or revoked token) or 422 (malformed payload) is treated identically to a transient network blip — retried three times with sleeps on every single cycle, forever.',
+ ev:[{p:'mufassah-tracker/tracker.py:382-396', c:"response = self.session.post(f'{self.base_url}/locations/batch', json=payload, timeout=30)\nresponse.raise_for_status()      # 401/422 raise HTTPError here\n...\nexcept requests.RequestException as e:\n    logger.error(...)             # indistinguishable from a timeout\n    time.sleep(self.config.API_RETRY_DELAY)"},
+     {p:'mufassah-tracker/tracker.py:304-312  (the consequence)', c:"count = conn.execute('SELECT COUNT(*) FROM locations').fetchone()[0]\nif count > config.BUFFER_MAX_SIZE:\n    conn.execute('DELETE FROM locations WHERE id IN (SELECT id FROM locations ORDER BY created_at LIMIT ?)', ...)\n    conn.commit()\nlogger.debug(f\"Buffered location (total: {count})\")   # DEBUG only, and prints the pre-delete count"}],
+ fix:'Classify the response: 4xx (except 429) is permanent — stop retrying, log at ERROR, and surface it as an authentication/configuration fault. 5xx and timeouts are transient — retry with exponential backoff and jitter. Also raise the buffer-overflow log from DEBUG to WARNING and correct the misleading count.',
+ ben:'A single token rotation on the backend silently turns every tracker in the field into a device that buffers, overflows, and deletes its own history — with no error visible to anyone. The first symptom is missing location data weeks later, by which point the history is unrecoverable.',
+ pri:'P1'},
+
+{id:'E-10', cat:'err', layer:'tracker', sev:'High', eff:'S', title:'Buffer overflow silently discards the oldest locations',
+ prob:'When the offline buffer exceeds its maximum the oldest rows are deleted. That is the right policy, but it is logged at DEBUG level — invisible at the default INFO setting — and the final log line reports the count taken before the deletion, so it reads as if nothing was lost.',
+ ev:[{p:'mufassah-tracker/tracker.py:304-312', c:"if count > config.BUFFER_MAX_SIZE:\n    conn.execute('DELETE FROM locations WHERE id IN (SELECT id FROM locations ORDER BY created_at LIMIT ?)',\n                (count - config.BUFFER_MAX_SIZE,))\n    conn.commit()\nlogger.debug(f\"Buffered location (total: {count})\")   # pre-delete count, DEBUG level"}],
+ fix:'Log at WARNING with the number of rows dropped and the time range lost, and emit a distinct error after repeated overflow so it can be alerted on. Order eviction by <code>id</code> rather than <code>created_at</code> — the timestamp has one-second resolution, so rows inserted in the same second evict in arbitrary order.',
+ ben:'At a 5-minute interval the default buffer holds about 83 hours. Beyond that the device starts deleting history it was explicitly designed to keep — and the operator has no signal that it happened. For a theft-recovery device, silently losing the window in which the theft occurred is the worst possible failure.',
+ pri:'P1'},
+
+{id:'E-11', cat:'err', layer:'tracker', sev:'High', eff:'S', title:'Sensor failures report fabricated healthy values',
+ prob:'When the battery or signal read fails, the code substitutes a plausible default — 100% battery, 80% signal — and sends it to the backend rather than reporting unknown. A device that cannot read its sensors looks perfectly healthy.',
+ ev:[{p:'mufassah-tracker/tracker.py:128 and :135-138', c:"self.battery_cache = 100\n...\ndefault 100 when the read fails"},
+     {p:'mufassah-tracker/tracker.py:192-195', c:"# signal strength default\n... 80"},
+     {p:'mufassah-tracker/tracker.py:132-133 and :189-190', c:"except Exception as e:\n    logger.debug(f\"Could not read battery level: {e}\")   # DEBUG -> invisible at INFO"}],
+ fix:'Send <code>null</code> when a sensor read fails and let the dashboard render "unknown". Log the failure at WARNING. If a fallback is genuinely needed for the backend contract, mark it explicitly rather than imitating a real reading.',
+ ben:'Fleet health monitoring depends on these numbers. A tracker with a dead battery sensor or a disconnected antenna currently reports 100% and 80%, so it never appears on a maintenance list — until it goes offline entirely, which is exactly when the location history matters most.',
+ pri:'P1'},
+
+{id:'E-12', cat:'err', layer:'tracker', sev:'High', eff:'S', title:'A transient gpsd outage crash-loops the service',
+ prob:'The GPS reader connects in its constructor, and that constructor runs during service initialisation. A connection failure propagates to the top-level handler, which exits with status 1. The systemd unit declares <code>After=gpsd.service</code> but not <code>Requires=</code> or <code>Wants=</code>, so it does not ensure gpsd is actually running. With <code>Restart=always</code> and no start limit, the service restarts every 10 seconds indefinitely.',
+ ev:[{p:'mufassah-tracker/tracker.py:474 and :485-488', c:"def __init__(self, ...):\n    self.connect()   # raises if gpsd is not ready\n...\nraise RuntimeError(...)"},
+     {p:'mufassah-tracker/mufassah-tracker.service:3-4, 13-14', c:"After=network.target gpsd.service\nRequires=network.target        # does NOT require gpsd\n...\nRestart=always\nRestartSec=10                  # no StartLimitIntervalSec / StartLimitBurst"}],
+ fix:'Retry the gpsd connection inside the service loop instead of exiting, and add <code>Wants=gpsd.service</code> plus <code>StartLimitIntervalSec</code>/<code>StartLimitBurst</code> to the unit so a permanent fault stops and reports rather than thrashing.',
+ ben:'If gpsd restarts — or the tracker starts before it at boot — the device collects nothing while it crash-loops, and the journal fills with restarts that mask the real cause. For a field device the technician may not reach for days, that is a long silent outage.',
+ pri:'P1'},
+
+{id:'E-13', cat:'err', layer:'api', sev:'Medium', eff:'S', title:'Two different response shapes for permission errors',
+ prob:'The bootstrap file renders <code>AccessDeniedHttpException</code> in the project\'s own response format, but policy and gate failures throw <code>AuthorizationException</code>, which is not handled there and falls back to Laravel\'s default body. Clients therefore receive two structurally different 403 responses.',
+ ev:[{p:'api/bootstrap/app.php:61-68', c:"// renders AccessDeniedHttpException as { success: false, message: ... }"},
+     {p:'api/bootstrap/app.php — no handler for AuthorizationException', c:"// Illuminate\\Auth\\Access\\AuthorizationException falls through to Laravel default:\n// {\"message\":\"This action is unauthorized.\"}"}],
+ fix:'Add an <code>AuthorizationException</code> renderer that produces the same shape, and add a catch-all <code>Throwable</code> renderer so every error the API can emit has one documented contract.',
+ ben:'The frontend cannot write one reliable handler for "you do not have permission" when the body differs by which code path denied it. This is why some screens show a useful message and others show a generic one.',
+ pri:'P3'},
+
+{id:'E-14', cat:'err', layer:'tracker', sev:'Medium', eff:'S', title:'No log rotation on the device',
+ prob:'Logging writes to a file handler with no rotation. journald rotates its own copy, but the file on disk grows without bound.',
+ ev:[{p:'mufassah-tracker/tracker.py:72', c:"logging.FileHandler(log_dir / 'tracker.log')   // no RotatingFileHandler / TimedRotatingFileHandler"}],
+ fix:'Switch to <code>TimedRotatingFileHandler</code> with a small backup count, or drop the file handler and rely on journald alone with a configured cap.',
+ ben:'This runs on a Raspberry Pi writing to an SD card. An unbounded log file eventually fills the card, and a full card takes down the whole device — including the tracking service the log was meant to help diagnose.',
+ pri:'P3'},
+
+/* ============ READABILITY & MAINTAINABILITY ============ */
+{id:'R-01', cat:'read', layer:'web', sev:'High', eff:'L', title:'A UI kit exists but is used in 6 of 128 files',
+ prob:'<code>components/ui/</code> has Button, Input, Alert, ConfirmDialog, PasswordInput and LoadingSpinner — correctly built, with accessible label wiring and focus styles. But the app contains 475 raw <code>&lt;button&gt;</code> and 189 raw <code>&lt;input&gt;</code> elements. The components are imported only by the auth pages and the profile page.',
+ ev:[{p:'web/src/components/ui/Input.tsx:17-32  (what the good version does)', c:"<label htmlFor={id} ...>\n<input id={id} aria-invalid={...} aria-describedby={...} />   // correct a11y wiring"},
+     {p:'usage across the codebase', c:"raw <button>      475   |  files importing Button:  6\nraw <input>       189   |  files importing Input:   5\nraw <select>       60\nraw <textarea>     32"}],
+ fix:'Adopt the kit incrementally, starting with the screens that already have the worst duplication. Do not attempt a big-bang rewrite — migrate a screen at a time, since the components are already correct.',
+ ben:'Visual inconsistency is the visible symptom: teal, blue and violet buttons side by side, five different input focus styles. The hidden cost is that an accessibility fix made once in <code>Input.tsx</code> never reaches the other 189 inputs, so keyboard and screen-reader users get an inconsistent experience across screens.',
+ pri:'P3'},
+
+{id:'R-02', cat:'read', layer:'web', sev:'High', eff:'M', title:'Status colours and labels are redefined in over twenty places',
+ prob:'Device, inventory, sale and warranty status maps are declared locally on each screen. The shared helpers that exist in <code>lib/utils.ts</code> are bypassed in favour of inline date and currency formatting.',
+ ev:[{p:'statusConfig / statusColors redefined in 20+ files', c:"pages/devices/DevicesPage.tsx:22 · pages/devices/DeviceDetailPage.tsx:43 · pages/tracking/TrackingPage.tsx:20 · pages/admin/AdminTrackingPage.tsx:23 · pages/admin/AdminDevicesPage.tsx:174 · pages/management/DeviceManagementPage.tsx:282 · pages/management/IoTModulesPage.tsx:258 · components/inventory/SerialViewTable.tsx:25 · pages/admin/AdminSubscriptionsPage.tsx:72 · ..."},
+     {p:'getStatusValue defined 7x · formatTimeAgo defined 3x', c:"TrackingPage.tsx:28 · DeviceDetailPage.tsx:51 · CreateTheftReportModal.tsx:8 · DevicesPage.tsx:30 · DashboardPage.tsx:22 · api/dashboard.ts:5 · AdminTrackingPage.tsx:30\nformatTimeAgo: TrackingPage.tsx:297 · NotificationsPage.tsx:320 · AdminTrackingPage.tsx:448   (byte-identical)"}],
+ fix:'Create one <code>src/lib/status.ts</code> exporting a single status → label/colour map per domain, and use it everywhere. Add a lint rule or code-review note so new screens import rather than redeclare.',
+ ben:'"Stolen" currently renders in different shades on different screens, and the label can differ too. For a theft-recovery product, status is the most important word on the page — inconsistency there erodes trust in the data itself, not just the styling.',
+ pri:'P2'},
+
+{id:'R-03', cat:'read', layer:'api', sev:'High', eff:'L', title:'Fat controllers hold domain logic that belongs in services',
+ prob:'Four controllers exceed 750 lines and contain pricing, inventory state transitions and notification orchestration inline. Only six classes exist in <code>app/Services/</code> for a system with 50+ controllers.',
+ ev:[{p:'api/app/Http/Controllers/Api/V1/Admin/AdminSaleController.php — 955 lines', c:"resolveSellingPrice() / resolveCostPrice() / createSaleWithRetry()  (:720-852)\n// pricing and retry logic embedded in a controller"},
+     {p:'api/app/Http/Controllers/Api/V1/Admin/AdminInventoryController.php — 908 lines · AdminDashboardController.php — 864 lines · CommunityAlertController.php — 759 lines', c:"// inventory state transitions, dashboard aggregation, bounty claim orchestration — all inline"},
+     {p:'api/app/Http/Controllers/Api/V1/Admin/AdminSaleController.php:600', c:"$receiptService = new ReceiptService;   // manual instantiation bypasses the container"}],
+ fix:'Extract pricing, inventory transitions and notification dispatch into services, inject them via the container, and let controllers validate and delegate. Do this opportunistically as each area is next touched.',
+ ben:'Pricing and stock rules are the parts of the system where a mistake costs money, and they are currently the hardest to test because they live inside HTTP handlers. Moving them into services makes them unit-testable and makes the rules discoverable instead of buried on line 720 of a 955-line file.',
+ pri:'P3'},
+
+{id:'R-04', cat:'read', layer:'web', sev:'Medium', eff:'M', title:'Nine empty scaffolding directories mislead new developers',
+ prob:'<code>src/features/</code> contains nine subdirectories with zero files between them. The real code lives in <code>pages/</code>, <code>hooks/</code>, <code>api/</code> and <code>components/</code>. The backend has the same problem with four empty architectural directories.',
+ ev:[{p:'web/src/features/ — 9 directories, 0 files', c:"features/{admin,auth,devices,geofences,notifications,subscriptions,theft-reports,tracking,warranties}\n$ find src/features -type f | wc -l  ->  0"},
+     {p:'api/app/{DTOs,Rules,Repositories,Listeners} — 0 files each', c:"app/DTOs: 0 files · app/Rules: 0 files · app/Repositories: 0 files · app/Listeners: 0 files"},
+     {p:'web/src/components/auth/RoleBasedRedirect.tsx and Authorize.tsx:101-143', c:"RoleBasedRedirect — defined, never imported (App.tsx:105-117 reimplements it inline)\nwithAuthorization / useAuthorized — referenced only in their own JSDoc"}],
+ fix:'Delete the empty directories and the dead exports, or commit to the pattern and document it. Either is fine; leaving both signals is what costs time.',
+ ben:'A new developer following the folder structure will look in <code>features/</code> for the device code, find nothing, and may start a second implementation there. Every hour spent resolving that is an hour not spent on the product.',
+ pri:'P3'},
+
+{id:'R-05', cat:'read', layer:'api', sev:'Medium', eff:'M', title:'Branch-scope authorisation logic is copy-pasted across five controllers',
+ prob:'Helpers that resolve and authorise a branch scope are duplicated with slight variations in at least five controllers, and two controllers define a method with the identical name that does not share an implementation.',
+ ev:[{p:'duplicated resolve*BranchId / authorize*Branch helpers', c:"AdminSaleController (authorizeSaleView :885-906, authorizeSaleMutation :862-883)\nAdminInventoryController (authorizeInventoryBranch :733-747)\nInventoryDispositionController (authorizeInventoryBranch :424-434)   <-- same name, separate copy\nAdminDeviceController · AdminStockMovementController · AdminReportController"},
+     {p:'api/app/Http/Controllers/Api/V1/CommunityAlertController.php:91-98 and TheftReportController.php:92-100', c:"// hand-rolled ownership checks instead of the policies that already exist in app/Policies/"}],
+ fix:'Move branch-scope resolution into a trait or a base controller, and route ownership checks through the existing policies. Delete the duplicate implementations.',
+ ben:'Branch scoping is the boundary that stops one store seeing another store\'s customers and stock. When the same rule exists in five copies, a fix to one copy silently leaves four stores exposed — and there is no test that would catch it.',
+ pri:'P2'},
+
+{id:'R-06', cat:'read', layer:'web', sev:'Medium', eff:'S', title:'Duplicated type definitions and inline error casts',
+ prob:'Canonical response types exist in <code>api/client.ts</code>, but <code>PaginatedResponse</code> is redeclared in seven files and <code>ApiResponse</code> in four. Two different interfaces are both exported as <code>DashboardStats</code> with entirely different shapes.',
+ ev:[{p:'PaginatedResponse redeclared in 7 files', c:"DeviceManagementPage.tsx:17 · IoTModulesPage.tsx:35 · SalesPage.tsx:22 · AdminDevicesPage.tsx:13 · AdminInventoryPage.tsx:20 · AdminShiftsPage.tsx:10 · CustomerServiceWarrantiesPage.tsx:16   (canonical: api/client.ts:119-136)"},
+     {p:'two different DashboardStats', c:"api/dashboard.ts:10-17   { totalDevices, activeDevices, geofencesCount, alertsToday, ... }\napi/admin.ts:63-114      { users, devices, subscriptions, revenue, administrative_sales, ... }\n// same exported name, incompatible shapes; a third local one at CustomerServiceDashboard.tsx:26"},
+     {p:'32 inline error casts', c:"(error as { response?: { data?: { message?: string; errors?: Record<string,string[]> } } })\n// SalesPage.tsx:334 · AdminInventoryPage.tsx:192,257,281,305,326 · AdminUsersPage.tsx:161 · ..."}],
+ fix:'Delete the local redeclarations and import from one place. Rename one of the two <code>DashboardStats</code> types. Replace the 32 inline casts with the shared error helper.',
+ ben:'A backend change to the response envelope — adding a field, renaming one — compiles cleanly against seven stale copies and breaks silently at runtime. The 32 error casts suppress the compiler exactly where the error contract matters most.',
+ pri:'P2'},
+
+{id:'R-07', cat:'read', layer:'web', sev:'Medium', eff:'M', title:'Query keys are inline literals in 373 places',
+ prob:'Only <code>useFamilies.ts</code> defines a query-key factory. Everywhere else keys are raw arrays, which makes cross-domain invalidation guesswork and has already produced a real staleness bug.',
+ ev:[{p:'web/src/hooks/useFamilies.ts:10-15  (the pattern to replicate)', c:"export const familyKeys = {\n  all: ['families'] as const,\n  detail: (id) => ['family', id] as const,\n  ...\n}"},
+     {p:'web/src/hooks/useTheftReports.ts:24-27  (the bug it caused)', c:"onSuccess: () => {\n  queryClient.invalidateQueries({ queryKey: ['theft-reports'] })\n  queryClient.invalidateQueries({ queryKey: ['devices'] })   // admin uses ['admin-devices'], CS uses ['customer-service-devices']\n}"}],
+ fix:'Introduce key factories per domain, following <code>useFamilies.ts</code>, and replace the inline literals as each hook is next touched.',
+ ben:'After filing a theft report, the device still shows as "active" on the admin devices page until someone manually refreshes. In a theft-recovery product, an admin looking at a stale status may conclude no report was filed.',
+ pri:'P2'},
+
+{id:'R-08', cat:'read', layer:'api', sev:'Medium', eff:'S', title:'Forty-six form requests exist but validation is written inline anyway',
+ prob:'There are 46 FormRequest classes under <code>app/Http/Requests/</code>, yet 21 controllers contain roughly 61 inline <code>$request->validate()</code> calls. One sale endpoint carries 25 rules inline. Custom rules that belong in the empty <code>app/Rules/</code> directory are expressed as closures instead.',
+ ev:[{p:'api/app/Http/Controllers/Api/V1/Admin/AdminSaleController.php:122-154', c:"$validated = $request->validate([ ...25 rules inline... ]);"},
+     {p:'api/app/Http/Controllers/Api/V1/FamilyMemberController.php:109-116', c:"$allowedFields = ['nickname','location_sharing_enabled','receive_family_alerts'];\n$data = $request->only($allowedFields);   // raw input; UpdateFamilyMemberRequest rules never applied\n// a 10 MB nickname passes"}],
+ fix:'Move inline rule sets into FormRequests, apply the existing request class on the family-member path, and put genuinely reusable rules (price override, polygon coordinates, national ID) into <code>app/Rules/</code>.',
+ ben:'Validation scattered across controllers is how one endpoint ends up stricter than its neighbour. The family-member path is the concrete case: it accepts unvalidated input today, so a malformed nickname can be stored and then break every screen that renders the family list.',
+ pri:'P2'},
+
+{id:'R-09', cat:'read', layer:'tracker', sev:'Medium', eff:'M', title:'Tracker is a 691-line monolith with a hidden global dependency',
+ prob:'All seven classes live in one file, and the buffer reaches for a module-level <code>config</code> that is only assigned inside <code>__main__</code>. Importing the module also configures logging and creates directories as a side effect, which is why it cannot be unit tested.',
+ ev:[{p:'mufassah-tracker/tracker.py:306', c:"if count > config.BUFFER_MAX_SIZE:   // 'config' is a module global, assigned only in __main__"},
+     {p:'mufassah-tracker/tracker.py:681-682', c:"global config\nconfig = Config('config.env')   // the only assignment — at the bottom of the file"},
+     {p:'mufassah-tracker/tracker.py:63-78', c:"setup_logging()\nlogger = setup_logging()   // runs at import time: creates logs/, configures the root logger"}],
+ fix:'Split into <code>config.py</code>, <code>buffer.py</code>, <code>api.py</code>, <code>gps.py</code>, <code>service.py</code>; pass config explicitly rather than through a global; move logging setup into an entrypoint function. Then the buffer and retry logic become testable.',
+ ben:'This is the component you cannot debug by attaching a debugger, because it is on a Pi in the field. Testability here is not an academic concern — it is the only way to be confident a change to retry or eviction logic will not lose tracking history in production.',
+ pri:'P3'},
+
+{id:'R-10', cat:'read', layer:'api', sev:'Medium', eff:'S', title:'Raw models returned instead of API resources',
+ prob:'The product catalog controller returns Eloquent models directly from eleven endpoints, bypassing the resource layer entirely. Most other controllers do this correctly, which makes the omission easy to miss.',
+ ev:[{p:'api/app/Http/Controllers/Api/V1/Admin/AdminProductCatalogController.php:59, 91, 108, 137, 196, 232, 247, 295, 335, 381, 394', c:"return $this->success($brands);\nreturn $this->success($model, 'Product model created successfully', 201);   // raw Eloquent model"},
+     {p:'api/app/Http/Controllers/Api/V1/Admin/CommunicationSettingsController.php:21', c:"return $this->success($settings);   // raw model"}],
+ fix:'Add resources for the catalog models and return those, consistent with the other 34 resource classes.',
+ ben:'Returning raw models means any new column added to the table is automatically exposed to the API — including internal flags and cost fields. The resource layer is what makes that safe, and these endpoints currently sit outside it.',
+ pri:'P3'},
+
+{id:'R-11', cat:'read', layer:'api', sev:'Medium', eff:'S', title:'Dead models and a hardcoded personal email as the approval default',
+ prob:'Four models exist with no runtime usage and no fillable or guarded declaration. Separately, the inventory approval email defaults to a hardcoded personal Gmail address — the config file does define the key, but its fallback is an individual\'s address rather than a shared mailbox.',
+ ev:[{p:'api/app/Models/{Notification,SystemSetting,Transaction,Alert}.php', c:"class SystemSetting extends Model\n{\n    //\n}\n// referenced only by their own factories or a seeder"},
+     {p:'api/config/inventory.php:15', c:"'approval_email' => env('INVENTORY_ACTION_APPROVAL_EMAIL', 'elijahpchitedze@gmail.com'),"},
+     {p:'api/app/Services/InventoryActionApprovalService.php:221-222', c:"return trim((string) config('inventory.approval_email', 'elijahpchitedze@gmail.com'))\n    ?: 'elijahpchitedze@gmail.com';   // second hardcoded fallback"}],
+ fix:'Delete the unused models or wire them up. Replace the personal address with a shared operations mailbox and make the environment variable required, so a misconfiguration fails loudly instead of silently routing approvals to one person\'s inbox.',
+ ben:'Every PIN-protected inventory approval — administrative sales, device deletions — currently routes to an individual\'s personal email by default. If that person leaves or their mailbox is compromised, an administrative control over stock silently depends on a private account.',
+ pri:'P2'},
+
+{id:'R-12', cat:'read', layer:'web', sev:'Medium', eff:'L', title:'Monolithic page files mix unrelated responsibilities',
+ prob:'The largest pages combine listing, filtering, form entry, cart management, checkout and receipt rendering in a single file. <code>SalesPage.tsx</code> alone contains nine separate cache-invalidation blocks.',
+ ev:[{p:'web/src/pages/sales/SalesPage.tsx — 2085 lines', c:"list view + filters + summary cards + new-customer form + cart + checkout + receipt modal + refund/cancel modals\n+ 9 separate queryClient.invalidateQueries blocks (:322-404)"},
+     {p:'other large pages', c:"DeviceManagementPage.tsx 1224 · IoTModulesPage.tsx 1155 · CustomerServiceNewSalePage.tsx 1039 · AdminInventoryPage.tsx 987 · AdminStockMovementsPage.tsx 984"},
+     {p:'duplicated cart recalculation with a missing dependency', c:"SalesPage.tsx:280-289 and CustomerServiceNewSalePage.tsx:124-133 — byte-identical\nuseEffect(() => { ...setCart(updatedCart) }, [vatApplicable])   // 'cart' omitted"}],
+ fix:'Extract the cart, checkout and receipt flows into their own components, and derive cart tax during render instead of storing it in state and re-deriving it in an effect.',
+ ben:'These files are where the silent-failure and duplicated-status defects concentrate, because no reviewer can hold 2000 lines in scope. The cart effect is the concrete risk: rapidly adding an item while toggling VAT can leave a line with a stale tax amount, which is a money calculation.',
+ pri:'P3'},
+
+/* ============ UI / UX ============ */
+{id:'U-01', cat:'ui', layer:'web', sev:'High', eff:'M', title:'Fourteen destructive actions use the browser\'s native confirm dialog',
+ prob:'A styled <code>ConfirmDialog</code> component exists and is used in five places, but fourteen destructive actions still call <code>window.confirm()</code>. Deletes of devices, families, categories, brands and models all use the native prompt.',
+ ev:[{p:'web/src/pages/devices/DevicesPage.tsx:65 · pages/families/FamilyDetailPage.tsx:81,92,104,116 · pages/families/FamiliesPage.tsx:53 · pages/theft-reports/TheftReportsPage.tsx:48 · pages/alerts/MyAlertsPage.tsx:50 · pages/admin/AdminCommunityPage.tsx:297 · pages/admin/AdminProductCatalogPage.tsx:393,481 · pages/admin/AdminCategoriesPage.tsx:204 · pages/admin/AdminFamiliesPage.tsx:520 · pages/admin/AdminVacanciesPage.tsx:184', c:"if (confirm('Are you sure you want to delete this device?')) { ... }"},
+     {p:'web/src/components/ui/ConfirmDialog.tsx — already built, used in 5 files', c:"// styled, can show loading state and consequence text"}],
+ fix:'Replace the native calls with the existing <code>ConfirmDialog</code>. Add consequence text ("this will also remove 3 geofences") and a destructive-action colour for irreversible operations.',
+ ben:'A native confirm dialog cannot be styled, cannot show a loading state, and looks identical to a phishing prompt — browsers even let sites suppress it. On a platform where deleting a device removes its tracking history, the confirmation should look like it belongs to the product.',
+ pri:'P2'},
+
+{id:'U-02', cat:'ui', layer:'web', sev:'High', eff:'M', title:'Modals are unusable with a keyboard or screen reader',
+ prob:'No modal implements dialog semantics. There is no <code>role="dialog"</code>, no <code>aria-modal</code>, no focus trap, no initial focus and no Escape handler anywhere in the codebase. Across 519 click handlers there are only 19 <code>aria-label</code> attributes.',
+ ev:[{p:'web/src/pages/devices/AddDeviceModal.tsx:100-124', c:"<div className=\"fixed inset-0 ...\">          // plain div, no role=\"dialog\"\n  <button onClick={onClose}>                    // icon-only, no aria-label\n    <X className=\"h-4 w-4\" />\n  </button>\n  // no aria-modal, no focus trap, no Escape handler"},
+     {p:'web/src/components/ui/ConfirmDialog.tsx:55-59', c:"// same gaps in the shared confirm dialog"},
+     {p:'counts across src/', c:"role=\"dialog\" / aria-modal  ->  0 occurrences\nonKeyDown / Escape          ->  0 occurrences\naria-label                  ->  19   (vs 519 onClick handlers)"}],
+ fix:'Add a shared modal primitive that sets <code>role="dialog"</code>, <code>aria-modal</code>, traps focus, moves initial focus inside, restores focus on close, and closes on Escape. Migrate modals onto it.',
+ ben:'Escape does not close a modal, so a keyboard user who opens the device form cannot dismiss it. Focus stays on the page behind the overlay, so a screen reader reads the wrong content. For an admin tool staffed all day, this is a hard blocker rather than an inconvenience — and it is also a common accessibility compliance requirement.',
+ pri:'P2'},
+
+{id:'U-03', cat:'ui', layer:'web', sev:'High', eff:'M', title:'Form labels are not programmatically linked to their inputs',
+ prob:'Across the app, <code>&lt;label&gt;</code> elements have no <code>htmlFor</code> and inputs have no <code>id</code>, so the association exists only visually. The shared <code>Input</code> component does this correctly but is used in five files.',
+ ev:[{p:'web/src/pages/devices/AddDeviceModal.tsx:131-141', c:"<label className=\"block text-sm font-medium text-slate-700 mb-1.5\">Category <span>*</span></label>\n<select name=\"category_id\" ...>   // no id on the select, no htmlFor on the label"},
+     {p:'web/src/components/ui/Input.tsx:17-32  (correct, used in 5 files)', c:"<label htmlFor={id}>\n<input id={id} aria-invalid={...} aria-describedby={...} />"}],
+ fix:'Either adopt the <code>Input</code> component or add <code>htmlFor</code>/<code>id</code> pairs to the raw fields. A lint rule can catch future omissions.',
+ ben:'Clicking a label does not focus its field, which is a small daily friction. More seriously, a screen reader announces the field as an unlabelled combo box or text box, so a visually impaired user cannot tell whether they are entering a category or a serial number.',
+ pri:'P2'},
+
+{id:'U-04', cat:'ui', layer:'web', sev:'Medium', eff:'M', title:'Every screen loads with a spinner instead of a skeleton',
+ prob:'The codebase contains 157 <code>Loader2</code> usages and no skeleton components at all. Lists and detail pages replace their content with a centred spinner, and the top-level Suspense fallback is a full-screen spinner.',
+ ev:[{p:'web/src/pages/devices/DevicesPage.tsx:176-179 · pages/notifications/NotificationsPage.tsx:155-158 · components/inventory/SerialViewTable.tsx:44-50', c:"if (isLoading) return <LoadingSpinner />"},
+     {p:'web/src/App.tsx:109, 126', c:"<Suspense fallback={<LoadingSpinner fullScreen />}>   // whole shell replaced on lazy route load"}],
+ fix:'Add skeleton row components for the main list screens and a shell-preserving layout fallback for route transitions.',
+ ben:'A spinner followed by a full table is a layout jump — the user starts reading, then everything moves. Skeletons also communicate what is coming, so the page feels faster even at identical load time, and on a slow connection that perceived difference is significant.',
+ pri:'P3'},
+
+{id:'U-05', cat:'ui', layer:'web', sev:'Medium', eff:'S', title:'"Remember me" does nothing',
+ prob:'The login form has a Remember me checkbox bound through the schema, but the value is never read. The login handler persists the token to localStorage unconditionally.',
+ ev:[{p:'web/src/pages/auth/LoginPage.tsx:15, 76-84', c:"remember: z.boolean().optional(),\n...\n<input {...register('remember')} type=\"checkbox\" />\n<span>Remember me</span>   // data.remember is never read anywhere"},
+     {p:'web/src/stores/auth-store.ts:148-151', c:"login() -> localStorage.setItem('auth_token', token)   // always persisted, via zustand persist"}],
+ fix:'Either honour the checkbox — session storage when unchecked, persistent storage when checked — or remove it from the form. Leaving a control that lies is worse than not offering it.',
+ ben:'On a shared store terminal, a user who deliberately leaves "Remember me" unchecked still stays signed in after closing the browser. That is the opposite of what the control promises, on a device that may be used by multiple staff.',
+ pri:'P2'},
+
+{id:'U-06', cat:'ui', layer:'web', sev:'Medium', eff:'S', title:'Pagination reloads the whole page',
+ prob:'The shift history page paginates by writing a new URL to <code>window.location.href</code>, bypassing the router entirely. Every page change is a full document reload.',
+ ev:[{p:'web/src/pages/customer-service/ShiftHistoryPage.tsx:218-233', c:"onClick={() => {\n  const page = Math.max(1, meta.current_page - 1)\n  window.location.href = `?page=${page}`   // full document reload\n}}"}],
+ fix:'Use the router\'s search-param state, as the other paginated screens do, so pagination is an SPA transition.',
+ ben:'Every page change flashes white and re-downloads the application bundle, and the browser back button behaves inconsistently. On a slow connection the reload is several seconds for what should be an instant transition.',
+ pri:'P3'},
+
+{id:'U-07', cat:'ui', layer:'web', sev:'Medium', eff:'S', title:'Payment popup can be silently blocked',
+ prob:'The subscription flow opens the provider payment URL from an async success callback, without <code>noopener</code>, and with no fallback if the browser blocks the popup. Popup blockers commonly suppress windows opened after an await.',
+ ev:[{p:'web/src/pages/subscriptions/SubscriptionsPage.tsx:64-66', c:"if (data.payment_url) {\n  window.open(data.payment_url, '_blank')   // no 'noopener,noreferrer'; called from an async callback\n}"}],
+ fix:'Add <code>noopener,noreferrer</code>, and provide a visible fallback link when <code>window.open</code> returns null, so the user can always reach the payment page.',
+ ben:'When the popup is blocked the user sees a "subscription created" success message but no payment page, with no way forward. They are left believing they are subscribed when they are not — and there is no obvious link to retry.',
+ pri:'P2'},
+
+{id:'U-08', cat:'ui', layer:'web', sev:'Medium', eff:'S', title:'Icon-only buttons have no accessible name',
+ prob:'Across the app there are 19 <code>aria-label</code> attributes against 519 click handlers. Sidebar toggles, row action menus and pagination controls are icon-only with no text alternative.',
+ ev:[{p:'web/src/components/layout/AdminLayout.tsx:130, 184-189 · DashboardLayout.tsx:153-158 · CustomerServiceLayout.tsx:69-74', c:"<button onClick={...}><Menu className=\"h-5 w-5\" /></button>   // no aria-label"},
+     {p:'web/src/pages/devices/DevicesPage.tsx:282-290, 305-321', c:"// row action menu and pagination controls — icon-only"}],
+ fix:'Add <code>aria-label</code> to every icon-only control, and give the pagination controls descriptive labels including the target page.',
+ ben:'A screen reader announces these as "button" with no purpose, which makes pagination and row-action menus — the primary way to act on a device — completely unusable non-visually.',
+ pri:'P2'},
+
+{id:'U-09', cat:'ui', layer:'web', sev:'Low', eff:'S', title:'Notifications can be deleted with no confirmation or feedback',
+ prob:'The delete handler fires the mutation directly with no confirmation, no toast and no undo. The mutation hook has no callbacks at all.',
+ ev:[{p:'web/src/pages/notifications/NotificationsPage.tsx:74-76', c:"const handleDelete = (id: string) => { deleteNotification.mutate(id) }"},
+     {p:'web/src/hooks/useNotifications.ts:45-55', c:"export function useDeleteNotification() {\n  return useMutation({ mutationFn: (id) => notificationsApi.deleteNotification(id) })\n  // no onSuccess / onError — no toast, no undo"}],
+ fix:'Add a confirmation step or an undo toast, and surface success and failure feedback.',
+ ben:'A mis-tap on the trash icon permanently removes a theft alert notification with no indication that anything happened — and the user has no way to know whether it succeeded or to recover it.',
+ pri:'P3'},
+
+{id:'U-10', cat:'ui', layer:'web', sev:'Low', eff:'L', title:'Dark mode is applied to three files out of a hundred',
+ prob:'Only three files contain any dark-mode classes, and there is no dark variant configuration in the stylesheet. On a system set to dark mode those three areas invert while the rest of the app stays light.',
+ ev:[{p:'web/src/index.css — no dark variant or .dark configuration', c:"// no dark: strategy defined"},
+     {p:'dark: class occurrences — 12 total', c:"components/ui/Alert.tsx · pages/auth/ResetPasswordPage.tsx · pages/profile/ProfilePage.tsx   (3 files out of ~128)"}],
+ fix:'Either remove the partial dark styles so the app is consistently light, or adopt a proper dark-mode strategy with a theme toggle. The partial state is the worst option.',
+ ben:'A user whose operating system is in dark mode gets a patchwork interface — a dark alert panel next to a light card — with potential contrast failures where the two meet.',
+ pri:'P4'},
+
+/* ============ WORKFLOW SIMPLIFICATION ============ */
+{id:'W-01', cat:'flow', layer:'web', sev:'High', eff:'S', title:'Dashboard tiles under-report because stats are computed from one page of data',
+ prob:'The customer dashboard derives its statistics from three paginated requests with small page sizes, then counts within that truncated set. "Active Tracking" counts only the five devices fetched, and "Alerts Today" only the first ten notifications.',
+ ev:[{p:'web/src/api/dashboard.ts:21-52', c:"const [devicesResponse, geofencesResponse, notificationsResponse] = await Promise.all([\n  apiClient.get('/devices?per_page=5'),\n  apiClient.get('/geofences'),\n  apiClient.get('/notifications?per_page=10'),\n])\n...\ntotalDevices: devices.meta?.total || devices.data?.length || 0,\nactiveDevices,   // counted from only the 5 fetched devices\nalertsToday,     // counted from only the 10 fetched notifications"}],
+ fix:'Add a dedicated summary endpoint that returns the aggregates in one query, or use the pagination <code>meta.total</code> the API already provides rather than counting the returned rows.',
+ ben:'The dashboard is the first thing a customer sees, and it can tell them they have 5 active devices when they own 30, or hide alerts because they fall outside the first ten notifications. On a theft-prevention product, under-reporting active tracking can make a customer believe a device is unmonitored.',
+ pri:'P1'},
+
+{id:'W-02', cat:'flow', layer:'web', sev:'High', eff:'S', title:'Filing a theft report does not refresh the admin device lists',
+ prob:'The theft-report mutation invalidates the theft-report and generic device query keys, but the admin and customer-service device lists use different keys that are never invalidated. The device keeps showing its old status until a manual refresh.',
+ ev:[{p:'web/src/hooks/useTheftReports.ts:24-27', c:"onSuccess: () => {\n  queryClient.invalidateQueries({ queryKey: ['theft-reports'] })\n  queryClient.invalidateQueries({ queryKey: ['devices'] })\n}"},
+     {p:'keys actually used by the lists', c:"DeviceManagementPage.tsx:84  ->  ['admin-devices', ...]\nAdminDevicesPage.tsx:51      ->  ['admin-devices', ...]\nCustomerServiceDevicesPage   ->  ['customer-service-devices', ...]\n// none invalidated"}],
+ fix:'Introduce key factories (see R-07) and invalidate the device domain broadly on any status-changing action, including theft reports, recovery and ownership transfer.',
+ ben:'A customer files a theft report and the admin looking at the device list still sees "active". In a recovery workflow the first minutes matter most, and a stale status can mean the difference between escalating and assuming the report was never submitted.',
+ pri:'P1'},
+
+{id:'W-03', cat:'flow', layer:'web', sev:'Medium', eff:'S', title:'Signing back in loses the page the user was trying to reach',
+ prob:'The route guard passes the intended destination to the login page, but the login flow never reads it and always redirects to the role\'s default landing page.',
+ ev:[{p:'web/src/components/auth/ProtectedRoute.tsx:31', c:"return <Navigate to=\"/login\" state={{ from: location }} replace />   // destination is passed"},
+     {p:'web/src/hooks/useAuth.ts:36-44', c:"onSuccess: (data) => {\n  login(data.user, data.token)\n  const redirectPath = getDefaultRedirectPath(data.user)   // ignores location.state.from\n  setTimeout(() => { navigate(redirectPath, { replace: true }) }, 0)\n}"}],
+ fix:'Read the <code>from</code> location in the login success handler and navigate there when present, falling back to the role default. Drive the redirect declaratively rather than via a zero-delay timeout.',
+ ben:'An admin who deep-links to a specific theft report, gets signed out, and signs back in lands on the dashboard and has to navigate back manually. Losing your place on every session expiry is the kind of friction that makes staff keep tabs open indefinitely instead of signing out.',
+ pri:'P2'},
+
+{id:'W-04', cat:'flow', layer:'web', sev:'Medium', eff:'M', title:'No optimistic updates anywhere',
+ prob:'None of the 149 mutations uses <code>onMutate</code>. Every status toggle, mark-as-read and role change invalidates and refetches, so the user sees a spinner and the row reload before the change appears.',
+ ev:[{p:'grep for onMutate across src/', c:"0 matches across 149 useMutation calls"},
+     {p:'representative flow — mark a notification read', c:"useMarkAsRead() -> onSuccess invalidates ['notifications'] and ['notifications-unread-count']\n// full list refetch for a single boolean change"}],
+ fix:'Add optimistic updates for the high-frequency toggles — mark as read, device status changes, notification dismissal — with rollback on error.',
+ ben:'Toggling a device status or dismissing a notification currently feels laggy and the row visibly reloads. Staff doing this repeatedly during a shift notice it, and it makes the app feel slower than it is.',
+ pri:'P3'},
+
+{id:'W-05', cat:'flow', layer:'tracker', sev:'High', eff:'M', title:'Install script can produce a service that will not start',
+ prob:'The installer uses <code>pip3 install --user</code> but the unit runs the system Python. The README instructs running the installer with <code>sudo</code>, which means <code>--user</code> installs into root\'s home rather than the service user\'s. There is no Python version check, no permission setup on the credential file, and no rollback if a later step fails.',
+ ev:[{p:'mufassah-tracker/install.sh:12 vs mufassah-tracker.service:12', c:"install.sh:  pip3 install --user -r requirements.txt\nservice:     ExecStart=/usr/bin/python3 ...\nREADME.md:90: sudo ./install.sh   ->  packages land in /root/.local"},
+     {p:'mufassah-tracker/install.sh — no config.env handling', c:"chmod +x tracker.py   // line 15 — the only chmod; config.env is never set to 600"},
+     {p:'mufassah-tracker/README.md:235', c:"# - Wrong config permissions: chmod 600 config.env   // acknowledged in docs, absent from the installer"}],
+ fix:'Install into a virtual environment owned by the service user, pin the interpreter in the unit, add a Python version check, apply <code>chmod 600</code> to the credential file, and make the script idempotent so a failed run can be repeated safely.',
+ ben:'The documented install path can yield a service that fails immediately with a missing-module error, with no cleanup and no clear signal about which step went wrong. That is discovered in the field, on a device that may be hours away.',
+ pri:'P2'},
+
+{id:'W-06', cat:'flow', layer:'tracker', sev:'Medium', eff:'M', title:'No way to verify a device before deploying it',
+ prob:'The tracker has no command-line interface at all — no arguments, no dry-run, no config validation, no credential test. The configuration path is hardcoded and resolved relative to the working directory.',
+ ev:[{p:'mufassah-tracker/tracker.py:678-690', c:"if __name__ == '__main__':\n    global config\n    config = Config('config.env')   // hardcoded path, resolved from CWD\n    ...\n    # no argparse, no --check, no --once, no --status"},
+     {p:'mufassah-tracker/README.md:102-159', c:"## Testing\n### Test 1: GPS Functionality  ->  cgps -s\n### Test 2: API Connection      ->  curl -X POST ...\n// every verification step is a manual shell command"}],
+ fix:'Add <code>--check</code> (validate config, test credentials, confirm GPS fix, exit), <code>--once</code> (send a single reading) and <code>--status</code> (report buffer depth and last successful upload).',
+ ben:'A technician preparing a device cannot confirm it works before shipping it, so faults are discovered after deployment. A one-command pre-flight check turns a multi-hour field visit into a two-minute verification.',
+ pri:'P2'},
+
+{id:'W-07', cat:'flow', layer:'web', sev:'Low', eff:'S', title:'No prefetching, so every navigation waits',
+ prob:'No query is prefetched anywhere. Hovering a device row or a navigation link never warms the detail query, so the destination always starts from a cold load.',
+ ev:[{p:'grep for prefetchQuery / prefetchInfiniteQuery across src/', c:"0 matches"}],
+ fix:'Prefetch detail queries on row hover or link focus, and prefetch the next page of a paginated list when the user reaches the last visible row.',
+ ben:'Clicking into a device always waits for a full request cycle. Prefetching on hover makes navigation feel instant at no cost when the user hovers and moves on.',
+ pri:'P4'}
+];
+
+/* ---------- priority derivation ---------- */
+const SEV_RANK = {Critical:4, High:3, Medium:2, Low:1};
+const EFF_RANK = {S:1, M:2, L:3};
+function priority(f){
+  const s = SEV_RANK[f.sev], e = EFF_RANK[f.eff];
+  if (s >= 4 && e <= 2) return 'P1';
+  if (s >= 3 && e === 1) return 'P1';
+  if (s >= 3 && e === 2) return 'P2';
+  if (s === 2 && e <= 2) return 'P2';
+  if (s >= 4) return 'P3';
+  if (s === 3) return 'P3';
+  return 'P4';
+}
+F.forEach(f => f.pri = f.pri || priority(f));
+
+/* ---------------------------------------------------------------------------
+   Findings implemented and verified in the follow-up pass.
+
+   Kept as a list rather than editing each finding object, so it is obvious at
+   a glance which items are closed and trivial to extend.
+   --------------------------------------------------------------------------- */
+const DONE_IDS = ['S-01','S-02','S-03','S-04','S-05','S-07','S-08','S-09','E-09','E-10','E-11','E-12','P-01','P-02'];
+F.forEach(f => { if (DONE_IDS.includes(f.id)) f.done = true; });
+
+const LAYER_NAME = {api:'API', web:'Web', tracker:'Tracker'};
+
+/* ---------- stats ---------- */
+function renderStats(){
+  const total = F.length;
+  const crit = F.filter(f=>f.sev==='Critical').length;
+  const high = F.filter(f=>f.sev==='High').length;
+  const med  = F.filter(f=>f.sev==='Medium').length;
+  const p1   = F.filter(f=>f.pri==='P1').length;
+  const done = F.filter(f=>f.done).length;
+  const S = [
+    {n:total, l:'Findings', c:''},
+    {n:crit, l:'Critical', c:'crit'},
+    {n:high, l:'High', c:'high'},
+    {n:med, l:'Medium', c:'med'},
+    {n:p1, l:'Do now (P1)', c:'teal'},
+    {n:done, l:'Implemented', c:'teal'}
+  ];
+  document.getElementById('stats').innerHTML = S.map(s=>
+    `<div class="stat ${s.c}"><div class="n">${s.n}</div><div class="l">${s.l}</div></div>`).join('');
+}
+
+/* ---------- matrix ---------- */
+function renderMatrix(){
+  const cells = [
+    {cls:'p1', lbl:'P1 · Do now'},   // Critical × S
+    {cls:'p1', lbl:'P1 · Do now'},   // Critical × M
+    {cls:'p3', lbl:'P3 · Plan'},     // Critical × L
+    {cls:'p1', lbl:'P1 · Do now'},   // High × S
+    {cls:'p2', lbl:'P2 · Schedule'}, // High × M
+    {cls:'p3', lbl:'P3 · Plan'},     // High × L
+    {cls:'p2', lbl:'P2 · Schedule'}, // Medium × S
+    {cls:'p2', lbl:'P2 · Schedule'}, // Medium × M
+    {cls:'p4', lbl:'P4 · Backlog'},  // Medium × L
+    {cls:'p4', lbl:'P4 · Backlog'},  // Low × S
+    {cls:'p4', lbl:'P4 · Backlog'},  // Low × M
+    {cls:'p4', lbl:'P4 · Backlog'}   // Low × L
+  ];
+  const impOrder = ['Critical','High','Medium','Low'];
+  const effOrder = ['S','M','L'];
+  let html = '<div class="mx-corner"></div>';
+  effOrder.forEach(e => html += `<div class="mx-head">Effort ${e}</div>`);
+  let i = 0;
+  impOrder.forEach(imp => {
+    effOrder.forEach(eff => {
+      const items = F.filter(f=>f.sev===imp && f.eff===eff);
+      const c = cells[i++];
+      // real priority mix for this cell, most common first
+      const mix = {};
+      items.forEach(f => mix[f.pri] = (mix[f.pri]||0)+1);
+      const order = ['P1','P2','P3','P4'];
+      const label = order.filter(p=>mix[p])
+        .map(p=>`${mix[p]} ${p==='P1'?'do now':p==='P2'?'schedule':p==='P3'?'plan':'backlog'}`)
+        .join(' · ') || c.lbl;
+      const cls = items.length ? (order.find(p=>mix[p]) || 'p4').toLowerCase() : 'p4';
+      html += `<div class="mx-side">${imp}<br>× ${eff}</div>`;
+      html += `<div class="mx-cell ${cls}">` +
+        `<div class="top"><span class="cnt">${items.length}</span><span class="lbl">${label}</span></div>` +
+        `<div class="mx-ids">` +
+        (items.length
+          ? items.map(f=>`<span class="mx-id" data-jump="${f.id}" title="${f.title.replace(/"/g,'&quot;').replace(/&amp;/g,'&')}">${f.id}</span>`).join('')
+          : '<span class="mx-empty">nothing here</span>') +
+        `</div></div>`;
+    });
+  });
+  document.getElementById('matrix').innerHTML = html;
+  // clicking an ID chip jumps to that finding
+  document.querySelectorAll('.mx-id').forEach(el => {
+    el.addEventListener('click', () => {
+      const t = document.querySelector(`.finding[data-id="${el.dataset.jump}"]`);
+      if (t) { t.scrollIntoView({block:'center'}); t.style.transition='box-shadow .3s'; t.style.boxShadow='0 0 0 3px var(--accent)'; setTimeout(()=>t.style.boxShadow='',1400); }
+    });
+  });
+}
+
+/* ---------- findings ---------- */
+function badge(t, cls){ return `<span class="badge ${cls}">${t}</span>`; }
+function sevBadge(s){
+  const m = {Critical:'b-crit', High:'b-high', Medium:'b-med', Low:'b-low'};
+  return badge(s, m[s]);
+}
+function effBadge(e){
+  const m = {S:'hours', M:'1–3 days', L:'1+ week'};
+  return badge(`Effort ${e} · ${m[e]}`, 'b-eff');
+}
+function priBadge(p){ return badge(p==='P1'?'P1 · Do now':p==='P2'?'P2 · Schedule':p==='P3'?'P3 · Plan':'P4 · Backlog', 'b-'+p.toLowerCase()); }
+
+function findingHTML(f){
+  const ev = f.ev.map(e => `<div class="ev"><span class="path">${e.p}</span><code>${e.c.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</code></div>`).join('');
+  return `<div class="finding" data-id="${f.id}" data-sev="${f.sev}" data-layer="${f.layer}" data-pri="${f.pri}" data-cat="${f.cat}" data-done="${f.done ? 1 : 0}">
+    <div class="f-head">
+      <span class="f-id">${f.id}</span>
+      <h3 class="f-title">${f.title}</h3>
+      <div class="badges">${f.done ? badge('Implemented', 'b-done') : ''}${sevBadge(f.sev)}${priBadge(f.pri)}${effBadge(f.eff)}${badge(LAYER_NAME[f.layer], 'b-low')}</div>
+    </div>
+    <div class="f-body">
+      <div class="f-row"><div class="f-key">Problem</div><p class="f-val">${f.prob}</p></div>
+      <div class="f-row"><div class="f-key">Evidence</div><div>${ev}</div></div>
+      <div class="f-row"><div class="f-key">Fix</div><p class="f-val">${f.fix}</p></div>
+      <div class="f-row"><div class="f-key">User benefit</div><p class="f-val benefit">${f.ben}</p></div>
+    </div>
+  </div>`;
+}
+
+function renderFindings(){
+  let html = '';
+  Object.keys(CATS).forEach(k => {
+    const items = F.filter(f=>f.cat===k);
+    if(!items.length) return;
+    const c = CATS[k];
+    html += `<div class="group" data-group="${k}">
+      <h2><span class="num">${c.num}</span> &nbsp;${c.name}
+        <span style="font-size:14px; font-weight:600; color:var(--muted)"> &nbsp;${items.length} findings</span>
+      </h2>
+      ${items.map(findingHTML).join('')}
+    </div>`;
+  });
+  document.getElementById('findings').innerHTML = html;
+}
+
+/* ---------- filtering ---------- */
+const state = {layer:'all', pri:'all'};
+function apply(){
+  let shown = 0;
+  document.querySelectorAll('.finding').forEach(el => {
+    const okL = state.layer === 'all' || el.dataset.layer === state.layer;
+    const okP = state.pri   === 'all' || el.dataset.pri   === state.pri;
+    const vis = okL && okP;
+    el.classList.toggle('hidden', !vis);
+    if (vis) shown++;
+  });
+  document.querySelectorAll('.group').forEach(g => {
+    const any = g.querySelectorAll('.finding:not(.hidden)').length > 0;
+    g.classList.toggle('hidden', !any);
+  });
+  document.getElementById('count').textContent = `Showing ${shown} of ${F.length} findings`;
+}
+function wireControls(){
+  document.querySelectorAll('button.f').forEach(b => {
+    b.addEventListener('click', () => {
+      const group = b.dataset.f, val = b.dataset.v;
+      document.querySelectorAll(`button.f[data-f="${group}"]`).forEach(x=>x.classList.remove('on'));
+      b.classList.add('on');
+      state[group === 'layer' ? 'layer' : 'pri'] = val;
+      apply();
+    });
+  });
+}
+
+renderStats();
+renderMatrix();
+renderFindings();
+wireControls();
+apply();
+</script>
+</body>
+</html>
