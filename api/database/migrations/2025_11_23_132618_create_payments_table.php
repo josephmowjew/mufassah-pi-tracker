@@ -15,7 +15,7 @@ return new class extends Migration
             $table->string('payment_number', 50)->unique();
             $table->decimal('amount', 10, 2);
             $table->string('currency', 3)->default('MWK');
-            $table->enum('status', ['pending', 'completed', 'failed', 'refunded', 'cancelled'])->default('pending');
+            $table->enum('status', ['pending', 'completed', 'failed', 'refunded', 'cancelled', 'refund_processing'])->default('pending');
             $table->enum('payment_method', ['mobile_money', 'bank_transfer', 'cash', 'card']);
             $table->string('payment_provider', 100)->nullable();
             $table->string('provider_transaction_id', 255)->nullable();

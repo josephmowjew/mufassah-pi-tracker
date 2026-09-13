@@ -284,6 +284,118 @@ class PayChanguService
     }
 
     /**
+     * Initiate a payout to a customer's mobile money account.
+     *
+     * PayChangu documents no refund endpoint, so money is returned through the
+     * Disbursement (payout) API. Payouts are asynchronous: a successful call
+     * returns status "pending" and settles afterwards, so a successful response
+     * must not be read as settled funds.
+     *
+     * @param  string  $chargeId  Client-generated reference. PayChangu requires it
+     *                            to be unique for every transaction, so a retried
+     *                            payout must use a fresh value.
+     * @return array{success: bool, status?: string|null, payout_id?: string|null, ref_id?: string|null, data?: array, error?: string}
+     */
+    public function initiateMobileMoneyPayout(
+        string $operatorRefId,
+        string $mobile,
+        string $amount,
+        string $chargeId,
+        ?string $email = null,
+        ?string $firstName = null,
+        ?string $lastName = null,
+    ): array {
+        // Drop the optional identity fields entirely rather than sending nulls.
+        $payload = array_filter([
+            'mobile_money_operator_ref_id' => $operatorRefId,
+            'mobile' => $mobile,
+            'amount' => $amount,
+            'charge_id' => $chargeId,
+            'email' => $email,
+            'first_name' => $firstName,
+            'last_name' => $lastName,
+        ], fn ($value) => $value !== null);
+
+        return $this->sendPayout('/mobile-money/payouts/initialize', $payload);
+    }
+
+    /**
+     * Initiate a payout to a customer's bank account.
+     *
+     * @return array{success: bool, status?: string|null, payout_id?: string|null, ref_id?: string|null, data?: array, error?: string}
+     */
+    public function initiateBankPayout(
+        string $bankUuid,
+        string $accountNumber,
+        string $accountName,
+        string $amount,
+        string $chargeId,
+    ): array {
+        return $this->sendPayout('/direct-charge/payouts/initialize', [
+            'payout_method' => 'bank_transfer',
+            'bank_uuid' => $bankUuid,
+            'bank_account_number' => $accountNumber,
+            'bank_account_name' => $accountName,
+            'amount' => $amount,
+            'charge_id' => $chargeId,
+        ]);
+    }
+
+    /**
+     * Send a payout request and normalise the provider's response.
+     *
+     * The two payout endpoints answer with different envelopes: mobile money
+     * returns the payout directly under `data`, while the bank endpoint nests it
+     * under `data.transaction`. Both are flattened to the same shape here.
+     *
+     * @param  array<string, mixed>  $payload
+     * @return array{success: bool, status?: string|null, payout_id?: string|null, ref_id?: string|null, data?: array, error?: string}
+     */
+    protected function sendPayout(string $path, array $payload): array
+    {
+        try {
+            $response = Http::withHeaders([
+                'Authorization' => "Bearer {$this->secretKey}",
+                'Content-Type' => 'application/json',
+                'Accept' => 'application/json',
+            ])->post("{$this->baseUrl}{$path}", $payload);
+
+            if ($response->successful() && $response->json('status') === 'success') {
+                $data = $response->json('data.transaction') ?? $response->json('data') ?? [];
+
+                return [
+                    'success' => true,
+                    'status' => $data['status'] ?? null,
+                    'payout_id' => $data['charge_id'] ?? null,
+                    'ref_id' => $data['ref_id'] ?? null,
+                    'data' => $data,
+                ];
+            }
+
+            Log::error('PayChangu payout rejected', [
+                'path' => $path,
+                'http_status' => $response->status(),
+                'response' => $response->json(),
+            ]);
+
+            return [
+                'success' => false,
+                'error' => $response->json('message') ?? 'The payment provider rejected the payout request.',
+            ];
+        } catch (RequestException $e) {
+            Log::error('PayChangu payout error', [
+                'path' => $path,
+                'error' => $e->getMessage(),
+            ]);
+
+            return [
+                'success' => false,
+                'error' => 'The payment provider was unreachable while issuing the refund.',
+            ];
+        }
+    }
+
+    /**
      * Generate a unique transaction reference.
      */
     protected function generateTransactionReference(): string

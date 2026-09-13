@@ -334,7 +334,12 @@ export interface Subscription {
 }
 
 // Payment types
-export type PaymentStatus = 'pending' | 'completed' | 'failed' | 'refunded' | 'cancelled'
+// NOTE: `refund_processing` is a payout in flight — the API moves a payment
+// here while PayChangu settles a disbursement, then on to `refunded` or back to
+// `completed`. This interface is otherwise out of step with PaymentResource
+// (which returns `payment_number` and a `{value,label,color}` status object);
+// no UI consumes payments yet, so it has not been reconciled.
+export type PaymentStatus = 'pending' | 'completed' | 'failed' | 'refunded' | 'cancelled' | 'refund_processing'
 export type PaymentMethod = 'airtel_money' | 'tnm_mpamba' | 'bank_transfer' | 'cash'
 
 export interface Payment {

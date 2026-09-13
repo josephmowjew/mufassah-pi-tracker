@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Resources\PaymentResource;
 use App\Models\Payment;
 use App\Services\PayChanguService;
+use App\Services\PaymentRefundService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -18,7 +19,10 @@ use Illuminate\Support\Facades\Log;
  */
 class PaymentController extends Controller
 {
-    public function __construct(protected PayChanguService $payChanguService) {}
+    public function __construct(
+        protected PayChanguService $payChanguService,
+        protected PaymentRefundService $refundService,
+    ) {}
 
     public function index(Request $request): JsonResponse
     {
@@ -206,26 +210,37 @@ class PaymentController extends Controller
     {
         $this->authorize('refund', $payment);
 
-        if ($payment->status !== PaymentStatus::Completed) {
+        // Shape only. Whether a payout target is actually required depends on the
+        // payment's method and state, so that check lives with the refund logic.
+        $validated = $request->validate([
+            'reason' => ['required', 'string', 'max:1000'],
+            'payout' => ['sometimes', 'array'],
+            'payout.mobile' => ['nullable', 'string', 'max:20'],
+            'payout.mobile_money_operator_ref_id' => ['nullable', 'string', 'max:100'],
+            'payout.bank_uuid' => ['nullable', 'string', 'max:100'],
+            'payout.bank_account_number' => ['nullable', 'string', 'max:50'],
+            'payout.bank_account_name' => ['nullable', 'string', 'max:150'],
+        ]);
+
+        $result = $this->refundService->refund(
+            $payment,
+            $request->user(),
+            $validated['reason'],
+            $validated['payout'] ?? [],
+        );
+
+        // A rejected refund has no payment to return: the payment is untouched.
+        if (! $result['success']) {
             return response()->json([
                 'success' => false,
-                'message' => 'Only completed payments can be refunded.',
-            ], 400);
+                'message' => $result['message'],
+            ], $result['http_status']);
         }
-
-        $payment->update([
-            'status' => PaymentStatus::Refunded,
-            'metadata' => array_merge($payment->metadata ?? [], [
-                'refunded_at' => now()->toIso8601String(),
-                'refunded_by' => $request->user()->id,
-                'refund_reason' => $request->reason,
-            ]),
-        ]);
 
         return response()->json([
             'success' => true,
-            'message' => 'Payment refunded successfully.',
-            'data' => new PaymentResource($payment),
-        ]);
+            'message' => $result['message'],
+            'data' => new PaymentResource($result['payment']->load(['subscription.plan'])),
+        ], $result['http_status']);
     }
 }
