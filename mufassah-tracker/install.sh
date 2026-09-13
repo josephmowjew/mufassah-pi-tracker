@@ -14,6 +14,16 @@ pip3 install --user -r requirements.txt
 # Make tracker executable
 chmod +x tracker.py
 
+# The config file holds the device bearer token, which authorises location
+# ingestion for a physical tracker. Keep it readable only by its owner.
+if [ -f config.env ]; then
+    chmod 600 config.env
+    echo "Restricted permissions on config.env (600)"
+else
+    echo "WARNING: config.env not found. Copy config.env.example and fill it in:"
+    echo "   cp config.env.example config.env && chmod 600 config.env"
+fi
+
 # Setup systemd service
 echo "Installing systemd service..."
 sudo cp mufassah-tracker.service /etc/systemd/system/

@@ -72,6 +72,9 @@ mufassah-tracker/env.bak/
 mufassah-tracker/venv.bak/
 mufassah-tracker/logs/*.log
 mufassah-tracker/.env
+# The tracker's real config file is config.env (not .env). It holds the device
+# API token, so it must never be committed. Use config.env.example as the template.
+mufassah-tracker/config.env
 
 # Logs
 *.log
