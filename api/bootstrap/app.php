@@ -8,6 +8,7 @@ use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
+use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 use Symfony\Component\HttpKernel\Exception\MethodNotAllowedHttpException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Symfony\Component\HttpKernel\Exception\TooManyRequestsHttpException;
@@ -115,5 +116,28 @@ return Application::configure(basePath: dirname(__DIR__))
                     'retry_after' => (int) $retryAfter,
                 ], 429);
             }
+        });
+
+        // Catch-all for anything the handlers above did not claim. Without it an
+        // unhandled exception falls through to the framework's default renderer,
+        // which drops the `success` key and — whenever APP_DEBUG is on — returns
+        // the exception class, source file, line number and stack trace in the
+        // body. Internal detail must never reach a client.
+        $exceptions->render(function (\Throwable $e, Request $request) {
+            if (! $request->is('api/*') && ! $request->expectsJson()) {
+                return null;
+            }
+
+            // Exceptions that already carry their own HTTP status — abort(422),
+            // abort(409) and friends — keep the framework's response. Only genuine
+            // server faults are normalised here, so no status is masked as a 500.
+            if ($e instanceof HttpExceptionInterface) {
+                return null;
+            }
+
+            return response()->json([
+                'success' => false,
+                'message' => 'An unexpected error occurred. Please try again later.',
+            ], 500);
         });
     })->create();

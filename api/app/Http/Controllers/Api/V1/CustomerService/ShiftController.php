@@ -10,6 +10,7 @@ use App\Notifications\ShiftEndSummaryNotification;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Notification;
 
 class ShiftController extends BaseController
@@ -94,7 +95,15 @@ class ShiftController extends BaseController
         } catch (\Exception $e) {
             DB::rollBack();
 
-            return $this->error('Failed to end shift: '.$e->getMessage(), 500);
+            // The exception never reaches Laravel's handler, so it is not reported
+            // automatically — log it here or the failure is invisible in production.
+            Log::error('Failed to end shift', [
+                'user_id' => $user->id,
+                'shift_id' => $shift->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return $this->error('Failed to end shift. Please try again.', 500);
         }
 
         // Send notification to admin emails if enabled
