@@ -28,6 +28,10 @@ return Application::configure(basePath: dirname(__DIR__))
             'role_or_permission' => \Spatie\Permission\Middleware\RoleOrPermissionMiddleware::class,
             'iot.auth' => \App\Http\Middleware\AuthenticateIotModule::class,
             'not.suspended' => \App\Http\Middleware\EnsureUserIsNotSuspended::class,
+            // Overrides the framework's default so clients get a structured
+            // EMAIL_NOT_VERIFIED code. Registered but NOT attached to any route
+            // group yet — see the class docblock and `users:grandfather-email-verification`.
+            'verified' => \App\Http\Middleware\EnsureEmailIsVerified::class,
         ]);
 
         $middleware->redirectGuestsTo(function (Request $request) {

@@ -86,7 +86,14 @@ apiClient.interceptors.response.use(
 
     // Handle 403 Forbidden
     if (error.response?.status === 403) {
-      console.error('Access forbidden')
+      // An unverified email is a recoverable state, not a permission denial: the
+      // API returns EMAIL_NOT_VERIFIED so the UI can offer to resend the link
+      // rather than showing a dead end. Pair with authApi.resendVerification().
+      if (isEmailNotVerifiedError(error)) {
+        console.warn('Email address is not verified')
+      } else {
+        console.error('Access forbidden')
+      }
     }
 
     // Handle 419 CSRF token mismatch - refetch and retry once
@@ -138,7 +145,25 @@ export interface PaginatedResponse<T> {
 export interface ApiError {
   success: false
   message: string
+  /** Machine-readable discriminator, e.g. `EMAIL_NOT_VERIFIED`. */
+  code?: string
   errors?: Record<string, string[]>
+}
+
+/**
+ * True when the API refused the request because the account's email address is
+ * not verified (HTTP 403 with `code: 'EMAIL_NOT_VERIFIED'`).
+ *
+ * The response also carries `resend_endpoint` and `status_endpoint`; pair this
+ * with `authApi.resendVerification()` so the user has a way forward.
+ */
+export function isEmailNotVerifiedError(error: unknown): boolean {
+  if (!axios.isAxiosError(error)) return false
+
+  return (
+    error.response?.status === 403 &&
+    (error.response.data as { code?: string } | undefined)?.code === 'EMAIL_NOT_VERIFIED'
+  )
 }
 
 export default apiClient
