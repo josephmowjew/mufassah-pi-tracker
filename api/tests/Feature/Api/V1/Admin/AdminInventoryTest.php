@@ -941,3 +941,106 @@ describe('Status Update', function () {
             ->assertJsonPath('message', 'Cannot change status of sold device. Process a refund instead.');
     });
 });
+
+/*
+ * Regression cover for E-05.
+ *
+ * A ValidationException raised inside the transaction is a business-rule
+ * rejection, not a server fault. Both write endpoints wrapped the operation in
+ * a bare `catch (\Exception)` — and because ValidationException extends
+ * Exception, a rejection was swallowed and returned as a generic 500, so the
+ * operator never learned which line was refused.
+ *
+ * The service is mocked to raise the exception at the point the real one would,
+ * which is after the batch/receipt rows have been written. That also lets these
+ * tests prove the rollback, not just the status code.
+ */
+describe('Inventory write failure contract', function () {
+    it('reports a rejected bulk add as a 422 and rolls the batch back', function () {
+        $this->mock(\App\Services\InventoryMovementService::class, function ($mock) {
+            $mock->shouldReceive('recordReceipt')
+                ->andThrow(\Illuminate\Validation\ValidationException::withMessages([
+                    'lines' => ['One or more serial numbers already exist in the system.'],
+                ]));
+        });
+
+        $response = $this->actingAs($this->admin)
+            ->postJson('/api/v1/admin/inventory/bulk', [
+                'category_id' => $this->category->id,
+                'branch_id' => $this->branch->id,
+                'brand' => 'Apple',
+                'model' => 'iPhone 15 Pro',
+                'quantity' => 2,
+                'buying_price' => 700000,
+                'target_selling_price' => 900000,
+                'auto_generate_serials' => true,
+            ]);
+
+        $response->assertStatus(422)
+            ->assertJsonPath('success', false)
+            ->assertJsonPath('errors.lines.0', 'One or more serial numbers already exist in the system.');
+
+        // The batch row is written before the movement is recorded, so a
+        // surviving batch here would mean the rollback did not happen.
+        expect(Device::where('brand', 'Apple')->count())->toBe(0)
+            ->and(InventoryBatch::count())->toBe(0);
+    });
+
+    it('reports a rejected receipt as a 422 and rolls the receipt back', function () {
+        $this->mock(\App\Services\InventoryMovementService::class, function ($mock) {
+            $mock->shouldReceive('recordReceipt')
+                ->andThrow(\Illuminate\Validation\ValidationException::withMessages([
+                    'lines' => ['Line 1 needs exactly 2 serial numbers.'],
+                ]));
+        });
+
+        $response = $this->actingAs($this->admin)
+            ->postJson('/api/v1/admin/inventory/receipts', [
+                'branch_id' => $this->branch->id,
+                'supplier' => 'Test Supplier',
+                'lines' => [
+                    [
+                        'category_id' => $this->category->id,
+                        'brand' => 'Samsung',
+                        'model' => 'Galaxy S24',
+                        'quantity' => 2,
+                        'buying_price' => 500000,
+                        'target_selling_price' => 650000,
+                        'auto_generate_serials' => true,
+                    ],
+                ],
+            ]);
+
+        $response->assertStatus(422)
+            ->assertJsonPath('success', false)
+            ->assertJsonPath('errors.lines.0', 'Line 1 needs exactly 2 serial numbers.');
+
+        expect(InventoryReceipt::count())->toBe(0)
+            ->and(Device::where('brand', 'Samsung')->count())->toBe(0);
+    });
+
+    it('still reports a genuine server fault as a 500', function () {
+        $this->mock(\App\Services\InventoryMovementService::class, function ($mock) {
+            $mock->shouldReceive('recordReceipt')
+                ->andThrow(new RuntimeException('connection reset by peer'));
+        });
+
+        $response = $this->actingAs($this->admin)
+            ->postJson('/api/v1/admin/inventory/bulk', [
+                'category_id' => $this->category->id,
+                'branch_id' => $this->branch->id,
+                'brand' => 'Apple',
+                'model' => 'iPhone 15 Pro',
+                'quantity' => 1,
+                'buying_price' => 700000,
+                'target_selling_price' => 900000,
+                'auto_generate_serials' => true,
+            ]);
+
+        // Narrowing the catch must not have widened the 500 path away.
+        $response->assertStatus(500)
+            ->assertJsonPath('success', false);
+
+        expect(json_encode($response->json()))->not->toContain('connection reset by peer');
+    });
+});

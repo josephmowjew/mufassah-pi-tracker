@@ -22,6 +22,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class AdminInventoryController extends BaseController
 {
@@ -482,6 +483,13 @@ class AdminInventoryController extends BaseController
             }
 
             DB::commit();
+        } catch (ValidationException $e) {
+            // A business-rule failure is not a server fault. Roll back and let the
+            // global handler render the documented 422 with its field errors —
+            // the \Exception arm below would flatten it into a generic 500.
+            DB::rollBack();
+
+            throw $e;
         } catch (\Exception $e) {
             DB::rollBack();
             Log::error('Bulk inventory creation failed', [
@@ -553,6 +561,12 @@ class AdminInventoryController extends BaseController
             }
 
             DB::commit();
+        } catch (ValidationException $e) {
+            // Same reasoning as bulkStore(): keep validation failures out of the
+            // 500 path so the operator sees which line was rejected.
+            DB::rollBack();
+
+            throw $e;
         } catch (\Exception $e) {
             DB::rollBack();
             Log::error('Inventory receipt creation failed', [
