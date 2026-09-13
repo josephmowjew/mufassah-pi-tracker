@@ -27,6 +27,22 @@ beforeEach(function () {
     $this->customer->assignRole('customer');
 });
 
+/**
+ * A second store admin in the given branch - the peer whose account a store
+ * admin must not be able to seize.
+ *
+ * Declared at file scope rather than inside a describe() closure: a named
+ * function declared inside a closure is hoisted into the global scope, so it
+ * would fatal with "cannot redeclare" if the closure were ever evaluated twice.
+ */
+function mufassahPeerStoreAdminIn(Branch $branch): User
+{
+    $peer = User::factory()->create(['branch_id' => $branch->id]);
+    $peer->assignRole('store_admin');
+
+    return $peer;
+}
+
 describe('User Listing', function () {
     it('allows admin to list users', function () {
         User::factory()->count(5)->create()->each(fn ($u) => $u->assignRole('customer'));
@@ -388,5 +404,108 @@ describe('Roles Listing', function () {
                     '*' => ['id', 'name'],
                 ],
             ]);
+    });
+});
+
+describe('Privilege Boundaries', function () {
+    it('prevents a store admin from changing a peer store admin password', function () {
+        $peer = mufassahPeerStoreAdminIn($this->branch);
+        $originalPassword = $peer->password;
+
+        $this->actingAs($this->storeAdmin)
+            ->putJson("/api/v1/admin/users/{$peer->id}", [
+                'password' => 'HijackedPassword123!',
+            ])
+            ->assertForbidden();
+
+        // The blocked attempt must not have written anything.
+        expect($peer->fresh()->password)->toBe($originalPassword);
+    });
+
+    it('prevents a store admin from changing a peer store admin email', function () {
+        $peer = mufassahPeerStoreAdminIn($this->branch);
+        $originalEmail = $peer->email;
+
+        $this->actingAs($this->storeAdmin)
+            ->putJson("/api/v1/admin/users/{$peer->id}", [
+                'email' => 'attacker-controlled@example.test',
+            ])
+            ->assertForbidden();
+
+        expect($peer->fresh()->email)->toBe($originalEmail);
+    });
+
+    it('prevents a store admin from touching a super admin in their branch', function () {
+        $superAdmin = User::factory()->create(['branch_id' => $this->branch->id]);
+        $superAdmin->assignRole('super_admin');
+
+        $this->actingAs($this->storeAdmin)
+            ->putJson("/api/v1/admin/users/{$superAdmin->id}", [
+                'password' => 'HijackedPassword123!',
+            ])
+            ->assertForbidden();
+    });
+
+    it('still lets a store admin manage a customer in their branch', function () {
+        $this->actingAs($this->storeAdmin)
+            ->putJson("/api/v1/admin/users/{$this->customer->id}", [
+                'name' => 'Renamed By Store Admin',
+            ])
+            ->assertSuccessful()
+            ->assertJsonPath('data.name', 'Renamed By Store Admin');
+    });
+
+    it('prevents a store admin from suspending a peer store admin', function () {
+        $peer = mufassahPeerStoreAdminIn($this->branch);
+
+        $this->actingAs($this->storeAdmin)
+            ->postJson("/api/v1/admin/users/{$peer->id}/suspend")
+            ->assertForbidden();
+
+        expect($peer->fresh()->suspended_at)->toBeNull();
+    });
+
+    it('prevents a store admin from unsuspending a peer store admin', function () {
+        $peer = mufassahPeerStoreAdminIn($this->branch);
+        $peer->update(['suspended_at' => now()]);
+
+        // Previously this endpoint had no rank check at all.
+        $this->actingAs($this->storeAdmin)
+            ->postJson("/api/v1/admin/users/{$peer->id}/unsuspend")
+            ->assertForbidden();
+
+        expect($peer->fresh()->suspended_at)->not->toBeNull();
+    });
+
+    it('prevents a store admin from re-roling a peer store admin', function () {
+        $peer = mufassahPeerStoreAdminIn($this->branch);
+
+        $this->actingAs($this->storeAdmin)
+            ->postJson("/api/v1/admin/users/{$peer->id}/assign-role", [
+                'role' => 'customer',
+            ])
+            ->assertForbidden();
+
+        expect($peer->fresh()->hasRole('store_admin'))->toBeTrue();
+    });
+
+    it('prevents a store admin from deleting a peer store admin', function () {
+        $peer = mufassahPeerStoreAdminIn($this->branch);
+        $peerId = $peer->id;
+
+        $this->actingAs($this->storeAdmin)
+            ->deleteJson("/api/v1/admin/users/{$peerId}")
+            ->assertForbidden();
+
+        expect(User::find($peerId))->not->toBeNull();
+    });
+
+    it('lets a super admin still manage a store admin', function () {
+        $this->actingAs($this->admin)
+            ->putJson("/api/v1/admin/users/{$this->storeAdmin->id}", [
+                'name' => 'Renamed By Super Admin',
+            ])
+            ->assertSuccessful()
+            ->assertJsonPath('data.name', 'Renamed By Super Admin');
     });
 });

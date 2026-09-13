@@ -144,6 +144,10 @@ class AdminUserController extends Controller
     public function update(Request $request, User $user): JsonResponse
     {
         $this->authorizeUserBranch($request, $user);
+        // Rank check. Without this a store admin could change the email and
+        // password of any account in their branch, including another admin.
+        $this->authorize('manage', $user);
+
         $validated = $request->validate([
             'name' => ['sometimes', 'string', 'max:255'],
             'email' => ['sometimes', 'nullable', 'string', 'email', 'max:255', Rule::unique('users')->ignore($user->id)],
@@ -194,6 +198,10 @@ class AdminUserController extends Controller
             ], 403);
         }
 
+        // Blocks deleting a peer: a store admin must not be able to remove
+        // another store admin in the same branch.
+        $this->authorize('manage', $user);
+
         $user->delete();
 
         return response()->json([
@@ -219,6 +227,10 @@ class AdminUserController extends Controller
                 'message' => 'Only super admins can assign the super admin role.',
             ], 403);
         }
+
+        // Blocks re-roling a peer, which would otherwise let a store admin
+        // demote a fellow admin and then take over the vacated account.
+        $this->authorize('manage', $user);
 
         $user->syncRoles([$validated['role']]);
         $user->load('roles');
@@ -250,6 +262,10 @@ class AdminUserController extends Controller
             ], 403);
         }
 
+        // Blocks suspending a peer: otherwise a store admin could lock a
+        // fellow admin out of the platform.
+        $this->authorize('manage', $user);
+
         $user->update(['suspended_at' => now()]);
 
         // Revoke all tokens
@@ -267,6 +283,10 @@ class AdminUserController extends Controller
     public function unsuspend(Request $request, User $user): JsonResponse
     {
         $this->authorizeUserBranch($request, $user);
+        // This method previously had no rank check at all, so a store admin
+        // could reinstate any account in the system, super admins included.
+        $this->authorize('manage', $user);
+
         $user->update(['suspended_at' => null]);
 
         return response()->json([

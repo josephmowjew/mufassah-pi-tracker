@@ -152,6 +152,52 @@ class User extends Authenticatable implements MustVerifyEmail
     }
 
     /**
+     * Role precedence, highest first.
+     *
+     * This constant exists because the role hierarchy used to be only a UI
+     * convention. Nothing enforced it server-side, so a store admin sharing a
+     * branch with another admin could change that account's email and password
+     * and take it over.
+     */
+    public const ROLE_HIERARCHY = [
+        'super_admin',
+        'store_admin',
+        'customer_service',
+        'customer',
+    ];
+
+    /**
+     * Numeric rank derived from this user's highest role.
+     *
+     * 4 = super_admin, 3 = store_admin, 2 = customer_service, 1 = customer,
+     * 0 = no recognised role.
+     */
+    public function roleRank(): int
+    {
+        $top = count(self::ROLE_HIERARCHY);
+
+        foreach (self::ROLE_HIERARCHY as $index => $role) {
+            if ($this->hasRole($role)) {
+                return $top - $index;
+            }
+        }
+
+        return 0;
+    }
+
+    /**
+     * Determine whether this user strictly outranks another.
+     *
+     * Equal rank deliberately does not qualify. That is the point: a store
+     * admin must not be able to reset a peer store admin's credentials, and
+     * nobody below super_admin may touch a super_admin.
+     */
+    public function outranks(self $other): bool
+    {
+        return $this->roleRank() > $other->roleRank();
+    }
+
+    /**
      * Get the subscriptions for the user.
      */
     public function subscriptions()
