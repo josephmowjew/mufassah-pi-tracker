@@ -79,6 +79,13 @@ class AuthController extends BaseController
             return $this->unauthorized('Invalid credentials. Please check your email and password.');
         }
 
+        // A suspended account must not be able to obtain a new token. This is
+        // checked after credential verification so that the response does not
+        // disclose account state to a caller who does not know the password.
+        if ($user->isSuspended()) {
+            return $this->forbidden('Your account has been suspended. Please contact support for assistance.');
+        }
+
         // Revoke all existing tokens for this user (optional - for single device login)
         // $user->tokens()->delete();
 

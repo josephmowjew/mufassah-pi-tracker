@@ -2,6 +2,7 @@
 
 use App\Models\User;
 use App\Notifications\VerifyEmailNotification;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Notification;
 use Spatie\Permission\Models\Role;
 
@@ -188,6 +189,89 @@ describe('User Login', function () {
 
         $response->assertUnprocessable()
             ->assertJsonValidationErrors(['email', 'password']);
+    });
+
+    it('rejects login for a suspended account', function () {
+        $user = User::factory()->create([
+            'email' => 'suspended@example.com',
+            'password' => 'password',
+            'suspended_at' => now(),
+        ]);
+
+        $response = postJson(apiUrl('auth/login'), [
+            'email' => 'suspended@example.com',
+            'password' => 'password',
+        ]);
+
+        $response->assertForbidden()
+            ->assertJson(['success' => false]);
+
+        // No token may be issued to a suspended account.
+        expect($user->tokens()->count())->toBe(0);
+    });
+
+    it('does not disclose suspension to a caller with the wrong password', function () {
+        User::factory()->create([
+            'email' => 'suspended@example.com',
+            'password' => 'password',
+            'suspended_at' => now(),
+        ]);
+
+        // Wrong password on a suspended account must look identical to any other
+        // failed login, so account state is not leaked to an attacker.
+        $response = postJson(apiUrl('auth/login'), [
+            'email' => 'suspended@example.com',
+            'password' => 'wrong-password',
+        ]);
+
+        $response->assertUnauthorized();
+    });
+
+    it('allows login again once an account is unsuspended', function () {
+        $user = User::factory()->create([
+            'email' => 'restored@example.com',
+            'password' => 'password',
+            'suspended_at' => now(),
+        ]);
+
+        $user->update(['suspended_at' => null]);
+
+        $response = postJson(apiUrl('auth/login'), [
+            'email' => 'restored@example.com',
+            'password' => 'password',
+        ]);
+
+        $response->assertOk();
+        expect($response->json('data.token'))->not->toBeNull();
+    });
+});
+
+describe('Suspended Account Enforcement', function () {
+    it('blocks an existing token once the account is suspended', function () {
+        $user = User::factory()->create();
+        $token = $user->createToken('auth_token')->plainTextToken;
+
+        // Token works before suspension.
+        getJson(apiUrl('user'), ['Authorization' => "Bearer {$token}"])->assertOk();
+
+        // Suspension takes effect immediately, even for an already-issued token.
+        $user->update(['suspended_at' => now()]);
+
+        // The auth guard caches the resolved user for the lifetime of the
+        // application instance, so it must be reset for the next request to
+        // re-resolve from the database (as a fresh request would in production).
+        Auth::forgetGuards();
+
+        getJson(apiUrl('user'), ['Authorization' => "Bearer {$token}"])
+            ->assertForbidden()
+            ->assertJson(['success' => false]);
+    });
+
+    it('does not block unsuspended accounts', function () {
+        $user = User::factory()->create();
+        $token = $user->createToken('auth_token')->plainTextToken;
+
+        getJson(apiUrl('user'), ['Authorization' => "Bearer {$token}"])->assertOk();
     });
 });
 

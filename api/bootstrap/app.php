@@ -27,6 +27,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'permission' => \Spatie\Permission\Middleware\PermissionMiddleware::class,
             'role_or_permission' => \Spatie\Permission\Middleware\RoleOrPermissionMiddleware::class,
             'iot.auth' => \App\Http\Middleware\AuthenticateIotModule::class,
+            'not.suspended' => \App\Http\Middleware\EnsureUserIsNotSuspended::class,
         ]);
 
         $middleware->redirectGuestsTo(function (Request $request) {

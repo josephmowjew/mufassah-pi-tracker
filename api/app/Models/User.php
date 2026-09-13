@@ -73,6 +73,18 @@ class User extends Authenticatable implements MustVerifyEmail
     }
 
     /**
+     * Determine whether this account is currently suspended.
+     *
+     * A suspended account must not be able to authenticate or to use an
+     * existing token. Enforced in AuthController::login and by the
+     * EnsureUserIsNotSuspended middleware.
+     */
+    public function isSuspended(): bool
+    {
+        return $this->suspended_at !== null;
+    }
+
+    /**
      * Get the devices owned by the user.
      */
     public function devices()

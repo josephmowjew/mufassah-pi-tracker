@@ -105,7 +105,9 @@ Route::get('/public/vacancies', [PublicVacancyController::class, 'index'])
 // PROTECTED ROUTES (Authentication required)
 // =============================================================================
 
-Route::middleware('auth:sanctum')->group(function () {
+// 'not.suspended' must run after 'auth:sanctum' so the resolved user is available;
+// it rejects any request made by a suspended account, even with a valid token.
+Route::middleware(['auth:sanctum', 'not.suspended'])->group(function () {
 
     // -------------------------------------------------------------------------
     // Auth Routes
