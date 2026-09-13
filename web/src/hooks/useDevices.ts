@@ -112,3 +112,32 @@ export function useDeviceLatestLocation(id: number) {
     refetchInterval: 30000, // Refetch every 30 seconds
   })
 }
+
+/**
+ * Latest locations for a whole set of devices, in one request.
+ *
+ * Replaces the per-card `useDeviceLatestLocation` fan-out: a page rendering N
+ * device cards used to hold N parallel polling queries on N staggered timers.
+ * Here the request count is one regardless of how many devices are shown, so
+ * page load no longer degrades as a customer adds devices.
+ */
+export function useDeviceLatestLocations(ids: number[]) {
+  // Dedupe and sort so the query key is derived from the *set* of ids, not the
+  // order the caller happened to render them in. Without this, a reorder would
+  // produce a new key, miss the cache, and refetch everything.
+  const uniqueIds = Array.from(new Set(ids)).sort((a, b) => a - b)
+  const idsKey = uniqueIds.join(',')
+
+  return useQuery({
+    queryKey: ['device-latest-locations', idsKey],
+    queryFn: () => devicesApi.getLatestLocations(uniqueIds),
+    enabled: uniqueIds.length > 0,
+    // React Query does not poll while the tab is hidden
+    // (refetchIntervalInBackground defaults to false), so an idle tab left open
+    // on the office wall stops hitting the API.
+    refetchInterval: 30000,
+    // Hold the previous map while the next batch is in flight, so markers do
+    // not blink out of existence every 30 seconds.
+    placeholderData: (previous) => previous,
+  })
+}

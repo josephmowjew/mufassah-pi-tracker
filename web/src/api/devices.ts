@@ -101,6 +101,20 @@ export const devicesApi = {
     return response.data.data
   },
 
+  // Get the latest location for several devices in one request.
+  //
+  // The live-tracking pages used to fan out one request per device per poll,
+  // which is 100+ requests every 30 seconds for a 100-device account. This
+  // returns the same data in a single request. Devices the caller cannot see
+  // are omitted from the response rather than failing the whole batch.
+  getLatestLocations: async (ids: number[]): Promise<Record<string, DeviceLocation | null>> => {
+    const response = await apiClient.post<ApiResponse<Record<string, DeviceLocation | null>>>(
+      '/devices/locations/latest',
+      { device_ids: ids },
+    )
+    return response.data.data
+  },
+
   // Get categories
   getCategories: async (options?: { withStock?: boolean }): Promise<DeviceCategory[]> => {
     const params = new URLSearchParams()

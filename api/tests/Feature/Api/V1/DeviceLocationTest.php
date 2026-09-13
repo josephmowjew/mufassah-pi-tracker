@@ -4,6 +4,7 @@ use App\Models\Device;
 use App\Models\DeviceCategory;
 use App\Models\DeviceLocation;
 use App\Models\User;
+use Illuminate\Support\Facades\DB;
 use Spatie\Permission\Models\Role;
 
 use function Pest\Laravel\actingAs;
@@ -12,6 +13,26 @@ beforeEach(function () {
     Role::firstOrCreate(['name' => 'customer', 'guard_name' => 'api']);
     Role::firstOrCreate(['name' => 'super_admin', 'guard_name' => 'api']);
 });
+
+/**
+ * Build an owned device that already has a last_location_id, mirroring what the
+ * IoT ingestion path always does in production.
+ *
+ * Declared at file scope rather than inside a describe() closure: a named
+ * function declared inside a closure is hoisted into the global scope, so it
+ * would fatal with "cannot redeclare" if the closure were ever evaluated twice.
+ *
+ * @return array{0: Device, 1: DeviceLocation}
+ */
+function mufassahOwnedDeviceWithLocation(User $owner, DeviceCategory $category, array $attributes = []): array
+{
+    $device = Device::factory()->for($owner, 'owner')->for($category, 'category')->create($attributes);
+    $location = DeviceLocation::factory()->for($device)->create();
+
+    $device->update(['last_location_id' => $location->id]);
+
+    return [$device->refresh(), $location];
+}
 
 describe('Device Location History', function () {
     it('returns location history for owned device', function () {
@@ -472,5 +493,198 @@ describe('Location Track', function () {
             ->getJson(apiUrl("devices/{$device->id}/locations/track"))
             ->assertUnprocessable()
             ->assertJsonValidationErrors(['from', 'to']);
+    });
+});
+
+describe('Batch Latest Locations', function () {
+    it('returns the latest location for several devices in one request', function () {
+        $user = User::factory()->create();
+        $user->assignRole('customer');
+        $category = DeviceCategory::factory()->create();
+
+        [$deviceA, $locationA] = mufassahOwnedDeviceWithLocation($user, $category);
+        [$deviceB, $locationB] = mufassahOwnedDeviceWithLocation($user, $category);
+
+        actingAs($user, 'sanctum')
+            ->postJson(apiUrl('devices/locations/latest'), [
+                'device_ids' => [$deviceA->id, $deviceB->id],
+            ])
+            ->assertOk()
+            ->assertJsonPath('success', true)
+            ->assertJsonPath("data.{$deviceA->id}.id", $locationA->id)
+            ->assertJsonPath("data.{$deviceB->id}.id", $locationB->id);
+    });
+
+    it('keys the response by device id and maps devices with no location to null', function () {
+        $user = User::factory()->create();
+        $user->assignRole('customer');
+        $category = DeviceCategory::factory()->create();
+
+        [$withLocation, $location] = mufassahOwnedDeviceWithLocation($user, $category);
+        $withoutLocation = Device::factory()->for($user, 'owner')->for($category, 'category')->create();
+
+        actingAs($user, 'sanctum')
+            ->postJson(apiUrl('devices/locations/latest'), [
+                'device_ids' => [$withLocation->id, $withoutLocation->id],
+            ])
+            ->assertOk()
+            ->assertJsonPath("data.{$withLocation->id}.id", $location->id)
+            ->assertJsonPath("data.{$withoutLocation->id}", null);
+    });
+
+    it('omits devices the caller cannot see', function () {
+        $owner = User::factory()->create();
+        $owner->assignRole('customer');
+        $stranger = User::factory()->create();
+        $stranger->assignRole('customer');
+        $category = DeviceCategory::factory()->create();
+
+        [$mine] = mufassahOwnedDeviceWithLocation($owner, $category);
+        [$theirs] = mufassahOwnedDeviceWithLocation($stranger, $category);
+
+        $response = actingAs($owner, 'sanctum')
+            ->postJson(apiUrl('devices/locations/latest'), [
+                'device_ids' => [$mine->id, $theirs->id],
+            ])
+            ->assertOk();
+
+        // The readable device is returned; the other user's device is not
+        // leaked and does not fail the whole batch.
+        $response->assertJsonPath("data.{$mine->id}.id", $mine->last_location_id);
+        $response->assertJsonMissingPath("data.{$theirs->id}");
+    });
+
+    it('returns an empty set when every requested device is inaccessible', function () {
+        $stranger = User::factory()->create();
+        $stranger->assignRole('customer');
+        $requester = User::factory()->create();
+        $requester->assignRole('customer');
+        $category = DeviceCategory::factory()->create();
+
+        [$theirs] = mufassahOwnedDeviceWithLocation($stranger, $category);
+
+        actingAs($requester, 'sanctum')
+            ->postJson(apiUrl('devices/locations/latest'), ['device_ids' => [$theirs->id]])
+            ->assertOk()
+            ->assertJsonPath('data', []);
+    });
+
+    it('lets a super admin read devices they do not own', function () {
+        $owner = User::factory()->create();
+        $owner->assignRole('customer');
+        $admin = User::factory()->create();
+        $admin->assignRole('super_admin');
+        $category = DeviceCategory::factory()->create();
+
+        [$device, $location] = mufassahOwnedDeviceWithLocation($owner, $category);
+
+        actingAs($admin, 'sanctum')
+            ->postJson(apiUrl('devices/locations/latest'), ['device_ids' => [$device->id]])
+            ->assertOk()
+            ->assertJsonPath("data.{$device->id}.id", $location->id);
+    });
+
+    it('falls back to the newest location when last_location_id was never set', function () {
+        $user = User::factory()->create();
+        $user->assignRole('customer');
+        $category = DeviceCategory::factory()->create();
+
+        // Legacy row: locations exist but the denormalised pointer is null.
+        $device = Device::factory()->for($user, 'owner')->for($category, 'category')
+            ->create(['last_location_id' => null]);
+
+        DeviceLocation::factory()->for($device)->create(['recorded_at' => now()->subDay()]);
+        $newest = DeviceLocation::factory()->for($device)->create(['recorded_at' => now()]);
+
+        actingAs($user, 'sanctum')
+            ->postJson(apiUrl('devices/locations/latest'), ['device_ids' => [$device->id]])
+            ->assertOk()
+            ->assertJsonPath("data.{$device->id}.id", $newest->id);
+    });
+
+    it('keeps the query count constant as the device count grows', function () {
+        $user = User::factory()->create();
+        $user->assignRole('customer');
+        $category = DeviceCategory::factory()->create();
+
+        $devices = collect(range(1, 5))
+            ->map(fn () => mufassahOwnedDeviceWithLocation($user, $category)[0]);
+
+        DB::flushQueryLog();
+        DB::enableQueryLog();
+        actingAs($user, 'sanctum')
+            ->postJson(apiUrl('devices/locations/latest'), ['device_ids' => $devices->pluck('id')->all()])
+            ->assertOk();
+        $smallCount = count(DB::getQueryLog());
+
+        // Five times as many devices must not mean five times the queries.
+        $more = collect(range(1, 25))
+            ->map(fn () => mufassahOwnedDeviceWithLocation($user, $category)[0]);
+
+        DB::flushQueryLog();
+        actingAs($user, 'sanctum')
+            ->postJson(apiUrl('devices/locations/latest'), [
+                'device_ids' => $devices->concat($more)->pluck('id')->all(),
+            ])
+            ->assertOk();
+        $largeCount = count(DB::getQueryLog());
+        DB::disableQueryLog();
+
+        // A per-device implementation would add 20+ queries here.
+        expect($largeCount)->toBeLessThanOrEqual($smallCount + 2);
+    });
+
+    it('deduplicates repeated device ids', function () {
+        $user = User::factory()->create();
+        $user->assignRole('customer');
+        $category = DeviceCategory::factory()->create();
+
+        [$device, $location] = mufassahOwnedDeviceWithLocation($user, $category);
+
+        $response = actingAs($user, 'sanctum')
+            ->postJson(apiUrl('devices/locations/latest'), [
+                'device_ids' => [$device->id, $device->id, $device->id],
+            ])
+            ->assertOk();
+
+        expect($response->json('data'))->toHaveCount(1)
+            ->and($response->json("data.{$device->id}.id"))->toBe($location->id);
+    });
+
+    it('returns an empty set for an empty device list', function () {
+        $user = User::factory()->create();
+        $user->assignRole('customer');
+
+        actingAs($user, 'sanctum')
+            ->postJson(apiUrl('devices/locations/latest'), ['device_ids' => []])
+            ->assertOk()
+            ->assertJsonPath('data', []);
+    });
+
+    it('requires device_ids', function () {
+        $user = User::factory()->create();
+        $user->assignRole('customer');
+
+        actingAs($user, 'sanctum')
+            ->postJson(apiUrl('devices/locations/latest'), [])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['device_ids']);
+    });
+
+    it('rejects more than 200 device ids', function () {
+        $user = User::factory()->create();
+        $user->assignRole('customer');
+
+        actingAs($user, 'sanctum')
+            ->postJson(apiUrl('devices/locations/latest'), [
+                'device_ids' => range(1, 201),
+            ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['device_ids']);
+    });
+
+    it('requires authentication', function () {
+        $this->postJson(apiUrl('devices/locations/latest'), ['device_ids' => [1]])
+            ->assertUnauthorized();
     });
 });

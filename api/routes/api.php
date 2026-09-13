@@ -178,6 +178,13 @@ Route::middleware(['auth:sanctum', 'not.suspended'])->group(function () {
     // -------------------------------------------------------------------------
     Route::apiResource('devices', DeviceController::class);
 
+    // Batch latest-location lookup, used by the live-tracking pages so they poll
+    // once per cycle instead of once per device. Registered before the
+    // devices/{device} prefix group so the literal "locations" segment can never
+    // be captured by the {device} parameter.
+    Route::post('devices/locations/latest', [DeviceLocationController::class, 'latestBatch'])
+        ->name('devices.locations.latest-batch');
+
     Route::prefix('devices/{device}')->name('devices.')->group(function () {
         // Status update
         Route::put('/status', [DeviceController::class, 'updateStatus'])->name('status');

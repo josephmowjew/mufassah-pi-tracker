@@ -1,5 +1,6 @@
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo } from 'react'
 import { useSearchParams } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet'
 import type { LatLngExpression } from 'leaflet'
 import {
@@ -18,6 +19,7 @@ import {
   Search,
 } from 'lucide-react'
 import apiClient from '@/api/client'
+import { useDeviceLatestLocations } from '@/hooks/useDevices'
 import type { Device, DeviceLocation, DeviceStatus, DeviceStatusValue } from '@/types'
 
 const statusColors: Record<DeviceStatusValue, { bg: string; dot: string; marker: string }> = {
@@ -36,41 +38,13 @@ interface DeviceWithLocation extends Device {
   location?: DeviceLocation | null
 }
 
-async function fetchAllDevicesWithLocations(
-  page = 1,
-  perPage = 100
-): Promise<DeviceWithLocation[]> {
-  const response = await apiClient.get<{
-    success: boolean
-    data: Device[]
-    meta: { current_page: number; last_page: number; total: number }
-  }>(`/admin/devices?page=${page}&per_page=${perPage}`)
-
-  const devices = response.data.data
-
-  const devicesWithLocations = await Promise.all(
-    devices.map(async (device) => {
-      try {
-        const locationResponse = await apiClient.get<{
-          success: boolean
-          data: DeviceLocation | null
-        }>(`/devices/${device.id}/locations/latest`)
-
-        return {
-          ...device,
-          location: locationResponse.data.data,
-        }
-      } catch {
-        return {
-          ...device,
-          location: null,
-        }
-      }
-    })
-  )
-
-  return devicesWithLocations
+interface AdminDevicesResponse {
+  success: boolean
+  data: Device[]
+  meta: { current_page: number; last_page: number; total: number }
 }
+
+const ADMIN_TRACKING_PAGE_SIZE = 100
 
 function MapController({ center }: { center: LatLngExpression | null }) {
   const map = useMap()
@@ -93,48 +67,58 @@ export default function AdminTrackingPage() {
   const [showList, setShowList] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
 
-  const [devices, setDevices] = useState<DeviceWithLocation[]>([])
-  const [isLoading, setIsLoading] = useState(true)
-  const [error, setError] = useState<Error | null>(null)
-  const [isRefetching, setIsRefetching] = useState(false)
+  // Device metadata and device positions are polled as two separate queries.
+  // The device list changes rarely; positions change every 30 seconds. Polling
+  // them together re-downloaded the whole device list on every cycle.
+  const {
+    data: devicesResponse,
+    isLoading,
+    error,
+    refetch: refetchDevices,
+    isRefetching,
+  } = useQuery({
+    queryKey: ['admin-tracking-devices', ADMIN_TRACKING_PAGE_SIZE],
+    queryFn: async () => {
+      const response = await apiClient.get<AdminDevicesResponse>(
+        `/admin/devices?page=1&per_page=${ADMIN_TRACKING_PAGE_SIZE}`
+      )
+      return response.data
+    },
+    refetchInterval: 60000,
+  })
 
-  const fetchDevices = async () => {
-    try {
-      setIsRefetching(true)
-      const data = await fetchAllDevicesWithLocations()
-      setDevices(data)
-      setError(null)
-    } catch (err) {
-      setError(err as Error)
-    } finally {
-      setIsLoading(false)
-      setIsRefetching(false)
-    }
-  }
+  const devices = useMemo(() => devicesResponse?.data ?? [], [devicesResponse])
 
-  useEffect(() => {
-    fetchDevices()
-  }, [])
+  // One request for every device's latest position, instead of one request per
+  // device per cycle. This page previously issued 1 + N requests every 30
+  // seconds (N up to 100) with no cancellation on unmount.
+  const {
+    data: latestLocations,
+    refetch: refetchLocations,
+    isRefetching: isRefetchingLocations,
+  } = useDeviceLatestLocations(devices.map((d) => d.id))
 
-  useEffect(() => {
-    const interval = setInterval(() => {
-      fetchDevices()
-    }, 30000)
-    return () => clearInterval(interval)
-  }, [])
+  const devicesWithLocations: DeviceWithLocation[] = useMemo(
+    () =>
+      devices.map((device) => ({
+        ...device,
+        location: latestLocations?.[String(device.id)] ?? null,
+      })),
+    [devices, latestLocations]
+  )
 
   const filteredDevices = useMemo(() => {
-    if (!searchQuery) return devices
+    if (!searchQuery) return devicesWithLocations
     const query = searchQuery.toLowerCase()
-    return devices.filter(
+    return devicesWithLocations.filter(
       (d) =>
         d.name?.toLowerCase().includes(query) ||
         d.serial_number?.toLowerCase().includes(query) ||
         d.model?.toLowerCase().includes(query)
     )
-  }, [devices, searchQuery])
+  }, [devicesWithLocations, searchQuery])
 
-  const devicesWithLocation = useMemo(() => {
+  const mappableDevices = useMemo(() => {
     return filteredDevices.filter((d) => d.location?.latitude && d.location?.longitude)
   }, [filteredDevices])
 
@@ -146,17 +130,20 @@ export default function AdminTrackingPage() {
   }, [filteredDevices])
 
   const mapCenter: LatLngExpression | null = useMemo(() => {
-    if (devicesWithLocation.length === 0) return null
-    const firstWithLocation = devicesWithLocation[0]
+    if (mappableDevices.length === 0) return null
+    const firstWithLocation = mappableDevices[0]
     if (firstWithLocation.location) {
       return [firstWithLocation.location.latitude, firstWithLocation.location.longitude]
     }
     return null
-  }, [devicesWithLocation])
+  }, [mappableDevices])
 
   const handleRefresh = () => {
-    fetchDevices()
+    refetchDevices()
+    refetchLocations()
   }
+
+  const isAnyRefetching = isRefetching || isRefetchingLocations
 
   return (
     <div className="space-y-6">
@@ -172,10 +159,10 @@ export default function AdminTrackingPage() {
         <div className="flex items-center gap-2">
           <button
             onClick={handleRefresh}
-            disabled={isRefetching}
+            disabled={isAnyRefetching}
             className="inline-flex items-center gap-2 px-4 py-2.5 border border-slate-200 text-slate-700 rounded-xl text-sm font-medium hover:bg-slate-50 transition-colors disabled:opacity-50"
           >
-            <RefreshCw className={`h-4 w-4 ${isRefetching ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`h-4 w-4 ${isAnyRefetching ? 'animate-spin' : ''}`} />
             Refresh
           </button>
           <button
@@ -236,7 +223,7 @@ export default function AdminTrackingPage() {
                       url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                     />
                     <MapController center={mapCenter} />
-                    {devicesWithLocation.map((device) => {
+                    {mappableDevices.map((device) => {
                       if (!device.location?.latitude || !device.location?.longitude)
                         return null
 
@@ -373,7 +360,7 @@ export default function AdminTrackingPage() {
                 </div>
                 <div className="p-3 rounded-lg bg-blue-50">
                   <p className="text-2xl font-bold text-blue-600">
-                    {devicesWithLocation.length}
+                    {mappableDevices.length}
                   </p>
                   <p className="text-xs text-blue-700">With Location</p>
                 </div>

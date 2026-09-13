@@ -84,6 +84,86 @@ class DeviceLocationController extends BaseController
     }
 
     /**
+     * Get the latest location for several devices in one request.
+     *
+     * The live-tracking pages previously issued one request per device per
+     * poll - 100+ requests every 30 seconds for a 100-device account, which was
+     * the capacity ceiling on the platform. This returns the same data in a
+     * constant number of queries (two, or three when the fallback below runs).
+     *
+     * Response data is keyed by device id; a device with no location maps to
+     * null, matching the single-device endpoint's "no location is a valid
+     * state, not an error" contract.
+     */
+    public function latestBatch(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            // `present` rather than `required`: the key must be supplied, but an
+            // empty list is a legitimate request (an account with no devices)
+            // and should return an empty set rather than a validation error.
+            'device_ids' => ['present', 'array', 'max:200'],
+            'device_ids.*' => ['integer'],
+        ]);
+
+        $ids = array_values(array_unique($validated['device_ids']));
+
+        if ($ids === []) {
+            return $this->success([]);
+        }
+
+        $user = $request->user();
+
+        // Query 1: the devices. Query 2: their eager-loaded last locations.
+        // Devices the caller may not see are dropped rather than failing the
+        // whole batch - the caller asked for a page of devices, and one
+        // unreadable id must not blank out the entire map.
+        $devices = Device::whereIn('id', $ids)
+            ->with('lastLocation')
+            ->get()
+            ->filter(fn (Device $device) => $user->can('viewLocations', $device))
+            ->keyBy('id');
+
+        // Defensive fallback for devices whose last_location_id was never set
+        // (legacy rows). Done as one grouped query plus one fetch rather than a
+        // query per device, so the request stays O(1) in query count.
+        $missing = $devices->filter(fn (Device $device) => $device->lastLocation === null)->keys();
+
+        if ($missing->isNotEmpty()) {
+            $latestTimes = DeviceLocation::query()
+                ->whereIn('device_id', $missing)
+                ->selectRaw('device_id, MAX(recorded_at) as latest_at')
+                ->groupBy('device_id')
+                ->get()
+                ->mapWithKeys(fn ($row) => [(int) $row->device_id => $row->latest_at]);
+
+            if ($latestTimes->isNotEmpty()) {
+                // Matching on (device_id, recorded_at) is safe here: every row
+                // returned for a device carries that device's own maximum
+                // recorded_at, and keyBy keeps one row per device.
+                $fallback = DeviceLocation::query()
+                    ->whereIn('device_id', $latestTimes->keys())
+                    ->whereIn('recorded_at', $latestTimes->values())
+                    ->get()
+                    ->keyBy('device_id');
+
+                foreach ($fallback as $deviceId => $location) {
+                    if (isset($devices[$deviceId])) {
+                        $devices[$deviceId]->setRelation('lastLocation', $location);
+                    }
+                }
+            }
+        }
+
+        $payload = $devices->mapWithKeys(fn (Device $device) => [
+            $device->id => $device->lastLocation
+                ? (new DeviceLocationResource($device->lastLocation))->resolve($request)
+                : null,
+        ]);
+
+        return $this->success($payload);
+    }
+
+    /**
      * Store a manual location (user-provided).
      */
     public function storeManual(Request $request, Device $device): JsonResponse

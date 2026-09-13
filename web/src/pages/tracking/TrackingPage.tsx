@@ -14,8 +14,8 @@ import {
   Target,
   Radio,
 } from 'lucide-react'
-import { useDevices, useDeviceLatestLocation } from '@/hooks/useDevices'
-import type { Device, DeviceStatus, DeviceStatusValue } from '@/types'
+import { useDevices, useDeviceLatestLocations } from '@/hooks/useDevices'
+import type { Device, DeviceLocation, DeviceStatus, DeviceStatusValue } from '@/types'
 
 const statusColors: Record<DeviceStatusValue, { bg: string; dot: string }> = {
   active: { bg: 'bg-emerald-50', dot: 'bg-emerald-500' },
@@ -37,6 +37,13 @@ export default function TrackingPage() {
 
   const { data: devicesData, isLoading, error, refetch, isRefetching } = useDevices({ per_page: 100 })
   const devices = devicesData?.data || []
+
+  // One batch request for every device on the page. Previously each
+  // DeviceLocationCard ran its own 30-second polling query, so a customer with
+  // 100 devices held 100 parallel requests on 100 staggered timers.
+  const { data: latestLocations, isLoading: isLoadingLocations } = useDeviceLatestLocations(
+    devices.map((d) => d.id),
+  )
 
   // Get devices with location data
   const activeDevices = devices.filter((d) => {
@@ -200,6 +207,8 @@ export default function TrackingPage() {
                       key={device.id}
                       device={device}
                       isSelected={selectedDeviceId === device.id.toString()}
+                      location={latestLocations?.[String(device.id)] ?? null}
+                      isLoading={isLoadingLocations}
                     />
                   ))}
                 </div>
@@ -245,9 +254,17 @@ export default function TrackingPage() {
   )
 }
 
-function DeviceLocationCard({ device, isSelected }: { device: Device; isSelected: boolean }) {
-  const { data: location, isLoading } = useDeviceLatestLocation(device.id)
-
+function DeviceLocationCard({
+  device,
+  isSelected,
+  location,
+  isLoading,
+}: {
+  device: Device
+  isSelected: boolean
+  location: DeviceLocation | null
+  isLoading: boolean
+}) {
   return (
     <Link
       to={`/tracking?device=${device.id}`}
