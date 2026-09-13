@@ -4,11 +4,13 @@ namespace App\Services;
 
 use App\Enums\PaymentMethod;
 use App\Enums\PaymentStatus;
+use App\Enums\SubscriptionStatus;
 use App\Models\Payment;
 use App\Models\Subscription;
 use App\Models\SubscriptionPlan;
 use App\Models\User;
 use Illuminate\Http\Client\RequestException;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -172,6 +174,12 @@ class PayChanguService
      */
     public function validateWebhookSignature(string $payload, string $signature): bool
     {
+        // An empty secret produces an HMAC that anyone can compute, so it must be
+        // treated as "cannot verify" rather than as a valid signature.
+        if ($this->webhookSecret === '' || $signature === '') {
+            return false;
+        }
+
         $expectedSignature = hash_hmac('sha256', $payload, $this->webhookSecret);
 
         return hash_equals($expectedSignature, $signature);
@@ -179,66 +187,87 @@ class PayChanguService
 
     /**
      * Process successful payment and activate subscription.
+     *
+     * The whole activation runs in one transaction with the payment row locked.
+     * That lock is the idempotency guard: the webhook and a manual verify both
+     * key on the same payment row, so whichever arrives second waits for the
+     * first to commit, re-reads the row, sees `completed` and stops. Without the
+     * lock both pass the status check and the customer ends up with two
+     * subscriptions for a single payment.
+     *
+     * The status check is re-done against the locked row rather than the caller's
+     * instance, so a caller holding a stale model cannot slip past the guard.
      */
     public function processSuccessfulPayment(Payment $payment, array $webhookData): ?Subscription
     {
-        if ($payment->status === PaymentStatus::Completed) {
-            return $payment->subscription;
-        }
+        return DB::transaction(function () use ($payment, $webhookData) {
+            $payment = Payment::whereKey($payment->id)->lockForUpdate()->firstOrFail();
 
-        $payment->update([
-            'status' => PaymentStatus::Completed,
-            'provider_transaction_id' => $webhookData['trans_id'] ?? $payment->provider_transaction_id,
-            'paid_at' => now(),
-        ]);
+            // Already settled: a replayed webhook is a no-op.
+            if ($payment->status === PaymentStatus::Completed) {
+                return $payment->subscription;
+            }
 
-        $metadata = $payment->metadata ?? [];
-        $planId = $metadata['plan_id'] ?? null;
-        $billingCycle = $metadata['billing_cycle'] ?? 'monthly';
-
-        if (! $planId) {
-            Log::error('Missing plan_id in payment metadata', ['payment_id' => $payment->id]);
-
-            return null;
-        }
-
-        $plan = SubscriptionPlan::find($planId);
-        if (! $plan) {
-            Log::error('Plan not found for payment', ['plan_id' => $planId, 'payment_id' => $payment->id]);
-
-            return null;
-        }
-
-        $months = $billingCycle === 'yearly' ? 12 : 1;
-
-        $existingSubscription = Subscription::where('user_id', $payment->user_id)
-            ->active()
-            ->first();
-
-        if ($existingSubscription) {
-            $existingSubscription->update([
-                'plan_id' => $plan->id,
-                'billing_cycle' => $billingCycle,
-                'ends_at' => $existingSubscription->ends_at->addMonths($months),
-                'last_payment_id' => $payment->id,
+            $payment->update([
+                'status' => PaymentStatus::Completed,
+                'provider_transaction_id' => $webhookData['trans_id'] ?? $payment->provider_transaction_id,
+                'paid_at' => $payment->paid_at ?? now(),
             ]);
-            $subscription = $existingSubscription;
-        } else {
-            $subscription = Subscription::create([
-                'user_id' => $payment->user_id,
-                'plan_id' => $plan->id,
-                'status' => \App\Enums\SubscriptionStatus::Active,
-                'billing_cycle' => $billingCycle,
-                'starts_at' => now(),
-                'ends_at' => now()->addMonths($months),
-                'auto_renew' => true,
-                'last_payment_id' => $payment->id,
-            ]);
-        }
 
-        $payment->update(['subscription_id' => $subscription->id]);
+            $metadata = $payment->metadata ?? [];
+            $planId = $metadata['plan_id'] ?? null;
+            $billingCycle = $metadata['billing_cycle'] ?? 'monthly';
 
-        return $subscription;
+            if (! $planId) {
+                Log::error('Missing plan_id in payment metadata', ['payment_id' => $payment->id]);
+
+                return null;
+            }
+
+            $plan = SubscriptionPlan::find($planId);
+            if (! $plan) {
+                Log::error('Plan not found for payment', ['plan_id' => $planId, 'payment_id' => $payment->id]);
+
+                return null;
+            }
+
+            $months = $billingCycle === 'yearly' ? 12 : 1;
+
+            $existingSubscription = Subscription::where('user_id', $payment->user_id)
+                ->active()
+                ->lockForUpdate()
+                ->first();
+
+            if ($existingSubscription) {
+                // `ends_at` is nullable, so fall back to now() instead of calling
+                // addMonths() on null. copy() avoids mutating the model's cached
+                // date attribute before the update is written.
+                $base = ($existingSubscription->ends_at ?? now())->copy();
+
+                $existingSubscription->update([
+                    'plan_id' => $plan->id,
+                    'billing_cycle' => $billingCycle,
+                    'ends_at' => $base->addMonths($months),
+                    'last_payment_id' => $payment->id,
+                ]);
+                $subscription = $existingSubscription;
+            } else {
+                $subscription = Subscription::create([
+                    'user_id' => $payment->user_id,
+                    'plan_id' => $plan->id,
+                    'status' => SubscriptionStatus::Active,
+                    'billing_cycle' => $billingCycle,
+                    'starts_at' => now(),
+                    'ends_at' => now()->addMonths($months),
+                    'auto_renew' => true,
+                    'last_payment_id' => $payment->id,
+                ]);
+            }
+
+            $payment->update(['subscription_id' => $subscription->id]);
+
+            return $subscription;
+        });
     }
 
     /**

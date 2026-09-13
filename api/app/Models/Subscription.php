@@ -59,7 +59,17 @@ class Subscription extends Model
 
     public function isActive(): bool
     {
-        return $this->status === SubscriptionStatus::Active && $this->ends_at->isFuture();
+        // `ends_at` is nullable, so this must not assume it is a date: calling
+        // isFuture() on null is a fatal error, and every serialisation of a
+        // subscription goes through here (SubscriptionResource).
+        //
+        // An open-ended subscription (no end date) is deliberately NOT active,
+        // which matches scopeActive() — a SQL `ends_at >= now()` comparison
+        // cannot match NULL either. The two must agree, or the same row would be
+        // "active" in one place and not the other.
+        return $this->status === SubscriptionStatus::Active
+            && $this->ends_at !== null
+            && $this->ends_at->isFuture();
     }
 
     public function scopeActive($query)

@@ -149,7 +149,16 @@ class PaymentController extends Controller
         $payload = $request->getContent();
         $signature = $request->header('Signature', '');
 
-        if (config('services.paychangu.webhook_secret') && ! $this->payChanguService->validateWebhookSignature($payload, $signature)) {
+        // Fail closed. Without a configured secret the caller cannot be verified,
+        // so the request is refused. An unset secret must never silently disable
+        // signature verification, which would let anyone activate a subscription.
+        if (! config('services.paychangu.webhook_secret')) {
+            Log::critical('PayChangu webhook rejected: PAYCHANGU_WEBHOOK_SECRET is not configured.');
+
+            return response()->json(['error' => 'Webhook verification is not configured'], 500);
+        }
+
+        if (! $this->payChanguService->validateWebhookSignature($payload, $signature)) {
             Log::warning('Invalid PayChangu webhook signature', [
                 'signature' => $signature,
             ]);

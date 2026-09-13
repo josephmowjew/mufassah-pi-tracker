@@ -296,3 +296,96 @@ describe('Admin Subscription Management', function () {
             ->assertForbidden();
     });
 });
+
+describe('Subscription Activation', function () {
+    it('does not double-apply a payment that is processed twice', function () {
+        $user = User::factory()->create();
+        $user->assignRole('customer');
+
+        $payment = Payment::factory()->pending()->create([
+            'user_id' => $user->id,
+            'subscription_id' => null,
+            'provider_reference' => 'TX-CONCURRENT-1',
+            'metadata' => ['plan_id' => $this->plan->id, 'billing_cycle' => 'monthly'],
+        ]);
+
+        // Two readers that both loaded the payment while it was still pending.
+        // This is what a webhook and a manual verify look like when they arrive
+        // together: both hold a copy whose status is `pending`, so a guard that
+        // trusts the caller's instance lets both through.
+        //
+        // The second pass then finds the subscription the first one created and
+        // extends it — one payment buying two months. Asserting the end date is
+        // what actually catches this; a row count does not, because the second
+        // pass extends the existing row rather than inserting another.
+        $firstReader = Payment::find($payment->id);
+        $secondReader = Payment::find($payment->id);
+
+        $service = app(\App\Services\PayChanguService::class);
+        $service->processSuccessfulPayment($firstReader, ['trans_id' => 'TRANS-1']);
+        $service->processSuccessfulPayment($secondReader, ['trans_id' => 'TRANS-1']);
+
+        $subscriptions = Subscription::where('user_id', $user->id)->get();
+
+        expect($subscriptions)->toHaveCount(1);
+        expect($subscriptions->first()->ends_at->toDateString())
+            ->toBe(now()->addMonth()->toDateString());
+    });
+
+    it('extends an active subscription instead of creating a second one', function () {
+        $subscription = Subscription::factory()
+            ->active()
+            ->for($this->user)
+            ->for($this->plan, 'plan')
+            ->create();
+        $originalEndsAt = $subscription->ends_at;
+
+        $payment = Payment::factory()->pending()->create([
+            'user_id' => $this->user->id,
+            'subscription_id' => null,
+            'provider_reference' => 'TX-RENEW-1',
+            'metadata' => ['plan_id' => $this->plan->id, 'billing_cycle' => 'monthly'],
+        ]);
+
+        app(\App\Services\PayChanguService::class)
+            ->processSuccessfulPayment($payment, ['trans_id' => 'TRANS-RENEW']);
+
+        expect(Subscription::where('user_id', $this->user->id)->count())->toBe(1);
+        expect($subscription->fresh()->ends_at->toDateString())
+            ->toBe($originalEndsAt->copy()->addMonth()->toDateString());
+    });
+});
+
+describe('Null End Date Safety', function () {
+    it('does not treat a subscription with no end date as active', function () {
+        $subscription = Subscription::factory()->create([
+            'user_id' => $this->user->id,
+            'plan_id' => $this->plan->id,
+            'status' => SubscriptionStatus::Active,
+            'starts_at' => now()->subMonth(),
+            'ends_at' => null,
+        ]);
+
+        // Previously a fatal: "Call to a member function isFuture() on null".
+        expect($subscription->fresh()->isActive())->toBeFalse();
+    });
+
+    it('serialises a subscription with no end date', function () {
+        $subscription = Subscription::factory()->create([
+            'user_id' => $this->user->id,
+            'plan_id' => $this->plan->id,
+            'status' => SubscriptionStatus::Active,
+            'starts_at' => now()->subMonth(),
+            'ends_at' => null,
+        ]);
+
+        // Every subscription serialisation goes through SubscriptionResource,
+        // which called isActive() unguarded — one open-ended row would 500 the
+        // whole listing.
+        $payload = (new \App\Http\Resources\SubscriptionResource($subscription->fresh()))->resolve();
+
+        expect($payload['is_active'])->toBeFalse();
+        expect($payload['ends_at'])->toBeNull();
+        expect($payload['days_remaining'])->toBe(0);
+    });
+});

@@ -27,6 +27,32 @@ beforeEach(function () {
         ->create();
 });
 
+/**
+ * POST a PayChangu webhook with a raw body.
+ *
+ * The signature must cover the exact bytes that are sent, so the request is
+ * dispatched raw rather than through postJson (which re-encodes the payload).
+ *
+ * @param  string|null  $secret  Secret to configure; null simulates an unset secret.
+ * @param  string|null  $signature  Explicit signature, or null to sign with $secret.
+ */
+function postWebhook(string $path, array $payload, ?string $secret = 'test-webhook-secret', ?string $signature = null)
+{
+    config(['services.paychangu.webhook_secret' => $secret]);
+
+    $body = json_encode($payload);
+    $server = ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json'];
+
+    if ($signature !== null) {
+        // An empty string simulates a missing Signature header.
+        $server['HTTP_SIGNATURE'] = $signature;
+    } elseif ($secret !== null) {
+        $server['HTTP_SIGNATURE'] = hash_hmac('sha256', $body, $secret);
+    }
+
+    return test()->call('POST', $path, [], [], [], $server, $body);
+}
+
 describe('My Payments', function () {
     it('returns payments for authenticated user', function () {
         Payment::factory()->count(3)->create([
@@ -152,7 +178,7 @@ describe('Webhook Handling', function () {
             ],
         ]);
 
-        $response = $this->postJson('/api/v1/payments/webhook', [
+        $response = postWebhook('/api/v1/payments/webhook', [
             'event' => 'api.charge.payment',
             'status' => 'success',
             'tx_ref' => 'TX-WEBHOOK-123',
@@ -173,7 +199,7 @@ describe('Webhook Handling', function () {
             'provider_reference' => 'TX-FAILED-123',
         ]);
 
-        $response = $this->postJson('/api/v1/payments/webhook', [
+        $response = postWebhook('/api/v1/payments/webhook', [
             'event' => 'api.charge.payment',
             'status' => 'failed',
             'tx_ref' => 'TX-FAILED-123',
@@ -185,7 +211,7 @@ describe('Webhook Handling', function () {
     });
 
     it('returns 404 for unknown transaction', function () {
-        $response = $this->postJson('/api/v1/payments/webhook', [
+        $response = postWebhook('/api/v1/payments/webhook', [
             'event' => 'api.charge.payment',
             'status' => 'success',
             'tx_ref' => 'UNKNOWN-TX-REF',
@@ -290,5 +316,127 @@ describe('Admin Payment Management', function () {
         $this->actingAs($storeAdmin)
             ->postJson("/api/v1/admin/payments/{$otherPayment->id}/refund", ['reason' => 'Cross branch'])
             ->assertForbidden();
+    });
+});
+
+describe('PayChangu Webhook Signature Enforcement', function () {
+    it('rejects the webhook when no secret is configured', function () {
+        $payment = Payment::factory()->pending()->create([
+            'user_id' => $this->user->id,
+            'subscription_id' => $this->subscription->id,
+            'provider_reference' => 'tx-unset-secret',
+        ]);
+
+        $payload = ['event' => 'api.charge.payment', 'status' => 'success', 'tx_ref' => 'tx-unset-secret'];
+
+        // Even a signature computed over an empty key must be refused: with no
+        // configured secret the caller cannot be verified, so nothing is trusted.
+        $emptyKeySignature = hash_hmac('sha256', json_encode($payload), '');
+
+        postWebhook('/api/v1/webhooks/paychangu', $payload, null, $emptyKeySignature)
+            ->assertStatus(500);
+
+        expect($payment->fresh()->status)->not->toBe(PaymentStatus::Completed);
+    });
+
+    it('rejects the webhook when the signature is wrong', function () {
+        $payment = Payment::factory()->pending()->create([
+            'user_id' => $this->user->id,
+            'subscription_id' => $this->subscription->id,
+            'provider_reference' => 'tx-bad-signature',
+        ]);
+
+        postWebhook('/api/v1/webhooks/paychangu', [
+            'event' => 'api.charge.payment',
+            'status' => 'success',
+            'tx_ref' => 'tx-bad-signature',
+        ], 'test-webhook-secret', 'not-a-valid-signature')->assertUnauthorized();
+
+        expect($payment->fresh()->status)->not->toBe(PaymentStatus::Completed);
+    });
+
+    it('rejects the webhook when the signature header is missing', function () {
+        $payment = Payment::factory()->pending()->create([
+            'user_id' => $this->user->id,
+            'subscription_id' => $this->subscription->id,
+            'provider_reference' => 'tx-no-signature',
+        ]);
+
+        postWebhook('/api/v1/webhooks/paychangu', [
+            'event' => 'api.charge.payment',
+            'status' => 'success',
+            'tx_ref' => 'tx-no-signature',
+        ], 'test-webhook-secret', '')->assertUnauthorized();
+
+        expect($payment->fresh()->status)->not->toBe(PaymentStatus::Completed);
+    });
+
+    it('rejects a signature computed with the wrong secret', function () {
+        $payment = Payment::factory()->pending()->create([
+            'user_id' => $this->user->id,
+            'subscription_id' => $this->subscription->id,
+            'provider_reference' => 'tx-wrong-secret',
+        ]);
+
+        $payload = ['event' => 'api.charge.payment', 'status' => 'success', 'tx_ref' => 'tx-wrong-secret'];
+        $wrongSecretSignature = hash_hmac('sha256', json_encode($payload), 'the-wrong-secret');
+
+        postWebhook('/api/v1/webhooks/paychangu', $payload, 'test-webhook-secret', $wrongSecretSignature)
+            ->assertUnauthorized();
+
+        expect($payment->fresh()->status)->not->toBe(PaymentStatus::Completed);
+    });
+
+    it('accepts the webhook when the signature is valid', function () {
+        $payment = Payment::factory()->pending()->create([
+            'user_id' => $this->user->id,
+            'subscription_id' => $this->subscription->id,
+            'provider_reference' => 'tx-valid-signature',
+        ]);
+
+        postWebhook('/api/v1/webhooks/paychangu', [
+            'event' => 'api.charge.payment',
+            'status' => 'success',
+            'tx_ref' => 'tx-valid-signature',
+        ])->assertOk();
+
+        expect($payment->fresh()->status)->toBe(PaymentStatus::Completed);
+    });
+});
+
+describe('Activation Idempotency', function () {
+    it('does not create a second subscription when a webhook replays a verified payment', function () {
+        $user = User::factory()->create();
+        $user->assignRole('customer');
+
+        $payment = Payment::factory()->pending()->create([
+            'user_id' => $user->id,
+            'subscription_id' => null,
+            'provider_reference' => 'TX-REPLAY-API',
+            'metadata' => ['plan_id' => $this->plan->id, 'billing_cycle' => 'monthly'],
+        ]);
+
+        Http::fake([
+            'api.paychangu.com/*' => Http::response([
+                'status' => 'success',
+                'data' => ['status' => 'success', 'trans_id' => 'TRANS-API'],
+            ]),
+        ]);
+
+        $this->actingAs($user)
+            ->postJson("/api/v1/payments/{$payment->id}/verify")
+            ->assertSuccessful();
+
+        expect(Subscription::where('user_id', $user->id)->count())->toBe(1);
+
+        // PayChangu retries the webhook for the same charge.
+        postWebhook('/api/v1/webhooks/paychangu', [
+            'event' => 'api.charge.payment',
+            'status' => 'success',
+            'tx_ref' => 'TX-REPLAY-API',
+            'data' => ['tx_ref' => 'TX-REPLAY-API', 'status' => 'success', 'trans_id' => 'TRANS-API'],
+        ])->assertSuccessful();
+
+        expect(Subscription::where('user_id', $user->id)->count())->toBe(1);
     });
 });
