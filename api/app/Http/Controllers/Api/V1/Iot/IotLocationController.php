@@ -219,9 +219,13 @@ class IotLocationController extends Controller
     {
         $isInside = $this->isInsideGeofence($geofence, (float) $location->latitude, (float) $location->longitude);
 
-        // Get the last event for this geofence to determine state change
+        // Get the last event for this geofence to determine state change.
+        // Ordered by event_time (not created_at, which is nullable and never
+        // populated because GeofenceEvent has $timestamps = false), with id as a
+        // tiebreaker so ordering stays deterministic for same-second events.
         $lastEvent = GeofenceEvent::where('geofence_id', $geofence->id)
-            ->orderBy('created_at', 'desc')
+            ->orderByDesc('event_time')
+            ->orderByDesc('id')
             ->first();
 
         $wasInside = $lastEvent && $lastEvent->event_type === GeofenceEventType::Entry;
@@ -235,17 +239,28 @@ class IotLocationController extends Controller
         }
 
         if ($eventType) {
-            // Create geofence event
+            $distance = $this->calculateDistance(
+                (float) $geofence->center_latitude,
+                (float) $geofence->center_longitude,
+                (float) $location->latitude,
+                (float) $location->longitude
+            );
+
+            // Column names must match the geofence_events schema: device_id,
+            // location_id, distance_from_center and event_time are NOT NULL.
             $event = GeofenceEvent::create([
                 'geofence_id' => $geofence->id,
-                'device_location_id' => $location->id,
+                'device_id' => $device->id,
+                'location_id' => $location->id,
                 'event_type' => $eventType,
-                'latitude' => $location->latitude,
-                'longitude' => $location->longitude,
+                'distance_from_center' => round($distance, 2),
+                'alert_sent' => true,
+                'event_time' => $location->recorded_at ?? now(),
             ]);
 
-            // Send notification to device owner
-            $device->owner->notify(new GeofenceViolationNotification($event));
+            // The notification requires both the event and its geofence. The owner
+            // may be soft-deleted, in which case there is nobody to notify.
+            $device->owner?->notify(new GeofenceViolationNotification($event, $geofence));
         }
     }
 
