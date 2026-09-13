@@ -5,8 +5,10 @@ Robust GPS tracker with offline buffering, auto-recovery, and comprehensive moni
 """
 
 import os
+import re
 import sys
 import time
+import random
 import signal
 import logging
 import sqlite3
@@ -84,65 +86,89 @@ logger = setup_logging()
 class SystemMonitor:
     """Monitor system health metrics (battery, signal, etc.)"""
 
+    # Sentinel meaning "we probed this sensor and it is not available".
+    # Distinct from None so that a *failed* probe can itself be cached; without
+    # it, a device with no battery interface would re-probe the filesystem on
+    # every single call and log a warning every cycle.
+    UNAVAILABLE = object()
+
     def __init__(self):
-        self.battery_cache = None
+        self.battery_cache = SystemMonitor.UNAVAILABLE
         self.battery_cache_time = 0
-        self.signal_cache = None
+        self.signal_cache = SystemMonitor.UNAVAILABLE
         self.signal_cache_time = 0
         self.cache_duration = 30  # Cache for 30 seconds
 
+    def _cache_is_fresh(self, cache_time, now):
+        """True when a previous probe is recent enough to reuse."""
+        return cache_time > 0 and (now - cache_time) < self.cache_duration
+
     def get_battery_level(self):
-        """Get battery level from Raspberry Pi"""
-        # Check cache first
+        """
+        Read battery capacity as 0-100, or None when it cannot be determined.
+
+        Returning None is deliberate. This used to substitute 100 whenever a
+        read failed, which made a device with a dead battery sensor
+        indistinguishable from a healthy one - so it never appeared on a
+        maintenance list until it went dark entirely. The API column is
+        nullable and the dashboard already renders null as "unknown", so an
+        honest gap is strictly better than a fabricated reading.
+        """
         current_time = time.time()
-        if self.battery_cache and (current_time - self.battery_cache_time) < self.cache_duration:
-            return self.battery_cache
 
-        try:
-            # Try to read from various possible locations
-            battery_paths = [
-                '/sys/class/power_supply/battery/capacity',
-                '/sys/class/power_supply/BAT0/capacity',
-                '/sys/class/power_supply/BAT1/capacity',
-            ]
+        # `_cache_is_fresh` rather than truthiness on the value: 0% is a real
+        # and important reading that a falsy check would discard and re-probe.
+        if self._cache_is_fresh(self.battery_cache_time, current_time):
+            return None if self.battery_cache is SystemMonitor.UNAVAILABLE else self.battery_cache
 
-            for path in battery_paths:
-                if os.path.exists(path):
-                    with open(path, 'r') as f:
-                        level = int(f.read().strip())
-                        self.battery_cache = level
-                        self.battery_cache_time = current_time
-                        logger.debug(f"Battery level: {level}%")
-                        return level
+        battery_paths = [
+            '/sys/class/power_supply/battery/capacity',
+            '/sys/class/power_supply/BAT0/capacity',
+            '/sys/class/power_supply/BAT1/capacity',
+        ]
 
-            # If no battery file found, try using vcgencmd (Raspberry Pi specific)
-            result = subprocess.run(
-                ['vcgencmd', 'measure_volts', 'core'],
-                capture_output=True,
-                text=True,
-                timeout=5
-            )
-            if result.returncode == 0:
-                # Parse voltage to estimate battery (very rough approximation)
-                # This is a fallback - actual battery reading would require hardware-specific code
-                self.battery_cache = 100  # Assume 100% if running on mains
+        for path in battery_paths:
+            try:
+                if not os.path.exists(path):
+                    continue
+
+                with open(path, 'r') as f:
+                    level = int(f.read().strip())
+
+                if not 0 <= level <= 100:
+                    logger.warning(f"Battery sensor {path} returned out-of-range value: {level}")
+                    continue
+
+                self.battery_cache = level
                 self.battery_cache_time = current_time
-                return 100
+                logger.debug(f"Battery level: {level}%")
+                return level
 
-        except Exception as e:
-            logger.debug(f"Could not read battery level: {e}")
+            except (OSError, ValueError) as e:
+                logger.warning(f"Could not read battery level from {path}: {e}")
 
-        # Default to 100% if we can't read it
-        self.battery_cache = 100
+        # No usable battery interface. This is normal for a mains-powered unit
+        # and abnormal for a battery-powered one, so report unknown and let the
+        # backend decide - do NOT invent a healthy number.
+        #
+        # The previous vcgencmd fallback has been removed: `measure_volts core`
+        # reports the SoC core voltage regulator, not battery capacity, so
+        # mapping it to "100%" was fabrication dressed up as a measurement.
+        self.battery_cache = SystemMonitor.UNAVAILABLE
         self.battery_cache_time = current_time
-        return 100
+        logger.warning("Battery level unavailable - reporting null (not a fabricated 100%)")
+        return None
 
     def get_signal_strength(self):
-        """Get network signal strength"""
-        # Check cache first
+        """
+        Read network signal strength as 0-100, or None when it cannot be read.
+
+        Same contract as get_battery_level: unknown is reported as unknown.
+        """
         current_time = time.time()
-        if self.signal_cache and (current_time - self.signal_cache_time) < self.cache_duration:
-            return self.signal_cache
+
+        if self._cache_is_fresh(self.signal_cache_time, current_time):
+            return None if self.signal_cache is SystemMonitor.UNAVAILABLE else self.signal_cache
 
         try:
             # Try WiFi signal strength
@@ -174,7 +200,6 @@ class SystemMonitor:
                 for line in result.stdout.split('\n'):
                     if 'Signal level' in line:
                         # Extract dBm value and convert to percentage
-                        import re
                         match = re.search(r'Signal level=(-?\d+) dBm', line)
                         if match:
                             dbm = int(match.group(1))
@@ -187,12 +212,12 @@ class SystemMonitor:
                             return percentage
 
         except Exception as e:
-            logger.debug(f"Could not read signal strength: {e}")
+            logger.warning(f"Could not read signal strength: {e}")
 
-        # Default to 80% if we can't read it
-        self.signal_cache = 80
+        self.signal_cache = SystemMonitor.UNAVAILABLE
         self.signal_cache_time = current_time
-        return 80
+        logger.warning("Signal strength unavailable - reporting null (not a fabricated 80%)")
+        return None
 
 # ==============================================================================
 # NETWORK CONNECTIVITY
@@ -301,15 +326,26 @@ class Buffer:
         ))
         conn.commit()
 
-        # Enforce size limit
+        # Enforce size limit. Evict oldest first, ordered by id rather than
+        # created_at: created_at has one-second resolution, so rows written in the
+        # same second would evict in arbitrary order.
         count = conn.execute('SELECT COUNT(*) FROM locations').fetchone()[0]
+        dropped = 0
         if count > config.BUFFER_MAX_SIZE:
-            conn.execute('DELETE FROM locations WHERE id IN (SELECT id FROM locations ORDER BY created_at LIMIT ?)',
-                        (count - config.BUFFER_MAX_SIZE,))
+            dropped = count - config.BUFFER_MAX_SIZE
+            conn.execute('DELETE FROM locations WHERE id IN (SELECT id FROM locations ORDER BY id LIMIT ?)',
+                        (dropped,))
             conn.commit()
+            # This is permanent data loss during an outage. It must never be logged
+            # at DEBUG, which is invisible at the default INFO level.
+            logger.warning(
+                f"⚠ Buffer full ({count} > {config.BUFFER_MAX_SIZE}): dropped {dropped} "
+                f"oldest location(s). Tracking history is being lost - check connectivity "
+                f"and API credentials."
+            )
 
         conn.close()
-        logger.debug(f"Buffered location (total: {count})")
+        logger.debug(f"Buffered location (total: {count - dropped})")
 
     def get_locations(self, limit=100):
         """Get buffered locations"""
@@ -326,6 +362,10 @@ class Buffer:
 
     def delete_locations(self, ids):
         """Delete synced locations"""
+        # An empty list would produce 'IN ()', which is a SQLite syntax error.
+        if not ids:
+            return
+
         conn = sqlite3.connect(self.db_path)
         conn.execute(f'DELETE FROM locations WHERE id IN ({",".join(["?"]*len(ids))})', ids)
         conn.commit()
@@ -345,6 +385,10 @@ class Buffer:
 class APIClient:
     """HTTP client for backend API with retry logic"""
 
+    # 4xx statuses that ARE worth retrying: request timeout and rate limiting.
+    # Every other 4xx is permanent and retrying it only delays the inevitable.
+    RETRYABLE_CLIENT_STATUSES = frozenset({408, 429})
+
     def __init__(self, config, system_monitor, connectivity_checker):
         self.config = config
         self.base_url = config.API_BASE_URL
@@ -357,6 +401,73 @@ class APIClient:
             'User-Agent': 'MufassahTracker/1.0'
         })
 
+    @staticmethod
+    def _is_permanent_failure(exc):
+        """
+        Return True when retrying cannot possibly help.
+
+        A 4xx response (other than 408/429) means the server has understood the
+        request and rejected it: an expired or revoked token, a malformed
+        payload, a missing device. Retrying those forever fills the offline
+        buffer until it overflows and silently deletes tracking history.
+        """
+        response = getattr(exc, 'response', None)
+        if response is None:
+            # Connection error, DNS failure, timeout - all transient.
+            return False
+
+        status = response.status_code
+        return 400 <= status < 500 and status not in APIClient.RETRYABLE_CLIENT_STATUSES
+
+    def _backoff_delay(self, attempt):
+        """
+        Exponential backoff with jitter.
+
+        Without jitter a fleet of devices that loses connectivity together will
+        retry in lockstep and hammer the API the moment it recovers.
+        """
+        base = self.config.API_RETRY_DELAY * (2 ** attempt)
+        return base + random.uniform(0, base * 0.25)
+
+    def _post_with_retry(self, path, payload, timeout, label):
+        """
+        POST with retry, shared by the single and batch upload paths.
+
+        Permanent failures abort immediately; transient failures back off
+        exponentially. Returns True only when the server accepted the payload.
+        """
+        url = f'{self.base_url}{path}'
+        last_error = None
+
+        for attempt in range(self.config.API_RETRY_COUNT):
+            try:
+                response = self.session.post(url, json=payload, timeout=timeout)
+                response.raise_for_status()
+                return True
+
+            except requests.RequestException as exc:
+                if self._is_permanent_failure(exc):
+                    status = exc.response.status_code
+                    body = (exc.response.text or '')[:200]
+                    logger.error(
+                        f"✗ {label} permanently rejected (HTTP {status}) - not retrying. "
+                        f"Check MODULE_ID/API_TOKEN and the payload. Server said: {body}"
+                    )
+                    return False
+
+                last_error = exc
+
+            if attempt < self.config.API_RETRY_COUNT - 1:
+                delay = self._backoff_delay(attempt)
+                logger.warning(
+                    f"{label} retry {attempt + 1}/{self.config.API_RETRY_COUNT} "
+                    f"in {delay:.1f}s: {last_error}"
+                )
+                time.sleep(delay)
+
+        logger.error(f"✗ {label} failed after {self.config.API_RETRY_COUNT} attempts: {last_error}")
+        return False
+
     def send_location(self, location):
         """Send single location update with retry logic"""
         # Check connectivity first
@@ -364,36 +475,21 @@ class APIClient:
             logger.warning("✗ Offline - skipping API call")
             return False
 
-        # Retry logic
-        for attempt in range(self.config.API_RETRY_COUNT):
-            try:
-                payload = {
-                    'latitude': location['latitude'],
-                    'longitude': location['longitude'],
-                    'altitude': location.get('altitude'),
-                    'speed': location.get('speed', 0),
-                    'heading': location.get('heading', 0),
-                    'accuracy': location.get('accuracy'),
-                    'battery_level': location.get('battery_level', self.system_monitor.get_battery_level()),
-                    'signal_strength': location.get('signal_strength', self.system_monitor.get_signal_strength()),
-                    'recorded_at': location['recorded_at']
-                }
+        payload = {
+            'latitude': location['latitude'],
+            'longitude': location['longitude'],
+            'altitude': location.get('altitude'),
+            'speed': location.get('speed', 0),
+            'heading': location.get('heading', 0),
+            'accuracy': location.get('accuracy'),
+            'battery_level': location.get('battery_level', self.system_monitor.get_battery_level()),
+            'signal_strength': location.get('signal_strength', self.system_monitor.get_signal_strength()),
+            'recorded_at': location['recorded_at']
+        }
 
-                response = self.session.post(
-                    f'{self.base_url}/location',
-                    json=payload,
-                    timeout=10
-                )
-                response.raise_for_status()
-                logger.info(f"✓ Location sent: {location['latitude']:.6f}, {location['longitude']:.6f}")
-                return True
-
-            except requests.RequestException as e:
-                if attempt < self.config.API_RETRY_COUNT - 1:
-                    logger.warning(f"Retry {attempt + 1}/{self.config.API_RETRY_COUNT}: {e}")
-                    time.sleep(self.config.API_RETRY_DELAY)
-                else:
-                    logger.error(f"✗ API error after {self.config.API_RETRY_COUNT} attempts: {e}")
+        if self._post_with_retry('/location', payload, timeout=10, label='Location send'):
+            logger.info(f"✓ Location sent: {location['latitude']:.6f}, {location['longitude']:.6f}")
+            return True
 
         return False
 
@@ -404,40 +500,27 @@ class APIClient:
             logger.warning("✗ Offline - skipping batch upload")
             return False
 
-        # Retry logic
-        for attempt in range(self.config.API_RETRY_COUNT):
-            try:
-                payload = {
-                    'locations': [
-                        {
-                            'latitude': loc[1],
-                            'longitude': loc[2],
-                            'altitude': loc[3],
-                            'speed': loc[4],
-                            'heading': loc[5],
-                            'accuracy': loc[6],
-                            'recorded_at': loc[9]
-                        }
-                        for loc in locations
-                    ]
+        payload = {
+            'locations': [
+                {
+                    'latitude': loc[1],
+                    'longitude': loc[2],
+                    'altitude': loc[3],
+                    'speed': loc[4],
+                    'heading': loc[5],
+                    'accuracy': loc[6],
+                    # loc[7] and loc[8] are battery_level and signal_strength in the
+                    # buffer schema; they were previously dropped here, so buffered
+                    # points arrived at the backend with those columns null.
+                    'battery_level': loc[7],
+                    'signal_strength': loc[8],
+                    'recorded_at': loc[9]
                 }
+                for loc in locations
+            ]
+        }
 
-                response = self.session.post(
-                    f'{self.base_url}/locations/batch',
-                    json=payload,
-                    timeout=30
-                )
-                response.raise_for_status()
-                return True
-
-            except requests.RequestException as e:
-                if attempt < self.config.API_RETRY_COUNT - 1:
-                    logger.warning(f"Batch retry {attempt + 1}/{self.config.API_RETRY_COUNT}: {e}")
-                    time.sleep(self.config.API_RETRY_DELAY)
-                else:
-                    logger.error(f"✗ Batch upload error after {self.config.API_RETRY_COUNT} attempts: {e}")
-
-        return False
+        return self._post_with_retry('/locations/batch', payload, timeout=30, label='Batch upload')
 
     def send_heartbeat(self):
         """Send heartbeat and get config"""
@@ -467,25 +550,52 @@ class APIClient:
 class GPSReader:
     """Read GPS data from gpsd daemon with accuracy validation"""
 
+    # Consecutive read failures before we assume the socket is dead and force
+    # a reconnect. One failure is bad luck; three in a row is a dead daemon.
+    READ_ERRORS_BEFORE_RECONNECT = 3
+
     def __init__(self, host='localhost', port=2947, max_accuracy=50):
         self.host = host
         self.port = port
         self.max_accuracy = max_accuracy
+        self.connected = False
         self.connect()
 
     def connect(self):
-        """Connect to gpsd"""
+        """
+        Try to establish a gpsd connection. Returns True on success.
+
+        An unreachable daemon is NOT fatal. gpsd may be restarting, or the
+        tracker may start before it at boot. Raising here (as this used to)
+        killed the process, and under `Restart=always` systemd restarted it
+        every 10 seconds forever - so a transient gpsd blip produced a silent
+        outage in which the device collected nothing, with the journal full of
+        restarts that masked the real cause. The caller retries instead, so the
+        tracker keeps heartbeating and resumes collecting the moment gpsd is
+        back.
+        """
         try:
             import gpsd
-            gpsd.connect(host=self.host, port=self.port)
-            logger.info(f"✓ Connected to gpsd at {self.host}:{self.port}")
         except ImportError:
-            logger.error("gpsd-py3 not installed. Run: pip install gpsd-py3")
+            # A missing library will never fix itself. Fail loudly and let the
+            # unit's start limit stop the service, rather than restarting
+            # forever and hiding the real error.
+            logger.critical("gpsd-py3 is not installed. Run: pip3 install -r requirements.txt")
             raise
+
+        try:
+            gpsd.connect(host=self.host, port=self.port)
         except Exception as e:
-            logger.error(f"✗ Cannot connect to gpsd: {e}")
-            logger.error("Make sure gpsd is running: sudo systemctl start gpsd")
-            raise
+            logger.warning(
+                f"✗ gpsd unreachable at {self.host}:{self.port} ({e}). "
+                f"Will keep retrying - check 'systemctl status gpsd'."
+            )
+            self.connected = False
+            return False
+
+        self.connected = True
+        logger.info(f"✓ Connected to gpsd at {self.host}:{self.port}")
+        return True
 
     def validate_accuracy(self, location):
         """Validate GPS accuracy is within acceptable range"""
@@ -502,47 +612,71 @@ class GPSReader:
         return True
 
     def get_location(self, timeout=120):
-        """Get current GPS location with timeout and accuracy validation"""
+        """
+        Get current GPS location with timeout and accuracy validation.
+
+        Returns None when no acceptable fix is available. Reconnects first if a
+        previous attempt found gpsd down, so a daemon restart is recovered from
+        automatically rather than needing a service restart.
+        """
         import gpsd
+
+        if not self.connected and not self.connect():
+            # gpsd is down. Return immediately so the caller can back off,
+            # instead of burning the full 120s timeout spinning on a dead socket.
+            return None
 
         start = time.time()
         attempt_count = 0
         max_attempts = 5  # Try up to 5 times to get accurate fix
+        read_errors = 0
 
         while time.time() - start < timeout and attempt_count < max_attempts:
             try:
                 packet = gpsd.get_current()
-
-                if packet.mode >= 2:  # 2D or 3D fix
-                    location = {
-                        'latitude': packet.lat,
-                        'longitude': packet.lon,
-                        'altitude': packet.alt if hasattr(packet, 'alt') else None,
-                        'speed': packet.hspeed if hasattr(packet, 'hspeed') else 0,
-                        'heading': packet.track if hasattr(packet, 'track') else 0,
-                        'accuracy': packet.position_error() if hasattr(packet, 'position_error') else None,
-                        'recorded_at': datetime.now().isoformat()
-                    }
-
-                    # Validate accuracy
-                    if self.validate_accuracy(location):
-                        return location
-                    else:
-                        # Accuracy too poor, wait and try again
-                        attempt_count += 1
-                        logger.warning(f"Poor GPS fix (attempt {attempt_count}/{max_attempts}), waiting for better fix...")
-                        time.sleep(5)
-                        continue
-
             except Exception as e:
-                logger.warning(f"GPS read error: {e}")
+                read_errors += 1
+                logger.warning(
+                    f"GPS read error ({read_errors}/{self.READ_ERRORS_BEFORE_RECONNECT}): {e}"
+                )
+                if read_errors >= self.READ_ERRORS_BEFORE_RECONNECT:
+                    # Repeated failures mean the socket is gone, not that we are
+                    # unlucky. Drop the connection so the next cycle reconnects
+                    # rather than spinning here for the rest of the timeout.
+                    logger.warning("gpsd appears to be down - will reconnect on the next cycle")
+                    self.connected = False
+                    return None
+                time.sleep(1)
+                continue
+
+            if packet.mode >= 2:  # 2D or 3D fix
+                location = {
+                    'latitude': packet.lat,
+                    'longitude': packet.lon,
+                    'altitude': packet.alt if hasattr(packet, 'alt') else None,
+                    'speed': packet.hspeed if hasattr(packet, 'hspeed') else 0,
+                    'heading': packet.track if hasattr(packet, 'track') else 0,
+                    'accuracy': packet.position_error() if hasattr(packet, 'position_error') else None,
+                    'recorded_at': datetime.now().isoformat()
+                }
+
+                # Validate accuracy
+                if self.validate_accuracy(location):
+                    return location
+                else:
+                    # Accuracy too poor, wait and try again
+                    attempt_count += 1
+                    logger.warning(f"Poor GPS fix (attempt {attempt_count}/{max_attempts}), waiting for better fix...")
+                    time.sleep(5)
+                    continue
 
             time.sleep(1)
 
         if attempt_count >= max_attempts:
             logger.warning(f"Could not get accurate GPS fix after {max_attempts} attempts")
+        else:
+            logger.warning("No GPS fix yet (waiting for satellite lock)")
 
-        logger.error("GPS fix timeout")
         return None
 
 # ==============================================================================
@@ -643,7 +777,13 @@ class TrackerService:
                 location = self.gps.get_location(timeout=120)
 
                 if not location:
-                    logger.warning("No GPS fix, retrying...")
+                    # Distinguish the two causes: they need different fixes.
+                    # A missing fix means wait; an unreachable daemon means
+                    # check the gpsd service or the hardware.
+                    if self.gps.connected:
+                        logger.warning("No GPS fix yet (waiting for satellite lock), retrying in 30s...")
+                    else:
+                        logger.warning("gpsd unavailable - cannot read GPS, retrying in 30s...")
                     self.stop_event.wait(30)
                     continue
 

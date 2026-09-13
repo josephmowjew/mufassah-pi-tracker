@@ -1,7 +1,18 @@
 [Unit]
 Description=Mufassah Device Tracking Service
 After=network.target gpsd.service
+# After= only orders the units; it does not pull gpsd in. Wants= ensures gpsd
+# is started (or already running) before the tracker, so a cold boot does not
+# race the daemon.
+Wants=gpsd.service
 Requires=network.target
+
+# A permanent fault - revoked token, missing gpsd-py3, unwritable config - must
+# stop and be visible in `systemctl status`, rather than restarting forever and
+# burying the real cause in the journal. 5 restarts within 300s is a fault, not
+# a blip.
+StartLimitIntervalSec=300
+StartLimitBurst=5
 
 [Service]
 Type=simple
