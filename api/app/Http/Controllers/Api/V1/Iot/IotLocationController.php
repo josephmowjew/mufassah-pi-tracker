@@ -15,6 +15,7 @@ use App\Models\IotModule;
 use App\Notifications\GeofenceViolationNotification;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 /**
  * @group IoT Location Updates
@@ -46,37 +47,46 @@ class IotLocationController extends Controller
         /** @var Device $device */
         $device = $request->get('device');
 
-        // Create location record
-        $location = DeviceLocation::create([
-            'device_id' => $device->id,
-            'iot_module_id' => $module->id,
-            'latitude' => $validated['latitude'],
-            'longitude' => $validated['longitude'],
-            'altitude' => $validated['altitude'] ?? null,
-            'accuracy' => $validated['accuracy'] ?? null,
-            'speed' => $validated['speed'] ?? null,
-            'heading' => $validated['heading'] ?? null,
-            'is_manual' => false,
-            'recorded_at' => $validated['recorded_at'] ?? now(),
-        ]);
+        // The location row, the device's last_location_id pointer and the module
+        // heartbeat describe one event. A partial write leaves last_location_id
+        // aimed at a row that was rolled back, which silently breaks every
+        // "latest location" read afterwards.
+        $location = DB::transaction(function () use ($validated, $device, $module) {
+            // Create location record
+            $location = DeviceLocation::create([
+                'device_id' => $device->id,
+                'iot_module_id' => $module->id,
+                'latitude' => $validated['latitude'],
+                'longitude' => $validated['longitude'],
+                'altitude' => $validated['altitude'] ?? null,
+                'accuracy' => $validated['accuracy'] ?? null,
+                'speed' => $validated['speed'] ?? null,
+                'heading' => $validated['heading'] ?? null,
+                'is_manual' => false,
+                'recorded_at' => $validated['recorded_at'] ?? now(),
+            ]);
 
-        // Update device's last location and seen timestamp
-        $device->update([
-            'last_location_id' => $location->id,
-            'last_seen_at' => now(),
-        ]);
+            // Update device's last location and seen timestamp
+            $device->update([
+                'last_location_id' => $location->id,
+                'last_seen_at' => now(),
+            ]);
 
-        // Update module's battery and signal strength if provided
-        $moduleUpdates = ['last_location_update' => now()];
-        if (isset($validated['battery_level'])) {
-            $moduleUpdates['battery_level'] = $validated['battery_level'];
-        }
-        if (isset($validated['signal_strength'])) {
-            $moduleUpdates['signal_strength'] = $validated['signal_strength'];
-        }
-        $module->update($moduleUpdates);
+            // Update module's battery and signal strength if provided
+            $moduleUpdates = ['last_location_update' => now()];
+            if (isset($validated['battery_level'])) {
+                $moduleUpdates['battery_level'] = $validated['battery_level'];
+            }
+            if (isset($validated['signal_strength'])) {
+                $moduleUpdates['signal_strength'] = $validated['signal_strength'];
+            }
+            $module->update($moduleUpdates);
 
-        // Check geofences if device is being tracked (stolen status triggers intensive tracking)
+            return $location;
+        });
+
+        // Side effects run only after the commit: a failing geofence check or a
+        // dead broadcaster must not roll back a location the device already sent.
         $this->checkGeofences($device, $location);
 
         // Broadcast the location update for real-time tracking
@@ -110,38 +120,48 @@ class IotLocationController extends Controller
         /** @var Device $device */
         $device = $request->get('device');
 
-        $locations = collect($validated['locations'])->map(function ($locationData) use ($device, $module) {
-            return DeviceLocation::create([
-                'device_id' => $device->id,
-                'iot_module_id' => $module->id,
-                'latitude' => $locationData['latitude'],
-                'longitude' => $locationData['longitude'],
-                'altitude' => $locationData['altitude'] ?? null,
-                'accuracy' => $locationData['accuracy'] ?? null,
-                'speed' => $locationData['speed'] ?? null,
-                'heading' => $locationData['heading'] ?? null,
-                'is_manual' => false,
-                'recorded_at' => $locationData['recorded_at'],
-            ]);
+        // One transaction for the whole batch: N inserts plus the device pointer
+        // and the module heartbeat. An offline sync replays this after a long
+        // gap, so a half-applied batch is the normal failure mode, not an edge.
+        [$locations, $latestLocation] = DB::transaction(function () use ($validated, $device, $module) {
+            $locations = collect($validated['locations'])->map(function ($locationData) use ($device, $module) {
+                return DeviceLocation::create([
+                    'device_id' => $device->id,
+                    'iot_module_id' => $module->id,
+                    'latitude' => $locationData['latitude'],
+                    'longitude' => $locationData['longitude'],
+                    'altitude' => $locationData['altitude'] ?? null,
+                    'accuracy' => $locationData['accuracy'] ?? null,
+                    'speed' => $locationData['speed'] ?? null,
+                    'heading' => $locationData['heading'] ?? null,
+                    'is_manual' => false,
+                    'recorded_at' => $locationData['recorded_at'],
+                ]);
+            });
+
+            // Update device with the most recent location
+            $latestLocation = $locations->sortByDesc('recorded_at')->first();
+            if ($latestLocation) {
+                $device->update([
+                    'last_location_id' => $latestLocation->id,
+                    'last_seen_at' => now(),
+                ]);
+            }
+
+            // Update module
+            $module->update(['last_location_update' => now()]);
+
+            return [$locations, $latestLocation];
         });
 
-        // Update device with the most recent location
-        $latestLocation = $locations->sortByDesc('recorded_at')->first();
+        // Side effects run only after the commit — see store().
         if ($latestLocation) {
-            $device->update([
-                'last_location_id' => $latestLocation->id,
-                'last_seen_at' => now(),
-            ]);
-
             // Check geofences for latest location
             $this->checkGeofences($device, $latestLocation);
 
             // Broadcast the latest location update
             broadcast(new LocationUpdated($device, $latestLocation))->toOthers();
         }
-
-        // Update module
-        $module->update(['last_location_update' => now()]);
 
         return response()->json([
             'success' => true,

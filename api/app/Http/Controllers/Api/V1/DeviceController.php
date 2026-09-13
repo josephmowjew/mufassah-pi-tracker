@@ -88,16 +88,24 @@ class DeviceController extends BaseController
             $data['photos'] = $photos;
         }
 
-        $device = Device::create($data);
+        // A device without its opening ownership record is unrecoverable: the
+        // history is the only trace of who it was registered to. Photos are
+        // already written to storage above and are deliberately outside this —
+        // files cannot be rolled back.
+        $device = DB::transaction(function () use ($data, $request) {
+            $device = Device::create($data);
 
-        // Create initial ownership history
-        DeviceOwnershipHistory::create([
-            'device_id' => $device->id,
-            'from_user_id' => null,
-            'to_user_id' => $request->user()->id,
-            'transfer_reason' => 'Initial registration',
-            'transferred_at' => now(),
-        ]);
+            // Create initial ownership history
+            DeviceOwnershipHistory::create([
+                'device_id' => $device->id,
+                'from_user_id' => null,
+                'to_user_id' => $request->user()->id,
+                'transfer_reason' => 'Initial registration',
+                'transferred_at' => now(),
+            ]);
+
+            return $device;
+        });
 
         $device->load(['category', 'owner']);
 

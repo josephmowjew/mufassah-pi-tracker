@@ -445,22 +445,30 @@ class AdminInventoryController extends BaseController
             $validated['model'],
         );
 
-        $device = Device::create([
-            ...$validated,
-            ...$catalog,
-            'unique_device_code' => $this->generateDeviceCode(),
-            'status' => DeviceStatus::INACTIVE,
-            'inventory_status' => InventoryStatus::IN_STOCK,
-        ]);
-        $this->movementService->recordDeviceMovement($device, [
-            'movement_type' => \App\Models\InventoryMovement::TYPE_RECEIPT,
-            'branch_id' => $device->branch_id,
-            'to_branch_id' => $device->branch_id,
-            'new_status' => InventoryStatus::IN_STOCK->value,
-            'reference_type' => Device::class,
-            'reference_id' => $device->id,
-            'created_by_id' => $request->user()?->id,
-        ]);
+        // The ledger entry is what makes the device auditable. A device row with
+        // no opening movement corrupts every stock-movement total from then on,
+        // so the pair is written atomically.
+        $device = DB::transaction(function () use ($validated, $catalog, $request) {
+            $device = Device::create([
+                ...$validated,
+                ...$catalog,
+                'unique_device_code' => $this->generateDeviceCode(),
+                'status' => DeviceStatus::INACTIVE,
+                'inventory_status' => InventoryStatus::IN_STOCK,
+            ]);
+
+            $this->movementService->recordDeviceMovement($device, [
+                'movement_type' => \App\Models\InventoryMovement::TYPE_RECEIPT,
+                'branch_id' => $device->branch_id,
+                'to_branch_id' => $device->branch_id,
+                'new_status' => InventoryStatus::IN_STOCK->value,
+                'reference_type' => Device::class,
+                'reference_id' => $device->id,
+                'created_by_id' => $request->user()?->id,
+            ]);
+
+            return $device;
+        });
 
         $device->load(['category', 'iotModule', 'branch']);
 

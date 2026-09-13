@@ -199,12 +199,16 @@ class TheftReportController extends Controller
             ], 400);
         }
 
-        // Reset device status if needed
-        if ($theftReport->device && $theftReport->device->status === DeviceStatus::STOLEN) {
-            $theftReport->device->update(['status' => DeviceStatus::ACTIVE]);
-        }
+        // Both writes have to land together. A device flipped back to ACTIVE while
+        // its report survives — or a report deleted with the device still flagged
+        // STOLEN — is a state nobody can reason about afterwards.
+        DB::transaction(function () use ($theftReport) {
+            if ($theftReport->device && $theftReport->device->status === DeviceStatus::STOLEN) {
+                $theftReport->device->update(['status' => DeviceStatus::ACTIVE]);
+            }
 
-        $theftReport->delete();
+            $theftReport->delete();
+        });
 
         return response()->json([
             'success' => true,
