@@ -105,18 +105,39 @@ class AdminShiftController extends BaseController
             $query->where('branch_id', $request->branch_id);
         }
 
-        $shifts = $query->get();
+        // Compute status counts in a single grouped query instead of loading
+        // every shift row and iterating in PHP.
+        $statusCounts = (clone $query)
+            ->selectRaw('status, COUNT(*) as count')
+            ->groupBy('status')
+            ->pluck('count', 'status')
+            ->toArray();
+
+        $totalShifts = array_sum($statusCounts);
+
+        // Compute aggregate revenue and sales count from the sales table in
+        // SQL, joining only shifts that match the same filters.
+        $saleAggregates = \App\Models\Sale::query()
+            ->whereIn('shift_id', (clone $query)->select('id'))
+            ->where('status', 'completed')
+            ->selectRaw('COUNT(*) as sales_count, COALESCE(SUM(total_amount), 0) as revenue')
+            ->first();
+
+        // Average duration for completed shifts (in minutes)
+        $avgDuration = (clone $query)
+            ->whereNotNull('ended_at')
+            ->where('status', 'completed')
+            ->selectRaw('AVG(TIMESTAMPDIFF(MINUTE, started_at, ended_at)) as avg_duration')
+            ->value('avg_duration') ?? 0;
 
         $stats = [
-            'total_shifts' => $shifts->count(),
-            'active_shifts' => $shifts->where('status', 'active')->count(),
-            'completed_shifts' => $shifts->where('status', 'completed')->count(),
-            'cancelled_shifts' => $shifts->where('status', 'cancelled')->count(),
-            'total_revenue' => (float) $shifts->sum(fn ($shift) => $shift->revenue),
-            'total_sales' => $shifts->sum(fn ($shift) => $shift->sales_count),
-            'average_shift_duration' => $shifts
-                ->where('status', 'completed')
-                ->avg(fn ($shift) => $shift->duration) ?? 0,
+            'total_shifts' => $totalShifts,
+            'active_shifts' => $statusCounts['active'] ?? 0,
+            'completed_shifts' => $statusCounts['completed'] ?? 0,
+            'cancelled_shifts' => $statusCounts['cancelled'] ?? 0,
+            'total_revenue' => (float) ($saleAggregates?->revenue ?? 0),
+            'total_sales' => (int) ($saleAggregates?->sales_count ?? 0),
+            'average_shift_duration' => (float) $avgDuration,
         ];
 
         return $this->success($stats);

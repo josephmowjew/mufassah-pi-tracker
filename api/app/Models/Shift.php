@@ -66,9 +66,18 @@ class Shift extends Model
 
     /**
      * Get the total revenue for the shift.
+     *
+     * When the sales relation is eager-loaded (list endpoints), aggregates are
+     * computed from the collection instead of issuing a per-row query.
      */
     public function getRevenueAttribute()
     {
+        if ($this->relationLoaded('sales')) {
+            return $this->sales
+                ->where('status', 'completed')
+                ->sum('total_amount');
+        }
+
         return $this->sales()
             ->where('status', 'completed')
             ->sum('total_amount');
@@ -76,17 +85,34 @@ class Shift extends Model
 
     /**
      * Get the total number of sales for the shift.
+     *
+     * When the sales relation is eager-loaded (list endpoints), the count is
+     * taken from the collection instead of issuing a per-row query.
      */
     public function getSalesCountAttribute()
     {
+        if ($this->relationLoaded('sales')) {
+            return $this->sales->count();
+        }
+
         return $this->sales()->count();
     }
 
     /**
      * Get the total amount of cash sales for the shift.
+     *
+     * When the sales relation is eager-loaded (list endpoints), aggregates are
+     * computed from the collection instead of issuing a per-row query.
      */
     public function getCashSalesAttribute()
     {
+        if ($this->relationLoaded('sales')) {
+            return $this->sales
+                ->where('status', 'completed')
+                ->where('payment_method', 'cash')
+                ->sum('total_amount');
+        }
+
         return $this->sales()
             ->where('status', 'completed')
             ->where('payment_method', 'cash')
