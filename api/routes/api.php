@@ -539,15 +539,17 @@ Route::middleware(['auth:sanctum', 'not.suspended'])->group(function () {
             Route::get('/brands', [AdminProductCatalogController::class, 'brandIndex'])->name('brands.index');
             Route::post('/brands', [AdminProductCatalogController::class, 'brandStore'])->middleware('role:super_admin')->name('brands.store');
             Route::get('/brands/{brand}', [AdminProductCatalogController::class, 'brandShow'])->name('brands.show');
+            Route::get('/brands/{brand}/deletion-impact', [AdminProductCatalogController::class, 'brandDeletionImpact'])->middleware('role:super_admin')->name('brands.deletion-impact');
             Route::put('/brands/{brand}', [AdminProductCatalogController::class, 'brandUpdate'])->middleware('role:super_admin')->name('brands.update');
-            Route::delete('/brands/{brand}', [AdminProductCatalogController::class, 'brandDestroy'])->middleware('role:super_admin')->name('brands.destroy');
+            Route::delete('/brands/{brand}', [AdminProductCatalogController::class, 'brandDestroy'])->middleware(['role:super_admin', 'throttle:6,1'])->name('brands.destroy');
 
             // Product Models CRUD
             Route::get('/models', [AdminProductCatalogController::class, 'modelIndex'])->name('models.index');
             Route::post('/models', [AdminProductCatalogController::class, 'modelStore'])->middleware('role:super_admin')->name('models.store');
             Route::get('/models/{productModel}', [AdminProductCatalogController::class, 'modelShow'])->name('models.show');
+            Route::get('/models/{productModel}/deletion-impact', [AdminProductCatalogController::class, 'modelDeletionImpact'])->middleware('role:super_admin')->name('models.deletion-impact');
             Route::put('/models/{productModel}', [AdminProductCatalogController::class, 'modelUpdate'])->middleware('role:super_admin')->name('models.update');
-            Route::delete('/models/{productModel}', [AdminProductCatalogController::class, 'modelDestroy'])->middleware('role:super_admin')->name('models.destroy');
+            Route::delete('/models/{productModel}', [AdminProductCatalogController::class, 'modelDestroy'])->middleware(['role:super_admin', 'throttle:6,1'])->name('models.destroy');
         });
 
         // Sales management (POS)

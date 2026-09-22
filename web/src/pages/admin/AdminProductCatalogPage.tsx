@@ -1,12 +1,82 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Search, Plus, Loader2, Edit2, Trash2, ChevronRight, Package, Layers } from 'lucide-react'
+import { Search, Plus, Loader2, Edit2, Trash2, ChevronRight, Package, Layers, AlertTriangle, ShieldAlert } from 'lucide-react'
 import { Authorize } from '@/components/auth/Authorize'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
+import ActionChallengePinModal, { type ActionChallengeInfo } from '@/components/admin/ActionChallengePinModal'
 import { PERMISSIONS } from '@/stores/auth-store'
 import apiClient from '@/api/client'
+import { getApiErrorMessage, requiresApiConfirmation } from '@/lib/utils'
 import { toast } from 'sonner'
 import type { Brand, ProductModel, DeviceCategory } from '@/types'
+
+interface CatalogDeletionImpactDevice {
+  id: number
+  unique_device_code: string | null
+  serial_number: string | null
+  brand: string | null
+  model: string | null
+  color: string | null
+  inventory_status: string | null
+  inventory_status_label: string | null
+  branch: string | null
+  owner: string | null
+  batch_number: string | null
+  will_be_written_off: boolean
+  unit_cost: number | null
+  protected: boolean
+  protection_reasons: string[]
+}
+
+interface CatalogDeletionImpact {
+  subject: {
+    type: string
+    id: number
+    name: string
+    brand: string | null
+    category: string | null
+  }
+  devices: {
+    total: number
+    by_status: Record<string, number>
+    will_be_deleted: number
+    will_be_written_off: number
+    already_out_of_stock: number
+    with_protected_history: number
+    protected_reasons: Record<string, number>
+    unlinked_text_matches: number
+  }
+  stock_impact: {
+    units_leaving_stock: number
+    units_already_out_of_stock: number
+    value_at_cost: number
+    value_at_cost_is_partial: boolean
+  }
+  related: {
+    product_models: number
+    inventory_batches: number
+    inventory_movements: number
+  }
+  detail: CatalogDeletionImpactDevice[]
+  warnings: string[]
+}
+
+type DeleteTarget = { type: 'model' | 'brand'; id: number; label: string }
+
+function ImpactTile({ label, value, tone }: { label: string; value: string | number; tone: 'red' | 'amber' | 'slate' }) {
+  const tones = {
+    red: 'bg-red-50 text-red-800',
+    amber: 'bg-amber-50 text-amber-800',
+    slate: 'bg-slate-50 text-slate-700',
+  }
+
+  return (
+    <div className={`rounded-lg p-3 ${tones[tone]}`}>
+      <p className="text-xs opacity-80">{label}</p>
+      <p className="mt-0.5 text-lg font-semibold">{value}</p>
+    </div>
+  )
+}
 
 interface BrandFormData {
   category_id: number | ''
@@ -52,6 +122,14 @@ export default function AdminProductCatalogPage() {
     is_active: true,
   })
   const [showPriceCascadeConfirm, setShowPriceCascadeConfirm] = useState(false)
+
+  // Catalog deletion override state
+  const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null)
+  const [deleteImpact, setDeleteImpact] = useState<CatalogDeletionImpact | null>(null)
+  const [deleteReason, setDeleteReason] = useState('')
+  const [deleteNotes, setDeleteNotes] = useState('')
+  const [deleteChallenge, setDeleteChallenge] = useState<ActionChallengeInfo | null>(null)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
 
   // Fetch categories
   const { data: categories } = useQuery({
@@ -126,17 +204,110 @@ export default function AdminProductCatalogPage() {
     },
   })
 
-  const deleteBrandMutation = useMutation({
-    mutationFn: async (id: number) => {
-      await apiClient.delete(`/admin/catalog/brands/${id}`)
+  // Catalog deletion override flow. A catalog entry with no devices still
+  // deletes straight away; one that owns devices shows its full impact and
+  // requires a PIN before the cascade runs.
+  const openDeleteTarget = async (target: DeleteTarget) => {
+    setDeleteTarget(target)
+    setDeleteImpact(null)
+    setDeleteError(null)
+    setDeleteReason('')
+    setDeleteNotes('')
+
+    try {
+      const path = target.type === 'brand'
+        ? `/admin/catalog/brands/${target.id}/deletion-impact`
+        : `/admin/catalog/models/${target.id}/deletion-impact`
+      const response = await apiClient.get<{ success: boolean; data: CatalogDeletionImpact }>(path)
+
+      // Nothing is at risk, so skip the confirmation and the PIN entirely.
+      if (response.data.data.devices.total === 0) {
+        directDeleteMutation.mutate(target)
+        return
+      }
+
+      setDeleteImpact(response.data.data)
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, 'Unable to load the deletion impact'))
+      setDeleteTarget(null)
+    }
+  }
+
+  const closeDeleteFlow = () => {
+    setDeleteTarget(null)
+    setDeleteImpact(null)
+    setDeleteChallenge(null)
+    setDeleteError(null)
+    setDeleteReason('')
+    setDeleteNotes('')
+  }
+
+  const requestDeleteMutation = useMutation({
+    mutationFn: async ({ target, reason, notes }: { target: DeleteTarget; reason: string; notes?: string }) => {
+      const path = target.type === 'brand'
+        ? `/admin/catalog/brands/${target.id}`
+        : `/admin/catalog/models/${target.id}`
+      const response = await apiClient.delete<{ success: boolean; data: ActionChallengeInfo }>(path, {
+        data: { confirm_impact: true, reason, notes: notes || undefined },
+      })
+      return response.data.data
     },
-    onSuccess: () => {
+    onSuccess: (challenge) => {
+      setDeleteChallenge(challenge)
+      setDeleteError(null)
+      queryClient.invalidateQueries({ queryKey: ['notifications'] })
+      queryClient.invalidateQueries({ queryKey: ['notifications-unread-count'] })
+      toast.success('Verification PIN sent by email and available securely in notifications')
+    },
+    onError: (error) => {
+      if (requiresApiConfirmation(error)) {
+        setDeleteError(getApiErrorMessage(error, 'Confirm the deletion impact to continue.'))
+        return
+      }
+      toast.error(getApiErrorMessage(error, 'Unable to request the deletion'))
+    },
+  })
+
+  const verifyDeleteMutation = useMutation({
+    mutationFn: async ({ challengeId, pin }: { challengeId: number; pin: string }) => {
+      const response = await apiClient.post<{
+        success: boolean
+        data: { deleted_count: number; written_off_count: number; catalog_entry: string }
+      }>(`/admin/action-challenges/${challengeId}/verify`, { pin })
+      return response.data.data
+    },
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ['catalog-models'] })
       queryClient.invalidateQueries({ queryKey: ['catalog-brands'] })
-      toast.success('Brand deleted successfully')
-      if (selectedBrandId) setSelectedBrandId(null)
+      queryClient.invalidateQueries({ queryKey: ['notifications'] })
+      queryClient.invalidateQueries({ queryKey: ['notifications-unread-count'] })
+      toast.success(
+        `${result?.catalog_entry || 'Catalog entry'} deleted — ${result?.deleted_count ?? 0} device(s) removed, ${result?.written_off_count ?? 0} written off stock`,
+      )
+      if (deleteTarget?.type === 'brand' && selectedBrandId === deleteTarget.id) setSelectedBrandId(null)
+      closeDeleteFlow()
     },
-    onError: (error: Error & { response?: { data?: { message?: string } } }) => {
-      toast.error(error.response?.data?.message || 'Failed to delete brand')
+    onError: (error) => {
+      setDeleteError(getApiErrorMessage(error, 'Invalid or expired PIN'))
+    },
+  })
+
+  const resendDeleteMutation = useMutation({
+    mutationFn: async (challengeId: number) => {
+      const response = await apiClient.post<{ success: boolean; data: ActionChallengeInfo }>(
+        `/admin/action-challenges/${challengeId}/resend`,
+      )
+      return response.data.data
+    },
+    onSuccess: (challenge) => {
+      setDeleteChallenge(challenge)
+      setDeleteError(null)
+      queryClient.invalidateQueries({ queryKey: ['notifications'] })
+      queryClient.invalidateQueries({ queryKey: ['notifications-unread-count'] })
+      toast.success('A new PIN was sent and is available securely in notifications')
+    },
+    onError: (error) => {
+      setDeleteError(getApiErrorMessage(error, 'Unable to resend PIN'))
     },
   })
 
@@ -183,17 +354,23 @@ export default function AdminProductCatalogPage() {
     },
   })
 
-  const deleteModelMutation = useMutation({
-    mutationFn: async (id: number) => {
-      await apiClient.delete(`/admin/catalog/models/${id}`)
+  const directDeleteMutation = useMutation({
+    mutationFn: async (target: DeleteTarget) => {
+      const path = target.type === 'brand'
+        ? `/admin/catalog/brands/${target.id}`
+        : `/admin/catalog/models/${target.id}`
+      await apiClient.delete(path)
     },
-    onSuccess: () => {
+    onSuccess: (_result, target) => {
       queryClient.invalidateQueries({ queryKey: ['catalog-models'] })
       queryClient.invalidateQueries({ queryKey: ['catalog-brands'] })
-      toast.success('Product model deleted successfully')
+      toast.success(target.type === 'brand' ? 'Brand deleted successfully' : 'Product model deleted successfully')
+      if (target.type === 'brand' && selectedBrandId === target.id) setSelectedBrandId(null)
+      closeDeleteFlow()
     },
-    onError: (error: Error & { response?: { data?: { message?: string } } }) => {
-      toast.error(error.response?.data?.message || 'Failed to delete product model')
+    onError: (error) => {
+      toast.error(getApiErrorMessage(error, 'Unable to delete this catalog entry'))
+      closeDeleteFlow()
     },
   })
 
@@ -390,9 +567,7 @@ export default function AdminProductCatalogPage() {
                           <button
                             onClick={(e) => {
                               e.stopPropagation()
-                              if (confirm('Are you sure you want to delete this brand?')) {
-                                deleteBrandMutation.mutate(brand.id)
-                              }
+                              openDeleteTarget({ type: 'brand', id: brand.id, label: brand.name })
                             }}
                             className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                           >
@@ -477,11 +652,11 @@ export default function AdminProductCatalogPage() {
                             <Edit2 className="h-4 w-4" />
                           </button>
                           <button
-                            onClick={() => {
-                              if (confirm('Are you sure you want to delete this model?')) {
-                                deleteModelMutation.mutate(model.id)
-                              }
-                            }}
+                            onClick={() => openDeleteTarget({
+                              type: 'model',
+                              id: model.id,
+                              label: `${selectedBrand?.name || ''} ${model.name}`.trim(),
+                            })}
                             className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                           >
                             <Trash2 className="h-4 w-4" />
@@ -691,6 +866,166 @@ export default function AdminProductCatalogPage() {
         variant="warning"
         isLoading={updateModelMutation.isPending}
       />
+
+      {deleteTarget && deleteImpact && !deleteChallenge && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-900/60 p-4">
+          <div className="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+            <div className="border-b border-slate-200 p-5">
+              <div className="flex items-start gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-red-100 text-red-700">
+                  <AlertTriangle className="h-5 w-5" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-semibold text-slate-900">
+                    Delete {deleteTarget.type === 'brand' ? 'brand' : 'product model'} “{deleteTarget.label}”?
+                  </h2>
+                  <p className="mt-1 text-sm text-slate-500">
+                    This entry owns {deleteImpact.devices.total} device(s). Deleting it also deletes those devices and writes their stock out of inventory.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex-1 space-y-4 overflow-y-auto p-5">
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <ImpactTile label="Devices deleted" value={deleteImpact.devices.will_be_deleted} tone="red" />
+                <ImpactTile label="Units written off" value={deleteImpact.stock_impact.units_leaving_stock} tone="amber" />
+                <ImpactTile label="Already out of stock" value={deleteImpact.devices.already_out_of_stock} tone="slate" />
+                <ImpactTile label="Stock value at cost" value={`MWK ${Number(deleteImpact.stock_impact.value_at_cost).toLocaleString()}`} tone="slate" />
+              </div>
+
+              {deleteImpact.stock_impact.value_at_cost_is_partial && (
+                <p className="rounded-lg bg-amber-50 p-3 text-xs text-amber-800">
+                  Some devices have no purchase price or batch cost, so the stock value above understates the true cost.
+                </p>
+              )}
+
+              <div className="rounded-lg border border-slate-200 p-3 text-sm">
+                <p className="font-medium text-slate-700">Also affected</p>
+                <ul className="mt-1 space-y-0.5 text-slate-600">
+                  {deleteTarget.type === 'brand' && (
+                    <li>{deleteImpact.related.product_models} product model(s) will be removed with the brand</li>
+                  )}
+                  <li>{deleteImpact.related.inventory_batches} inventory batch(es) reference this entry</li>
+                  <li>{deleteImpact.related.inventory_movements} ledger movement(s) reference this entry</li>
+                </ul>
+                <p className="mt-1 text-xs text-slate-500">Batches and ledger movements are kept — they are the audit trail.</p>
+              </div>
+
+              {deleteImpact.warnings.length > 0 && (
+                <div className="space-y-2 rounded-lg bg-red-50 p-3">
+                  <p className="flex items-center gap-2 text-sm font-medium text-red-800">
+                    <ShieldAlert className="h-4 w-4" /> Read before continuing
+                  </p>
+                  <ul className="list-disc space-y-1 pl-5 text-xs text-red-700">
+                    {deleteImpact.warnings.map((warning) => <li key={warning}>{warning}</li>)}
+                  </ul>
+                </div>
+              )}
+
+              <div>
+                <p className="mb-2 text-sm font-medium text-slate-700">Devices that will be deleted</p>
+                <div className="max-h-56 overflow-y-auto rounded-lg border border-slate-200">
+                  <table className="w-full text-left text-xs">
+                    <thead className="sticky top-0 bg-slate-50 text-slate-500">
+                      <tr>
+                        <th className="px-3 py-2 font-medium">Device</th>
+                        <th className="px-3 py-2 font-medium">Status</th>
+                        <th className="px-3 py-2 font-medium">Branch</th>
+                        <th className="px-3 py-2 font-medium">Flags</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {deleteImpact.detail.map((device) => (
+                        <tr key={device.id}>
+                          <td className="px-3 py-2">
+                            <p className="font-medium text-slate-800">{device.brand} {device.model}</p>
+                            <p className="text-slate-500">
+                              {device.unique_device_code}{device.serial_number ? ` · ${device.serial_number}` : ''}
+                            </p>
+                          </td>
+                          <td className="px-3 py-2 text-slate-600">{device.inventory_status_label || '-'}</td>
+                          <td className="px-3 py-2 text-slate-600">{device.branch || '-'}</td>
+                          <td className="px-3 py-2">
+                            {device.will_be_written_off && (
+                              <span className="mr-1 rounded bg-amber-100 px-1.5 py-0.5 text-amber-800">write-off</span>
+                            )}
+                            {device.protected && (
+                              <span className="rounded bg-red-100 px-1.5 py-0.5 text-red-700">protected</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div>
+                <label htmlFor="catalog-delete-reason" className="mb-1 block text-sm font-medium text-slate-700">
+                  Reason <span className="text-red-500">*</span>
+                </label>
+                <input
+                  id="catalog-delete-reason"
+                  value={deleteReason}
+                  onChange={(event) => setDeleteReason(event.target.value)}
+                  placeholder="Why is this catalog entry being deleted?"
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm placeholder:text-slate-400 focus:border-blue-500 focus:outline-none"
+                />
+              </div>
+              <div>
+                <label htmlFor="catalog-delete-notes" className="mb-1 block text-sm font-medium text-slate-700">Notes</label>
+                <textarea
+                  id="catalog-delete-notes"
+                  value={deleteNotes}
+                  onChange={(event) => setDeleteNotes(event.target.value)}
+                  rows={2}
+                  placeholder="Optional context for the audit trail"
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm placeholder:text-slate-400 focus:border-blue-500 focus:outline-none"
+                />
+              </div>
+
+              {deleteError && <p className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{deleteError}</p>}
+            </div>
+
+            <div className="flex justify-end gap-2 border-t border-slate-200 p-5">
+              <button
+                type="button"
+                onClick={closeDeleteFlow}
+                className="rounded-lg px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => deleteTarget && requestDeleteMutation.mutate({
+                  target: deleteTarget,
+                  reason: deleteReason,
+                  notes: deleteNotes,
+                })}
+                disabled={!deleteReason.trim() || requestDeleteMutation.isPending}
+                className="inline-flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {requestDeleteMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Send verification PIN'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {deleteChallenge && (
+        <ActionChallengePinModal
+          challenge={deleteChallenge}
+          title={`Delete ${deleteTarget?.type === 'brand' ? 'brand' : 'product model'}`}
+          description={deleteTarget?.label}
+          error={deleteError}
+          isVerifying={verifyDeleteMutation.isPending}
+          isResending={resendDeleteMutation.isPending}
+          onVerify={(pin) => verifyDeleteMutation.mutate({ challengeId: deleteChallenge.challenge_id, pin })}
+          onResend={() => resendDeleteMutation.mutate(deleteChallenge.challenge_id)}
+          onClose={closeDeleteFlow}
+        />
+      )}
     </Authorize>
   )
 }

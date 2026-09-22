@@ -14,6 +14,10 @@ class InventoryActionChallenge extends Model
 
     public const ACTION_DEVICE_DELETION = 'device_deletion';
 
+    public const ACTION_PRODUCT_MODEL_DELETION = 'product_model_deletion';
+
+    public const ACTION_BRAND_DELETION = 'brand_deletion';
+
     protected $fillable = [
         'requested_by_id',
         'action',

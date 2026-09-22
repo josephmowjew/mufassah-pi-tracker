@@ -178,6 +178,65 @@ class InventoryMovementService
         ]);
     }
 
+    /**
+     * Record stock leaving inventory without a sale.
+     *
+     * Used when a catalog entry is deleted and its devices are removed with
+     * it, so the ledger still explains why those units disappeared instead of
+     * them vanishing silently.
+     *
+     * Callers must only write off devices that are still on hand. A sold
+     * device already had its outflow recorded on the sale movement, and
+     * writing it off again would double-count the reduction.
+     */
+    public function recordWriteOff(
+        Device $device,
+        User $user,
+        string $reason,
+        ?string $notes = null,
+        ?string $referenceType = null,
+        ?int $referenceId = null,
+        array $metadata = [],
+    ): InventoryMovement {
+        $device->loadMissing('inventoryBatch');
+
+        $unitCost = $this->resolveUnitCost($device);
+
+        return $this->recordDeviceMovement($device, [
+            'movement_type' => InventoryMovement::TYPE_WRITE_OFF,
+            'branch_id' => $device->branch_id,
+            'previous_status' => $device->inventory_status?->value,
+            'new_status' => null,
+            'reference_type' => $referenceType ?? Device::class,
+            'reference_id' => $referenceId ?? $device->id,
+            'reason' => $reason,
+            'notes' => $notes,
+            'unit_cost' => $unitCost,
+            'total_cost' => $unitCost,
+            'created_by_id' => $user->id,
+            'metadata' => $metadata,
+        ]);
+    }
+
+    /**
+     * Best available cost for a unit: the device's own purchase price, then
+     * the batch buying price. Null when neither is known, rather than
+     * fabricating a zero that would understate the write-off.
+     */
+    public function resolveUnitCost(Device $device): ?float
+    {
+        if ($device->purchase_price !== null && (float) $device->purchase_price > 0) {
+            return round((float) $device->purchase_price, 2);
+        }
+
+        $batchCost = $device->inventoryBatch?->buying_price;
+        if ($batchCost !== null && (float) $batchCost > 0) {
+            return round((float) $batchCost, 2);
+        }
+
+        return null;
+    }
+
     public function recordDeviceMovement(Device $device, array $attributes): InventoryMovement
     {
         $device->loadMissing('inventoryBatch');

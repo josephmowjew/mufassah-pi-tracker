@@ -227,6 +227,8 @@ class InventoryActionApprovalService
         return match ($action) {
             InventoryActionChallenge::ACTION_ADMINISTRATIVE_SALE => 'administrative sale',
             InventoryActionChallenge::ACTION_DEVICE_DELETION => 'device deletion',
+            InventoryActionChallenge::ACTION_PRODUCT_MODEL_DELETION => 'product model deletion',
+            InventoryActionChallenge::ACTION_BRAND_DELETION => 'brand deletion',
             default => 'inventory action',
         };
     }

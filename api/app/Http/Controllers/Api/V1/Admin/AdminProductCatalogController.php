@@ -2,21 +2,32 @@
 
 namespace App\Http\Controllers\Api\V1\Admin;
 
+use Closure;
+use App\Enums\InventoryStatus;
 use App\Http\Controllers\Api\V1\BaseController;
+use App\Models\ActivityLog;
 use App\Models\Brand;
 use App\Models\Device;
-use App\Models\ProductModel;
+use App\Models\InventoryActionChallenge;
 use App\Models\InventoryBatch;
-use App\Models\ActivityLog;
-use App\Enums\InventoryStatus;
-use Illuminate\Support\Facades\DB;
+use App\Models\ProductModel;
+use App\Rules\UniqueUnlessDeleted;
+use App\Services\CatalogDeletionImpactService;
+use App\Services\InventoryActionApprovalService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class AdminProductCatalogController extends BaseController
 {
+    public function __construct(
+        private readonly CatalogDeletionImpactService $deletionImpact,
+        private readonly InventoryActionApprovalService $approvalService,
+    ) {}
+
     // =========================================================================
     // BRANDS
     // =========================================================================
@@ -65,16 +76,30 @@ class AdminProductCatalogController extends BaseController
     public function brandStore(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'category_id' => 'required|exists:device_categories,id',
+            // A soft-deleted category must not be usable as a parent.
+            'category_id' => ['required', Rule::exists('device_categories', 'id')->whereNull('deleted_at')],
             'name' => [
                 'required',
                 'string',
                 'max:100',
-                Rule::unique('brands')->where(function ($query) use ($request) {
-                    return $query->where('category_id', $request->category_id);
-                }),
+                new UniqueUnlessDeleted(Brand::class, 'name', 'brand', [
+                    'category_id' => $request->category_id,
+                ]),
             ],
-            'slug' => 'nullable|string|max:100|unique:brands,slug',
+            'slug' => [
+                'nullable',
+                'string',
+                'max:100',
+                // The slug is derived from the name when omitted, so validate
+                // the effective value — a trashed brand still holds its slug.
+                function (string $attribute, mixed $value, Closure $fail) use ($request) {
+                    $slug = $value ?: Str::slug((string) $request->name);
+
+                    if ($slug !== '') {
+                        (new UniqueUnlessDeleted(Brand::class, 'slug', 'brand'))->validate($attribute, $slug, $fail);
+                    }
+                },
+            ],
             'logo' => 'nullable|string|max:255',
             'description' => 'nullable|string|max:1000',
             'is_active' => 'boolean',
@@ -138,18 +163,42 @@ class AdminProductCatalogController extends BaseController
     }
 
     /**
-     * Delete a brand.
+     * Preview what deleting a brand would do. Read-only, no PIN required.
      */
-    public function brandDestroy(Brand $brand): JsonResponse
+    public function brandDeletionImpact(Brand $brand): JsonResponse
     {
-        // Check if brand has devices
-        if ($brand->devices()->exists()) {
+        return $this->success($this->deletionImpact->forBrand($brand));
+    }
+
+    /**
+     * Delete a brand.
+     *
+     * A brand with no linked devices only removes catalog rows, so it still
+     * deletes outright. Once devices are in scope the operation is
+     * destructive and stock-affecting, so it needs an explicit impact
+     * confirmation and a PIN-verified challenge before it runs.
+     */
+    public function brandDestroy(Request $request, Brand $brand): JsonResponse
+    {
+        $impact = $this->deletionImpact->forBrand($brand);
+
+        if ($impact['devices']['total'] === 0) {
+            $brand->delete();
+
+            return $this->success(null, 'Brand deleted successfully');
+        }
+
+        if (! $request->user()?->hasRole('super_admin')) {
             return $this->error('Cannot delete brand with existing devices. Please reassign or delete the devices first.', 400);
         }
 
-        $brand->delete();
-
-        return $this->success(null, 'Brand deleted successfully');
+        return $this->requestCatalogDeletion(
+            $request,
+            $impact,
+            InventoryActionChallenge::ACTION_BRAND_DELETION,
+            ['brand_id' => $brand->id],
+            $brand->name,
+        );
     }
 
     // =========================================================================
@@ -202,16 +251,32 @@ class AdminProductCatalogController extends BaseController
     public function modelStore(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'brand_id' => 'required|exists:brands,id',
+            // A soft-deleted brand must not be usable as a parent.
+            'brand_id' => ['required', Rule::exists('brands', 'id')->whereNull('deleted_at')],
             'name' => [
                 'required',
                 'string',
                 'max:150',
-                Rule::unique('product_models')->where(function ($query) use ($request) {
-                    return $query->where('brand_id', $request->brand_id);
-                }),
+                new UniqueUnlessDeleted(ProductModel::class, 'name', 'product model', [
+                    'brand_id' => $request->brand_id,
+                ]),
             ],
-            'slug' => 'nullable|string|max:150',
+            'slug' => [
+                'nullable',
+                'string',
+                'max:150',
+                // Slug is unique per brand and derived from the name when
+                // omitted, so validate the effective value.
+                function (string $attribute, mixed $value, Closure $fail) use ($request) {
+                    $slug = $value ?: Str::slug((string) $request->name);
+
+                    if ($slug !== '') {
+                        (new UniqueUnlessDeleted(ProductModel::class, 'slug', 'product model', [
+                            'brand_id' => $request->brand_id,
+                        ]))->validate($attribute, $slug, $fail);
+                    }
+                },
+            ],
             'description' => 'nullable|string|max:2000',
             'image' => 'nullable|string|max:255',
             'base_price' => 'nullable|numeric|min:0',
@@ -296,18 +361,42 @@ class AdminProductCatalogController extends BaseController
     }
 
     /**
-     * Delete a product model.
+     * Preview what deleting a product model would do. Read-only, no PIN.
      */
-    public function modelDestroy(ProductModel $productModel): JsonResponse
+    public function modelDeletionImpact(ProductModel $productModel): JsonResponse
     {
-        // Check if model has devices
-        if ($productModel->devices()->exists()) {
+        return $this->success($this->deletionImpact->forModel($productModel));
+    }
+
+    /**
+     * Delete a product model.
+     *
+     * A model with no devices still deletes outright. A model that owns
+     * devices is a destructive, stock-affecting operation: the devices go
+     * with it and their stock is written out of inventory, so the caller must
+     * confirm the impact and clear a PIN challenge first.
+     */
+    public function modelDestroy(Request $request, ProductModel $productModel): JsonResponse
+    {
+        $impact = $this->deletionImpact->forModel($productModel);
+
+        if ($impact['devices']['total'] === 0) {
+            $productModel->delete();
+
+            return $this->success(null, 'Product model deleted successfully');
+        }
+
+        if (! $request->user()?->hasRole('super_admin')) {
             return $this->error('Cannot delete product model with existing devices. Please reassign or delete the devices first.', 400);
         }
 
-        $productModel->delete();
-
-        return $this->success(null, 'Product model deleted successfully');
+        return $this->requestCatalogDeletion(
+            $request,
+            $impact,
+            InventoryActionChallenge::ACTION_PRODUCT_MODEL_DELETION,
+            ['product_model_id' => $productModel->id],
+            trim(($productModel->brand?->name ?? '').' '.$productModel->name),
+        );
     }
 
     // =========================================================================
@@ -416,5 +505,87 @@ class AdminProductCatalogController extends BaseController
             ->whereColumn('devices.category_id', 'catalog_brands.category_id')
             ->whereColumn('devices.brand', 'catalog_brands.name')
             ->whereColumn('devices.model', 'product_models.name');
+    }
+
+    /**
+     * Shared override path for catalog deletions that would take devices with
+     * them.
+     *
+     * Returns 409 carrying the full impact when the operator has not confirmed,
+     * and otherwise opens a PIN challenge. The device set is captured into the
+     * challenge payload so verification can detect drift instead of deleting a
+     * different set of devices than the one that was reviewed.
+     */
+    private function requestCatalogDeletion(
+        Request $request,
+        array $impact,
+        string $action,
+        array $subjectKeys,
+        string $subjectLabel,
+    ): JsonResponse {
+        $validated = $request->validate([
+            'reason' => ['nullable', 'string', 'max:255'],
+            'notes' => ['nullable', 'string', 'max:1000'],
+            'confirm_impact' => ['sometimes', 'boolean'],
+        ]);
+
+        if (! ($validated['confirm_impact'] ?? false)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'This entry has devices. Deleting it also deletes those devices and writes their stock out of inventory.',
+                'errors' => [
+                    'confirm_impact' => ['Review the deletion impact and confirm to continue.'],
+                ],
+                'requires_confirmation' => true,
+                'impact' => $impact,
+            ], 409);
+        }
+
+        if (blank($validated['reason'] ?? null)) {
+            throw ValidationException::withMessages([
+                'reason' => ['A reason is required to override a catalog deletion.'],
+            ]);
+        }
+
+        $deviceIds = array_values(array_map(fn (array $device) => (int) $device['id'], $impact['detail']));
+
+        if ($deviceIds === []) {
+            throw ValidationException::withMessages([
+                'confirm_impact' => ['This entry no longer has devices. Retry without confirmation.'],
+            ]);
+        }
+
+        $targetLabel = $subjectLabel.' ('.(count($deviceIds) === 1 ? '1 device' : count($deviceIds).' devices').')';
+
+        $payload = [
+            ...$subjectKeys,
+            'device_ids' => $deviceIds,
+            'expected_device_count' => count($deviceIds),
+            'subject_label' => $targetLabel,
+            'reason' => $validated['reason'],
+            'notes' => $validated['notes'] ?? null,
+        ];
+
+        $challenge = $this->approvalService->create(
+            $request->user(),
+            $action,
+            $payload,
+            Device::query()->findOrFail($deviceIds[0]),
+            $targetLabel,
+        );
+
+        return response()->json([
+            'success' => true,
+            'message' => 'A verification PIN was sent by email and is available securely in notifications.',
+            'data' => [
+                'challenge_id' => $challenge->id,
+                'action' => $challenge->action,
+                'masked_email' => $this->approvalService->maskedEmail($this->approvalService->approvalEmail()),
+                'expires_at' => $challenge->expires_at?->toIso8601String(),
+                'attempts_remaining' => max(0, $challenge->max_attempts - $challenge->attempts),
+                'device_count' => count($deviceIds),
+                'impact' => $impact,
+            ],
+        ], 202);
     }
 }

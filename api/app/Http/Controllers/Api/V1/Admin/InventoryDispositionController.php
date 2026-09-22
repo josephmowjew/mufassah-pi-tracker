@@ -7,9 +7,12 @@ use App\Http\Controllers\Api\V1\BaseController;
 use App\Http\Resources\DeviceResource;
 use App\Http\Resources\InventoryMovementResource;
 use App\Models\ActivityLog;
+use App\Models\Brand;
 use App\Models\Device;
 use App\Models\InventoryActionChallenge;
 use App\Models\InventoryMovement;
+use App\Models\ProductModel;
+use App\Services\CatalogDeletionImpactService;
 use App\Services\InventoryActionApprovalService;
 use App\Services\InventoryMovementService;
 use App\Services\SuperAdminSaleNotificationService;
@@ -24,6 +27,7 @@ class InventoryDispositionController extends BaseController
         private readonly InventoryActionApprovalService $approvalService,
         private readonly InventoryMovementService $movementService,
         private readonly SuperAdminSaleNotificationService $superAdminSaleNotificationService,
+        private readonly CatalogDeletionImpactService $deletionImpact,
     ) {}
 
     public function requestAdministrativeSale(Request $request, Device $device): JsonResponse
@@ -172,11 +176,19 @@ class InventoryDispositionController extends BaseController
         foreach ($devices as $device) {
             $this->authorizeInventoryBranch($request, $device);
         }
+        // A catalog challenge should be named after the catalog entry, not the
+        // first device that happens to sit inside it.
+        $targetLabel = match ($challenge->action) {
+            InventoryActionChallenge::ACTION_PRODUCT_MODEL_DELETION,
+            InventoryActionChallenge::ACTION_BRAND_DELETION => $challenge->payload['subject_label'] ?? null,
+            default => count($deviceIds) > 1 ? count($deviceIds).' devices' : null,
+        };
+
         $challenge = $this->approvalService->resend(
             $challenge,
             $request->user(),
             $devices->firstOrFail(),
-            count($deviceIds) > 1 ? count($deviceIds).' devices' : null,
+            $targetLabel,
         );
 
         return $this->success($this->challengeData($challenge), 'A new verification PIN was sent by email and is available securely in notifications.');
@@ -197,6 +209,8 @@ class InventoryDispositionController extends BaseController
                 return match ($lockedChallenge->action) {
                     InventoryActionChallenge::ACTION_ADMINISTRATIVE_SALE => $this->executeAdministrativeSale($request, $payload, $lockedChallenge),
                     InventoryActionChallenge::ACTION_DEVICE_DELETION => $this->executeDeviceDeletion($request, $payload),
+                    InventoryActionChallenge::ACTION_PRODUCT_MODEL_DELETION,
+                    InventoryActionChallenge::ACTION_BRAND_DELETION => $this->executeCatalogDeletion($request, $payload, $lockedChallenge),
                     default => throw ValidationException::withMessages(['challenge' => ['Unsupported inventory action.']]),
                 };
             },
@@ -314,7 +328,9 @@ class InventoryDispositionController extends BaseController
         }
 
         $deviceName = trim("{$device->brand} {$device->model}");
-        $device->locations()->delete();
+        // Location history is telemetry, not catalog data. The device is
+        // soft-deleted, so its trail survives for audit instead of being
+        // destroyed as collateral.
         $device->geofences()->delete();
         if ($device->iot_module_id) {
             $device->iotModule?->update(['device_id' => null]);
@@ -366,7 +382,7 @@ class InventoryDispositionController extends BaseController
         $deletedDevices = [];
         foreach ($devices as $device) {
             $deviceName = trim("{$device->brand} {$device->model}");
-            $device->locations()->delete();
+            // Keep the device's location history; only its zones are hidden.
             $device->geofences()->delete();
             if ($device->iot_module_id) {
                 $device->iotModule?->update(['device_id' => null]);
@@ -386,6 +402,130 @@ class InventoryDispositionController extends BaseController
             'deleted_count' => count($deletedDevices),
             'deleted_device_ids' => $deviceIds,
             'devices' => $deletedDevices,
+        ];
+    }
+
+    /**
+     * Cascade a catalog deletion that was reviewed and PIN-approved.
+     *
+     * Devices are soft-deleted so their sale, warranty and ledger records keep
+     * resolving, and every unit that was still on hand is written off so the
+     * stock reduction is explained in the ledger instead of happening silently.
+     * Units already sold are not written off again, because their outflow is
+     * already recorded on the sale movement.
+     */
+    private function executeCatalogDeletion(Request $request, array $payload, InventoryActionChallenge $challenge): array
+    {
+        $deviceIds = $this->challengeDeviceIds($payload);
+        $isBrand = $challenge->action === InventoryActionChallenge::ACTION_BRAND_DELETION;
+
+        $devices = Device::query()
+            ->whereIn('id', $deviceIds)
+            ->orderBy('id')
+            ->lockForUpdate()
+            ->get();
+
+        if ($devices->count() !== count($deviceIds)) {
+            throw ValidationException::withMessages([
+                'challenge' => ['One or more devices in this challenge no longer exist. Request a new deletion challenge.'],
+            ]);
+        }
+
+        $subject = $isBrand
+            ? Brand::query()->lockForUpdate()->find((int) ($payload['brand_id'] ?? 0))
+            : ProductModel::query()->lockForUpdate()->find((int) ($payload['product_model_id'] ?? 0));
+
+        if (! $subject) {
+            throw ValidationException::withMessages([
+                'challenge' => ['The catalog entry no longer exists. Request a new deletion challenge.'],
+            ]);
+        }
+
+        // Re-derive the scope and confirm it still matches the set that was
+        // reviewed. Catalog links can move between the PIN request and here.
+        $impact = $isBrand
+            ? $this->deletionImpact->forBrand($subject)
+            : $this->deletionImpact->forModel($subject);
+
+        $currentIds = array_map(fn (array $device) => (int) $device['id'], $impact['detail']);
+        $expectedIds = $deviceIds;
+        sort($currentIds);
+        sort($expectedIds);
+
+        if ($currentIds !== $expectedIds) {
+            throw ValidationException::withMessages([
+                'challenge' => ['The devices linked to this catalog entry changed after this PIN was requested. Request a new deletion challenge.'],
+            ]);
+        }
+
+        $reason = (string) $payload['reason'];
+        $notes = $payload['notes'] ?? null;
+        $subjectLabel = $isBrand
+            ? $subject->name
+            : trim(($subject->brand?->name ?? '').' '.$subject->name);
+
+        $writtenOff = [];
+        $deleted = [];
+
+        foreach ($devices as $device) {
+            $status = $device->inventory_status;
+
+            if ($status?->isOnHand()) {
+                $movement = $this->movementService->recordWriteOff(
+                    $device,
+                    $request->user(),
+                    $reason,
+                    $notes,
+                    $isBrand ? Brand::class : ProductModel::class,
+                    (int) $subject->id,
+                    [
+                        'action' => $challenge->action,
+                        'catalog_entry' => $subjectLabel,
+                        'challenge_id' => $challenge->id,
+                        'previous_status' => $status->value,
+                    ],
+                );
+
+                $writtenOff[] = [
+                    'movement_id' => $movement->id,
+                    'movement_number' => $movement->movement_number,
+                    'device_id' => $device->id,
+                    'previous_status' => $status->value,
+                    'unit_cost' => $movement->unit_cost,
+                ];
+            }
+
+            // Keep the device's location history; only its zones are hidden.
+            $device->geofences()->delete();
+            if ($device->iot_module_id) {
+                $device->iotModule?->update(['device_id' => null]);
+            }
+            $device->delete();
+
+            $deleted[] = ['device_id' => $device->id, 'inventory_status' => $status?->value];
+        }
+
+        $subjectId = (int) $subject->id;
+        $subject->delete();
+
+        $this->logActivity(null, $request->user(), $challenge->action, ucfirst($this->approvalService->labelFor($challenge->action)).' completed after PIN verification', [
+            'challenge_id' => $challenge->id,
+            'catalog_entry' => $subjectLabel,
+            'catalog_entry_id' => $subjectId,
+            'reason' => $reason,
+            'deleted_device_count' => count($deleted),
+            'written_off_device_count' => count($writtenOff),
+            'deleted_device_ids' => array_column($deleted, 'device_id'),
+        ]);
+
+        return [
+            'action' => $challenge->action,
+            'catalog_entry' => $subjectLabel,
+            'catalog_entry_id' => $subjectId,
+            'deleted_count' => count($deleted),
+            'written_off_count' => count($writtenOff),
+            'devices' => $deleted,
+            'write_offs' => $writtenOff,
         ];
     }
 
@@ -418,6 +558,12 @@ class InventoryDispositionController extends BaseController
         }
         if ($challenge->action === InventoryActionChallenge::ACTION_DEVICE_DELETION && ! $user->can('delete-devices')) {
             abort(403, 'You do not have permission to delete devices.');
+        }
+        if (in_array($challenge->action, [
+            InventoryActionChallenge::ACTION_PRODUCT_MODEL_DELETION,
+            InventoryActionChallenge::ACTION_BRAND_DELETION,
+        ], true) && ! $user->hasRole('super_admin')) {
+            abort(403, 'Only a super admin can override a catalog deletion.');
         }
     }
 
