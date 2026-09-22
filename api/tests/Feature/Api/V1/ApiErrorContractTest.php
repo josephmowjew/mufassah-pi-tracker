@@ -3,10 +3,8 @@
 use App\Models\Branch;
 use App\Models\Shift;
 use App\Models\User;
-use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Route;
-use Illuminate\Support\Facades\Schema;
 
 /*
  * Regression cover for E-04: raw exception text must never reach an API client.
@@ -89,10 +87,14 @@ describe('Shift end failure', function () {
     });
 
     it('returns a generic message and logs the failure instead of echoing the SQL error', function () {
-        // Remove the column the completion write needs, so the UPDATE inside the
-        // transaction fails for a reason the client has no business seeing.
-        Schema::table('shifts', function (Blueprint $table) {
-            $table->dropColumn('ended_at');
+        // Inject the failure WITHOUT DDL. The previous version dropped the `ended_at`
+        // column, but MySQL implicitly commits DDL inside a transaction, which
+        // desynchronises RefreshDatabase's transaction wrapper: the controller's
+        // DB::rollBack() then threw, that escaped its own catch, and the catch-all
+        // renderer answered instead. The assertion therefore passed on SQLite and
+        // failed on MySQL. A model event fails the write on any driver.
+        Shift::saving(function () {
+            throw new \RuntimeException('Simulated failure while completing the shift.');
         });
 
         Log::spy();
