@@ -240,7 +240,7 @@ export type TheftReportStatus = TheftReportStatusValue | TheftReportStatusObject
 export interface TheftReport {
   id: number
   device_id: number
-  reporter_id: number
+  reported_by: number
   report_number: string
   status: TheftReportStatusObject
   theft_date: string

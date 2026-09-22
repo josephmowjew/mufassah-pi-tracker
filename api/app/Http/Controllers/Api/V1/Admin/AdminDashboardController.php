@@ -283,11 +283,18 @@ class AdminDashboardController extends Controller
             ->mapWithKeys(fn ($item) => [$item->status->value => $item->count]);
 
         $activeReports = $this->theftReportsQuery($branchId)
-            ->with(['device:id,name,brand,model', 'reporter:id,name'])
+            // `name` is an appended accessor (brand + model), not a column — selecting
+            // it here raised MySQL error 1054. Request only real columns; the accessor
+            // supplies `name` when the model is serialised.
+            ->with(['device:id,brand,model', 'reporter:id,name'])
             ->whereIn('status', [TheftReportStatus::Reported, TheftReportStatus::Investigating])
             ->latest()
             ->take(10)
-            ->get(['id', 'device_id', 'reporter_id', 'status', 'theft_date', 'created_at']);
+            // Column is `reported_by` (TheftReport::reporter() belongsTo on that FK).
+            // `reporter_id` does not exist — it raised MySQL error 1054, and because the
+            // real FK was missing from this select list the `reporter` relation could
+            // never resolve, even on SQLite.
+            ->get(['id', 'device_id', 'reported_by', 'status', 'theft_date', 'created_at']);
 
         return response()->json([
             'success' => true,

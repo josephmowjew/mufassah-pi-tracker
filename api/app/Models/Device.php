@@ -16,6 +16,19 @@ class Device extends Model
     use HasFactory, SoftDeletes;
 
     /**
+     * Attributes appended to the model's array/JSON form.
+     *
+     * `name` is a *computed display name* (brand + model), mirroring DeviceResource.
+     * It must be appended, never selected: `devices` has no `name` column, so
+     * eager-loading `device:id,name,...` raises MySQL error 1054. SQLite does not
+     * report this — it coerces the unknown double-quoted identifier into a string
+     * literal — so the bug only surfaces against MySQL.
+     *
+     * @var list<string>
+     */
+    protected $appends = ['name'];
+
+    /**
      * The attributes that are mass assignable.
      *
      * @var list<string>
@@ -304,5 +317,17 @@ class Device extends Model
     public function isSold(): bool
     {
         return $this->inventory_status === InventoryStatus::SOLD;
+    }
+
+    /**
+     * Computed display name, e.g. "Infinix Hot 30".
+     *
+     * Kept in step with DeviceResource's `name` field so that raw-model
+     * serialisation (the admin theft-report endpoints return models, not
+     * resources) produces the same shape the frontend expects.
+     */
+    public function getNameAttribute(): string
+    {
+        return trim("{$this->brand} {$this->model}");
     }
 }

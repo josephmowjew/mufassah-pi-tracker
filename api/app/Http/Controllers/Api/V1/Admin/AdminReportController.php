@@ -43,7 +43,10 @@ class AdminReportController extends Controller
         ]);
 
         $query = $this->theftReportsQuery($branchId)
-            ->with(['device:id,name,brand,model', 'reporter:id,name'])
+            // `name` is an appended accessor (brand + model), not a column — selecting
+            // it here raised MySQL error 1054. Request only real columns; the accessor
+            // supplies `name` when the model is serialised.
+            ->with(['device:id,brand,model', 'reporter:id,name'])
             ->when(isset($validated['from']), fn ($q) => $q->where('created_at', '>=', $validated['from']))
             ->when(isset($validated['to']), fn ($q) => $q->where('created_at', '<=', $validated['to']))
             ->when(isset($validated['status']), fn ($q) => $q->where('status', $validated['status']));
