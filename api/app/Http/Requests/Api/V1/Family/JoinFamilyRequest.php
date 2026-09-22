@@ -3,6 +3,7 @@
 namespace App\Http\Requests\Api\V1\Family;
 
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class JoinFamilyRequest extends FormRequest
 {
@@ -14,7 +15,7 @@ class JoinFamilyRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'code' => ['required', 'string', 'size:8', 'exists:families,code'],
+            'code' => ['required', 'string', 'size:8', Rule::exists('families', 'code')->whereNull('deleted_at')],
         ];
     }
 

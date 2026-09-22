@@ -3,6 +3,7 @@
 namespace App\Http\Requests;
 
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class StoreCommunityAlertRequest extends FormRequest
 {
@@ -14,7 +15,7 @@ class StoreCommunityAlertRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'theft_report_id' => ['required', 'exists:theft_reports,id'],
+            'theft_report_id' => ['required', Rule::exists('theft_reports', 'id')->whereNull('deleted_at')],
             'broadcast_latitude' => ['required', 'numeric', 'between:-90,90'],
             'broadcast_longitude' => ['required', 'numeric', 'between:-180,180'],
             'alert_radius_km' => ['nullable', 'integer', 'min:1', 'max:100'],

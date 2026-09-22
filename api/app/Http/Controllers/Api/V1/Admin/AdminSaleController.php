@@ -120,7 +120,7 @@ class AdminSaleController extends BaseController
     public function store(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'customer_id' => 'required|exists:users,id',
+            'customer_id' => ['required', Rule::exists('users', 'id')->whereNull('deleted_at')],
             'branch_id' => ['nullable', Rule::exists('branches', 'id')->whereNull('deleted_at')],
             'payment_method' => ['required', Rule::enum(PaymentMethod::class)],
             'payment_reference' => 'nullable|string|max:100',
@@ -130,7 +130,7 @@ class AdminSaleController extends BaseController
             'status' => ['nullable', Rule::in([SaleStatus::DRAFT->value, SaleStatus::COMPLETED->value])],
             'items' => 'required|array|min:1',
             // Legacy format (direct device_id)
-            'items.*.device_id' => 'required_without:items.*.category_id|exists:devices,id',
+            'items.*.device_id' => ['required_without:items.*.category_id', Rule::exists('devices', 'id')->whereNull('deleted_at')],
             // New format (product specs + quantity)
             'items.*.category_id' => ['required_without:items.*.device_id', Rule::exists('device_categories', 'id')->whereNull('deleted_at')],
             'items.*.brand' => 'required_with:items.*.category_id|string|max:100',

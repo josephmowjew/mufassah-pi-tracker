@@ -3,6 +3,7 @@
 namespace App\Http\Requests\Api\V1\Warranty;
 
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class StoreWarrantyRequest extends FormRequest
 {
@@ -14,7 +15,7 @@ class StoreWarrantyRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'device_id' => ['required', 'integer', 'exists:devices,id', 'unique:warranties,device_id,NULL,id,deleted_at,NULL'],
+            'device_id' => ['required', 'integer', Rule::exists('devices', 'id')->whereNull('deleted_at'), 'unique:warranties,device_id,NULL,id,deleted_at,NULL'],
             'start_date' => ['required', 'date'],
             'duration_months' => ['required', 'integer', 'min:1', 'max:120'],
             'coverage_details' => ['nullable', 'string', 'max:1000'],

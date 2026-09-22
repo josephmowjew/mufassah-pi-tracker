@@ -427,7 +427,7 @@ class AdminInventoryController extends BaseController
             'serial_number' => 'required|string|max:100|unique:devices,serial_number',
             'category_id' => ['required', Rule::exists('device_categories', 'id')->whereNull('deleted_at')],
             'branch_id' => ['required', Rule::exists('branches', 'id')->whereNull('deleted_at')],
-            'iot_module_id' => 'nullable|exists:iot_modules,id',
+            'iot_module_id' => ['nullable', Rule::exists('iot_modules', 'id')->whereNull('deleted_at')],
             'brand' => 'required|string|max:100',
             'model' => 'required|string|max:100',
             'color' => 'nullable|string|max:50',

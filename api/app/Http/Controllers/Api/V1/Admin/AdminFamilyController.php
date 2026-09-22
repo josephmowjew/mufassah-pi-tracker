@@ -134,7 +134,7 @@ class AdminFamilyController extends Controller
     public function transferOwnership(Request $request, Family $family): JsonResponse
     {
         $validated = $request->validate([
-            'new_owner_id' => ['required', 'integer', 'exists:users,id'],
+            'new_owner_id' => ['required', 'integer', Rule::exists('users', 'id')->whereNull('deleted_at')],
         ]);
 
         $newOwnerId = $validated['new_owner_id'];
@@ -189,7 +189,7 @@ class AdminFamilyController extends Controller
     public function addMember(Request $request, Family $family): JsonResponse
     {
         $validated = $request->validate([
-            'user_id' => ['required', 'integer', 'exists:users,id'],
+            'user_id' => ['required', 'integer', Rule::exists('users', 'id')->whereNull('deleted_at')],
             'role' => ['required', 'string', Rule::enum(FamilyRole::class)],
             'nickname' => ['nullable', 'string', 'max:50'],
         ]);

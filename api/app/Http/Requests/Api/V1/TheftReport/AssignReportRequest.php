@@ -3,6 +3,7 @@
 namespace App\Http\Requests\Api\V1\TheftReport;
 
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class AssignReportRequest extends FormRequest
 {
@@ -14,7 +15,7 @@ class AssignReportRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'assigned_to' => ['required', 'integer', 'exists:users,id'],
+            'assigned_to' => ['required', 'integer', Rule::exists('users', 'id')->whereNull('deleted_at')],
             'notes' => ['nullable', 'string', 'max:500'],
         ];
     }

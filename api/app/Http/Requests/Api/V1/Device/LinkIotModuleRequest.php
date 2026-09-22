@@ -4,6 +4,7 @@ namespace App\Http\Requests\Api\V1\Device;
 
 use App\Models\Device;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class LinkIotModuleRequest extends FormRequest
 {
@@ -18,7 +19,7 @@ class LinkIotModuleRequest extends FormRequest
             'iot_module_id' => [
                 'required',
                 'integer',
-                'exists:iot_modules,id',
+                Rule::exists('iot_modules', 'id')->whereNull('deleted_at'),
                 function ($attribute, $value, $fail) {
                     // Check if the module is already linked to another device
                     $linkedDevice = Device::where('iot_module_id', $value)

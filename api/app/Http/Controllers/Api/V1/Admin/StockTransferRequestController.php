@@ -64,7 +64,7 @@ class StockTransferRequestController extends BaseController
     {
         $data = $request->validate([
             'device_ids' => 'nullable|array|min:1|max:100|required_without:product_quantities',
-            'device_ids.*' => 'integer|distinct|exists:devices,id',
+            'device_ids.*' => ['integer', 'distinct', Rule::exists('devices', 'id')->whereNull('deleted_at')],
             'product_quantities' => 'nullable|array|min:1|max:100|required_without:device_ids',
             'product_quantities.*.category_id' => ['required', 'integer', Rule::exists('device_categories', 'id')->whereNull('deleted_at')],
             'product_quantities.*.brand' => 'required|string|max:100',

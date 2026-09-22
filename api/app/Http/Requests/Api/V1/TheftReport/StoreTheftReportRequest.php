@@ -3,6 +3,7 @@
 namespace App\Http\Requests\Api\V1\TheftReport;
 
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class StoreTheftReportRequest extends FormRequest
 {
@@ -14,7 +15,7 @@ class StoreTheftReportRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'device_id' => ['required', 'integer', 'exists:devices,id'],
+            'device_id' => ['required', 'integer', Rule::exists('devices', 'id')->whereNull('deleted_at')],
             'theft_date' => ['required', 'date', 'before_or_equal:now'],
             'theft_location' => ['required', 'string', 'max:255'],
             'theft_latitude' => ['nullable', 'numeric', 'between:-90,90'],

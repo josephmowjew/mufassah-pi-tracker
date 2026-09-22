@@ -34,7 +34,7 @@ class StoreBranchRequest extends FormRequest
             'city' => ['nullable', 'string', 'max:100'],
             'phone' => ['nullable', 'string', 'max:20'],
             'email' => ['nullable', 'email', 'max:255'],
-            'manager_id' => ['nullable', 'exists:users,id'],
+            'manager_id' => ['nullable', Rule::exists('users', 'id')->whereNull('deleted_at')],
             'is_active' => ['boolean'],
         ];
     }

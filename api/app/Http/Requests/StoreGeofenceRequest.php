@@ -19,7 +19,7 @@ class StoreGeofenceRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'device_id' => ['required', 'integer', 'exists:devices,id'],
+            'device_id' => ['required', 'integer', Rule::exists('devices', 'id')->whereNull('deleted_at')],
             'name' => ['required', 'string', 'max:255'],
             'description' => ['nullable', 'string', 'max:1000'],
             'shape_type' => ['required', Rule::enum(GeofenceShapeType::class)],

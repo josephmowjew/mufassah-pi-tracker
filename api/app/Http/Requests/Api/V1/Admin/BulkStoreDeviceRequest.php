@@ -17,7 +17,7 @@ class BulkStoreDeviceRequest extends FormRequest
         return [
             'category_id' => ['required', 'integer', Rule::exists('device_categories', 'id')->whereNull('deleted_at')],
             'branch_id' => ['required', 'integer', Rule::exists('branches', 'id')->whereNull('deleted_at')],
-            'iot_module_id' => ['nullable', 'integer', 'exists:iot_modules,id'],
+            'iot_module_id' => ['nullable', 'integer', Rule::exists('iot_modules', 'id')->whereNull('deleted_at')],
             'brand' => ['required', 'string', 'max:100'],
             'model' => ['required', 'string', 'max:100'],
             'color' => ['nullable', 'string', 'max:50'],

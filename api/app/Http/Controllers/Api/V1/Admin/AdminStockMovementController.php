@@ -83,7 +83,7 @@ class AdminStockMovementController extends BaseController
     {
         $validated = $request->validate([
             'device_ids' => 'required|array|min:1|max:100',
-            'device_ids.*' => 'required|integer|exists:devices,id',
+            'device_ids.*' => ['required', 'integer', Rule::exists('devices', 'id')->whereNull('deleted_at')],
             'to_branch_id' => ['required', Rule::exists('branches', 'id')->whereNull('deleted_at')],
             'reason' => 'required|string|max:255',
             'notes' => 'nullable|string|max:1000',
@@ -161,7 +161,7 @@ class AdminStockMovementController extends BaseController
     {
         $validated = $request->validate([
             'device_ids' => 'required|array|min:1|max:100',
-            'device_ids.*' => 'required|integer|exists:devices,id',
+            'device_ids.*' => ['required', 'integer', Rule::exists('devices', 'id')->whereNull('deleted_at')],
             // Never allow the generic adjustment endpoint to silently create
             // a sold device. Administrative sales have a separate PIN flow.
             'inventory_status' => ['required', Rule::in([
