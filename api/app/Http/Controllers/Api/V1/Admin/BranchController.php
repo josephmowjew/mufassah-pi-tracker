@@ -101,6 +101,14 @@ class BranchController extends Controller
                     ->orWhere('to_branch_id', $branch->id);
             })->count(),
             'shifts' => Shift::where('branch_id', $branch->id)->count(),
+            // stock_transfer_requests.*_branch_id is ON DELETE RESTRICT, so a transfer
+            // in ANY status blocks the delete at the database level - not just PENDING
+            // ones. Omitting this made the guard pass and the RESTRICT surface as an
+            // unhandled SQLSTATE 1451 (a 500) instead of this 422.
+            'stock_transfer_requests' => StockTransferRequest::where(function ($query) use ($branch) {
+                $query->where('from_branch_id', $branch->id)
+                    ->orWhere('to_branch_id', $branch->id);
+            })->count(),
         ];
 
         $hasLinkedRecords = collect($linkedRecords)->contains(fn (int $count) => $count > 0);
@@ -109,7 +117,7 @@ class BranchController extends Controller
             return response()->json([
                 'message' => 'This branch has linked records. Deactivate it instead of deleting it.',
                 'errors' => [
-                    'branch' => ['Branches with stock, users, sales, receipts, movements, or shifts cannot be deleted.'],
+                    'branch' => ['Branches with stock, users, sales, receipts, movements, shifts, or stock transfer requests cannot be deleted.'],
                 ],
                 'linked_records' => $linkedRecords,
             ], 422);
