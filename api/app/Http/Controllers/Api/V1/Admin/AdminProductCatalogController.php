@@ -139,7 +139,7 @@ class AdminProductCatalogController extends BaseController
     public function brandUpdate(Request $request, Brand $brand): JsonResponse
     {
         $validated = $request->validate([
-            'category_id' => 'sometimes|required|exists:device_categories,id',
+            'category_id' => ['sometimes', 'required', Rule::exists('device_categories', 'id')->whereNull('deleted_at')],
             'name' => [
                 'sometimes',
                 'required',
@@ -318,7 +318,7 @@ class AdminProductCatalogController extends BaseController
     public function modelUpdate(Request $request, ProductModel $productModel): JsonResponse
     {
         $validated = $request->validate([
-            'brand_id' => 'sometimes|required|exists:brands,id',
+            'brand_id' => ['sometimes', 'required', Rule::exists('brands', 'id')->whereNull('deleted_at')],
             'name' => [
                 'sometimes',
                 'required',

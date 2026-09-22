@@ -3,6 +3,7 @@
 namespace App\Http\Requests;
 
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class StoreBranchRequest extends FormRequest
 {
@@ -23,7 +24,12 @@ class StoreBranchRequest extends FormRequest
     {
         return [
             'name' => ['required', 'string', 'max:255'],
-            'code' => ['required', 'string', 'max:50', 'unique:branches,code'],
+            // A soft-deleted branch keeps its `code` in the unique index, and MySQL has no
+            // partial unique index. BranchController::store restores the trashed row rather
+            // than inserting, so a clash with a *deleted* branch must pass validation here -
+            // otherwise the code would be blocked forever. A clash with a live branch still
+            // fails, and the index is never violated because the insert becomes an update.
+            'code' => ['required', 'string', 'max:50', Rule::unique('branches', 'code')->whereNull('deleted_at')],
             'address' => ['nullable', 'string'],
             'city' => ['nullable', 'string', 'max:100'],
             'phone' => ['nullable', 'string', 'max:20'],

@@ -13,6 +13,7 @@ use Spatie\Permission\Models\Role;
 beforeEach(function () {
     Role::firstOrCreate(['name' => 'super_admin', 'guard_name' => 'api']);
     Role::firstOrCreate(['name' => 'store_admin', 'guard_name' => 'api']);
+    Role::firstOrCreate(['name' => 'customer_service', 'guard_name' => 'api']);
 
     $this->admin = User::factory()->create();
     $this->admin->assignRole('super_admin');
@@ -124,14 +125,78 @@ describe('Admin Branch Management', function () {
         expect(Branch::whereKey($branch->id)->exists())->toBeTrue();
     });
 
-    it('deletes a branch that has no linked records', function () {
+    it('soft deletes a branch that has no linked records and hides it from the index', function () {
         $branch = Branch::create(['name' => 'Empty Branch', 'code' => 'EMP', 'is_active' => true]);
 
         $this->actingAs($this->admin)
             ->deleteJson("/api/v1/admin/branches/{$branch->id}")
             ->assertNoContent();
 
-        expect(Branch::whereKey($branch->id)->exists())->toBeFalse();
+        // The row must still exist - branches are never hard deleted from the API.
+        $this->assertSoftDeleted('branches', ['id' => $branch->id]);
+
+        expect(Branch::whereKey($branch->id)->exists())->toBeFalse()
+            ->and(Branch::withTrashed()->whereKey($branch->id)->exists())->toBeTrue();
+
+        $this->actingAs($this->admin)
+            ->getJson('/api/v1/admin/branches?per_page=100')
+            ->assertSuccessful()
+            ->assertJsonMissing(['id' => $branch->id]);
+    });
+
+    it('restores the same branch when a deleted code is submitted again', function () {
+        $branch = Branch::create(['name' => 'Reusable Branch', 'code' => 'REU', 'is_active' => true]);
+
+        $this->actingAs($this->admin)
+            ->deleteJson("/api/v1/admin/branches/{$branch->id}")
+            ->assertNoContent();
+
+        $this->assertSoftDeleted('branches', ['id' => $branch->id]);
+
+        // A soft-deleted branch still occupies its unique `code`, and MySQL has no
+        // partial unique index, so re-creating the code must resurrect the row rather
+        // than insert - otherwise the code is unusable forever, or the insert 500s.
+        $response = $this->actingAs($this->admin)->postJson('/api/v1/admin/branches', [
+            'name' => 'Reusable Branch Reborn',
+            'code' => 'REU',
+            'city' => 'Zomba',
+            'is_active' => true,
+        ]);
+
+        $response->assertSuccessful()
+            ->assertJsonPath('data.id', $branch->id)
+            ->assertJsonPath('data.name', 'Reusable Branch Reborn')
+            ->assertJsonPath('data.city', 'Zomba');
+
+        expect(Branch::withTrashed()->where('code', 'REU')->count())->toBe(1)
+            ->and(Branch::whereKey($branch->id)->exists())->toBeTrue();
+    });
+
+    it('still rejects a code that belongs to a live branch', function () {
+        Branch::create(['name' => 'Live Branch', 'code' => 'LIV', 'is_active' => true]);
+
+        // The inverse of the restore path: only a *trashed* clash is allowed through.
+        $this->actingAs($this->admin)->postJson('/api/v1/admin/branches', [
+            'name' => 'Duplicate Branch',
+            'code' => 'LIV',
+            'is_active' => true,
+        ])->assertStatus(422)->assertJsonValidationErrors('code');
+    });
+
+    it('rejects a soft-deleted branch as a branch reference', function () {
+        $branch = Branch::create(['name' => 'Gone Branch', 'code' => 'GON', 'is_active' => true]);
+        $branch->delete();
+
+        // Laravel's `exists` rule queries the raw table and ignores the SoftDeletes
+        // scope, so without an explicit `whereNull('deleted_at')` a trashed branch
+        // stays assignable and new records get filed against a deleted branch.
+        $this->actingAs($this->admin)->postJson('/api/v1/admin/users', [
+            'name' => 'Orphan Candidate',
+            'email' => 'orphan@example.test',
+            'password' => 'Password123!',
+            'role' => 'customer_service',
+            'branch_id' => $branch->id,
+        ])->assertStatus(422)->assertJsonValidationErrors('branch_id');
     });
 
     it('refuses at the database level to hard delete a branch that still has stock', function () {
@@ -154,11 +219,18 @@ describe('Admin Branch Management', function () {
             'target_selling_price' => 150,
         ]);
 
-        // Bypass the controller guard completely - this is the tinker / forceDelete
-        // path. Before the migration this silently CASCADE-deleted the batch.
-        expect(fn () => $branch->delete())->toThrow(QueryException::class);
+        // Soft deleting is always safe - it is an UPDATE, so no foreign key fires.
+        $branch->delete();
+        $this->assertSoftDeleted('branches', ['id' => $branch->id]);
 
-        expect(Branch::whereKey($branch->id)->exists())->toBeTrue()
+        // forceDelete is the tinker / raw-SQL path that bypasses SoftDeletes. Before
+        // the RESTRICT migration this silently CASCADE-deleted the batch; now the
+        // database refuses. `delete()` alone no longer proves this, because the trait
+        // turns it into an UPDATE that never reaches the foreign key.
+        expect(fn () => Branch::withTrashed()->whereKey($branch->id)->first()->forceDelete())
+            ->toThrow(QueryException::class);
+
+        expect(Branch::withTrashed()->whereKey($branch->id)->exists())->toBeTrue()
             ->and(InventoryBatch::where('branch_id', $branch->id)->count())->toBe(1);
     });
 });

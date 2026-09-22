@@ -4,6 +4,7 @@ namespace App\Http\Requests;
 
 use App\Models\Branch;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class UpdateBranchRequest extends FormRequest
 {
@@ -27,7 +28,9 @@ class UpdateBranchRequest extends FormRequest
 
         return [
             'name' => ['sometimes', 'required', 'string', 'max:255'],
-            'code' => ['sometimes', 'required', 'string', 'max:50', 'unique:branches,code,'.$branchId],
+            // Mirrors StoreBranchRequest: a clash with a trashed branch is allowed because
+            // the controller restores that row; a clash with a live branch still fails.
+            'code' => ['sometimes', 'required', 'string', 'max:50', Rule::unique('branches', 'code')->ignore($branchId)->whereNull('deleted_at')],
             'address' => ['nullable', 'string'],
             'city' => ['nullable', 'string', 'max:100'],
             'phone' => ['nullable', 'string', 'max:20'],

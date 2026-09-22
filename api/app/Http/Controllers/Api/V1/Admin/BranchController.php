@@ -55,7 +55,21 @@ class BranchController extends Controller
         $this->authorizeGlobalBranchManagement($request);
         $validated = $request->validated();
         $this->validateManagerAssignment($validated['manager_id'] ?? null);
-        $branch = Branch::create($validated);
+
+        // A soft-deleted branch still occupies its unique `code`, and MySQL has no partial
+        // unique index, so the code cannot simply be reused. Resurrect the trashed row
+        // rather than inserting: the code becomes reusable and the branch id stays stable
+        // for anything that referenced it. Validation permits this case (see
+        // StoreBranchRequest), and a live clash is still rejected before we get here.
+        $branch = Branch::withTrashed()->where('code', $validated['code'])->first();
+
+        if ($branch?->trashed()) {
+            $branch->restore();
+            $branch->update($validated);
+        } else {
+            $branch = Branch::create($validated);
+        }
+
         $this->syncManagerBranch($branch, $validated['manager_id'] ?? null);
 
         return new BranchResource($branch->load('manager'));

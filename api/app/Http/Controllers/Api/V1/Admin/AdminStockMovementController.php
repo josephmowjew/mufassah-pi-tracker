@@ -84,7 +84,7 @@ class AdminStockMovementController extends BaseController
         $validated = $request->validate([
             'device_ids' => 'required|array|min:1|max:100',
             'device_ids.*' => 'required|integer|exists:devices,id',
-            'to_branch_id' => 'required|exists:branches,id',
+            'to_branch_id' => ['required', Rule::exists('branches', 'id')->whereNull('deleted_at')],
             'reason' => 'required|string|max:255',
             'notes' => 'nullable|string|max:1000',
         ]);

@@ -3,6 +3,7 @@
 namespace App\Http\Requests\Api\V1\Admin;
 
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class StoreInventoryReceiptRequest extends FormRequest
 {
@@ -14,14 +15,14 @@ class StoreInventoryReceiptRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'branch_id' => ['required', 'integer', 'exists:branches,id'],
+            'branch_id' => ['required', 'integer', Rule::exists('branches', 'id')->whereNull('deleted_at')],
             'supplier' => ['nullable', 'string', 'max:255'],
             'reference_number' => ['nullable', 'string', 'max:255'],
             'purchase_date' => ['nullable', 'date', 'before_or_equal:today'],
             'purchase_location' => ['nullable', 'string', 'max:255'],
             'notes' => ['nullable', 'string', 'max:1000'],
             'lines' => ['required', 'array', 'min:1', 'max:50'],
-            'lines.*.category_id' => ['required', 'integer', 'exists:device_categories,id'],
+            'lines.*.category_id' => ['required', 'integer', Rule::exists('device_categories', 'id')->whereNull('deleted_at')],
             'lines.*.brand' => ['required', 'string', 'max:100'],
             'lines.*.model' => ['required', 'string', 'max:100'],
             'lines.*.color' => ['nullable', 'string', 'max:50'],

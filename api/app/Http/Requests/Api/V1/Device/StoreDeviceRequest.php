@@ -3,6 +3,7 @@
 namespace App\Http\Requests\Api\V1\Device;
 
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class StoreDeviceRequest extends FormRequest
 {
@@ -15,7 +16,7 @@ class StoreDeviceRequest extends FormRequest
     {
         return [
             'serial_number' => ['required', 'string', 'max:100', 'unique:devices,serial_number'],
-            'category_id' => ['required', 'integer', 'exists:device_categories,id'],
+            'category_id' => ['required', 'integer', Rule::exists('device_categories', 'id')->whereNull('deleted_at')],
             'brand' => ['required', 'string', 'max:100'],
             'model' => ['required', 'string', 'max:100'],
             'description' => ['nullable', 'string', 'max:1000'],

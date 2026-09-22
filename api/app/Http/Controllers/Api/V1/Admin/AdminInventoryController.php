@@ -211,8 +211,8 @@ class AdminInventoryController extends BaseController
     public function productOptions(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'category_id' => 'required|exists:device_categories,id',
-            'branch_id' => 'nullable|exists:branches,id',
+            'category_id' => ['required', Rule::exists('device_categories', 'id')->whereNull('deleted_at')],
+            'branch_id' => ['nullable', Rule::exists('branches', 'id')->whereNull('deleted_at')],
             'brand' => 'nullable|string|max:100',
             'model' => 'nullable|string|max:150',
         ]);
@@ -425,8 +425,8 @@ class AdminInventoryController extends BaseController
     {
         $validated = $request->validate([
             'serial_number' => 'required|string|max:100|unique:devices,serial_number',
-            'category_id' => 'required|exists:device_categories,id',
-            'branch_id' => 'required|exists:branches,id',
+            'category_id' => ['required', Rule::exists('device_categories', 'id')->whereNull('deleted_at')],
+            'branch_id' => ['required', Rule::exists('branches', 'id')->whereNull('deleted_at')],
             'iot_module_id' => 'nullable|exists:iot_modules,id',
             'brand' => 'required|string|max:100',
             'model' => 'required|string|max:100',

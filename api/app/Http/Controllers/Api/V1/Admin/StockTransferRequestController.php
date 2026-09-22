@@ -16,6 +16,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
 class StockTransferRequestController extends BaseController
@@ -65,15 +66,15 @@ class StockTransferRequestController extends BaseController
             'device_ids' => 'nullable|array|min:1|max:100|required_without:product_quantities',
             'device_ids.*' => 'integer|distinct|exists:devices,id',
             'product_quantities' => 'nullable|array|min:1|max:100|required_without:device_ids',
-            'product_quantities.*.category_id' => 'required|integer|exists:device_categories,id',
+            'product_quantities.*.category_id' => ['required', 'integer', Rule::exists('device_categories', 'id')->whereNull('deleted_at')],
             'product_quantities.*.brand' => 'required|string|max:100',
             'product_quantities.*.model' => 'required|string|max:150',
             'product_quantities.*.color' => 'nullable|string|max:100',
             'product_quantities.*.quantity' => 'required|integer|min:1|max:100',
-            'to_branch_id' => 'required|integer|exists:branches,id',
+            'to_branch_id' => ['required', 'integer', Rule::exists('branches', 'id')->whereNull('deleted_at')],
             'reason' => 'required|string|max:255',
             'notes' => 'nullable|string|max:1000',
-            'from_branch_id' => 'nullable|integer|exists:branches,id',
+            'from_branch_id' => ['nullable', 'integer', Rule::exists('branches', 'id')->whereNull('deleted_at')],
             'override_destination_receipt' => 'sometimes|boolean',
         ], [
             'device_ids.required_without' => 'Select at least one device or enter a product quantity.',

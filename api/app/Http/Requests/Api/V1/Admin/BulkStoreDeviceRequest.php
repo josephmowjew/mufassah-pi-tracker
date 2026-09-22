@@ -3,6 +3,7 @@
 namespace App\Http\Requests\Api\V1\Admin;
 
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class BulkStoreDeviceRequest extends FormRequest
 {
@@ -14,8 +15,8 @@ class BulkStoreDeviceRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'category_id' => ['required', 'integer', 'exists:device_categories,id'],
-            'branch_id' => ['required', 'integer', 'exists:branches,id'],
+            'category_id' => ['required', 'integer', Rule::exists('device_categories', 'id')->whereNull('deleted_at')],
+            'branch_id' => ['required', 'integer', Rule::exists('branches', 'id')->whereNull('deleted_at')],
             'iot_module_id' => ['nullable', 'integer', 'exists:iot_modules,id'],
             'brand' => ['required', 'string', 'max:100'],
             'model' => ['required', 'string', 'max:100'],

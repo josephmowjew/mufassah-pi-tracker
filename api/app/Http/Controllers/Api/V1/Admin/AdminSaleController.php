@@ -121,7 +121,7 @@ class AdminSaleController extends BaseController
     {
         $validated = $request->validate([
             'customer_id' => 'required|exists:users,id',
-            'branch_id' => 'nullable|exists:branches,id',
+            'branch_id' => ['nullable', Rule::exists('branches', 'id')->whereNull('deleted_at')],
             'payment_method' => ['required', Rule::enum(PaymentMethod::class)],
             'payment_reference' => 'nullable|string|max:100',
             'payment_amount' => 'nullable|numeric|min:0',
@@ -132,7 +132,7 @@ class AdminSaleController extends BaseController
             // Legacy format (direct device_id)
             'items.*.device_id' => 'required_without:items.*.category_id|exists:devices,id',
             // New format (product specs + quantity)
-            'items.*.category_id' => 'required_without:items.*.device_id|exists:device_categories,id',
+            'items.*.category_id' => ['required_without:items.*.device_id', Rule::exists('device_categories', 'id')->whereNull('deleted_at')],
             'items.*.brand' => 'required_with:items.*.category_id|string|max:100',
             'items.*.model' => 'required_with:items.*.category_id|string|max:150',
             'items.*.color' => 'nullable|string|max:50',

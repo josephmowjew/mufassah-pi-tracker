@@ -121,7 +121,7 @@ class AdminDeviceController extends BaseController
             'purchase_date' => 'nullable|date',
             'purchase_price' => 'nullable|numeric|min:0',
             'purchase_location' => 'nullable|string|max:255',
-            'category_id' => 'sometimes|exists:device_categories,id',
+            'category_id' => ['sometimes', Rule::exists('device_categories', 'id')->whereNull('deleted_at')],
         ]);
 
         if (array_key_exists('category_id', $validated)

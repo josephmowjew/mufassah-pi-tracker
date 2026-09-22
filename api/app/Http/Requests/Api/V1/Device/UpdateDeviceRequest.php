@@ -3,6 +3,7 @@
 namespace App\Http\Requests\Api\V1\Device;
 
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class UpdateDeviceRequest extends FormRequest
 {
@@ -14,7 +15,7 @@ class UpdateDeviceRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'category_id' => ['sometimes', 'integer', 'exists:device_categories,id'],
+            'category_id' => ['sometimes', 'integer', Rule::exists('device_categories', 'id')->whereNull('deleted_at')],
             'brand' => ['sometimes', 'string', 'max:100'],
             'model' => ['sometimes', 'string', 'max:100'],
             'description' => ['sometimes', 'nullable', 'string', 'max:1000'],
