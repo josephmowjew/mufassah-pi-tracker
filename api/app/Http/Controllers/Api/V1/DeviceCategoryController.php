@@ -6,6 +6,8 @@ use App\Http\Requests\Api\V1\DeviceCategory\StoreCategoryRequest;
 use App\Http\Requests\Api\V1\DeviceCategory\UpdateCategoryRequest;
 use App\Http\Resources\DeviceCategoryResource;
 use App\Models\DeviceCategory;
+use App\Models\InventoryBatch;
+use App\Models\InventoryMovement;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -59,6 +61,7 @@ class DeviceCategoryController extends BaseController
 
         if ($request->has('page') || $request->has('per_page')) {
             $categories = $query->orderBy('name')->paginate($perPage);
+
             return $this->paginated(DeviceCategoryResource::collection($categories));
         }
 
@@ -123,12 +126,26 @@ class DeviceCategoryController extends BaseController
     {
         $this->authorize('delete', $deviceCategory);
 
-        // Check if category has devices
-        if ($deviceCategory->devices()->exists()) {
-            return $this->error(
-                'Cannot delete category with existing devices. Please reassign or delete the devices first.',
-                400
-            );
+        // The category foreign keys on devices and inventory_batches are ON DELETE
+        // CASCADE, and the one on inventory_movements is ON DELETE SET NULL. A hard
+        // delete would therefore destroy stock rows and erase the ledger's category
+        // attribution. Soft deletes never reach a foreign key, but the guard still has
+        // to cover every child the database would act on - it used to check devices
+        // only, so a category holding batches passed and those were left unguarded.
+        $linkedRecords = [
+            'devices' => $deviceCategory->devices()->count(),
+            'inventory_batches' => InventoryBatch::where('category_id', $deviceCategory->id)->count(),
+            'inventory_movements' => InventoryMovement::where('category_id', $deviceCategory->id)->count(),
+        ];
+
+        if (collect($linkedRecords)->contains(fn (int $count) => $count > 0)) {
+            // `linked_records` sits at the top level to match BranchController::destroy,
+            // so a client can render "what is blocking this delete" uniformly.
+            return response()->json([
+                'success' => false,
+                'message' => 'Cannot delete category with existing devices, inventory batches, or stock movements. Please reassign them first.',
+                'linked_records' => $linkedRecords,
+            ], 400);
         }
 
         $deviceCategory->delete();

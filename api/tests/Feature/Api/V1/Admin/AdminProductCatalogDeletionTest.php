@@ -1,8 +1,8 @@
 <?php
 
 use App\Enums\InventoryStatus;
-use App\Models\Brand;
 use App\Models\Branch;
+use App\Models\Brand;
 use App\Models\Device;
 use App\Models\DeviceCategory;
 use App\Models\DeviceLocation;

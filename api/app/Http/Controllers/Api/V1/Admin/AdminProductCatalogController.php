@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers\Api\V1\Admin;
 
-use Closure;
 use App\Enums\InventoryStatus;
 use App\Http\Controllers\Api\V1\BaseController;
 use App\Models\ActivityLog;
@@ -14,6 +13,7 @@ use App\Models\ProductModel;
 use App\Rules\UniqueUnlessDeleted;
 use App\Services\CatalogDeletionImpactService;
 use App\Services\InventoryActionApprovalService;
+use Closure;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
