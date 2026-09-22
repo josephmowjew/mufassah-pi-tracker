@@ -5,10 +5,11 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class InventoryMovement extends Model
 {
-    use HasFactory;
+    use HasFactory, SoftDeletes;
 
     public const TYPE_RECEIPT = 'receipt';
 
@@ -139,7 +140,11 @@ class InventoryMovement extends Model
     public static function generateMovementNumber(): string
     {
         $year = now()->format('Y');
-        $lastMovement = static::whereYear('created_at', $year)
+
+        // Trashed rows still occupy their unique movement_number, so the
+        // sequence must count them or the next insert collides.
+        $lastMovement = static::withTrashed()
+            ->whereYear('created_at', $year)
             ->orderByDesc('id')
             ->first();
 

@@ -6,10 +6,11 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class InventoryReceipt extends Model
 {
-    use HasFactory;
+    use HasFactory, SoftDeletes;
 
     protected $fillable = [
         'receipt_number',
@@ -50,13 +51,36 @@ class InventoryReceipt extends Model
     public static function generateReceiptNumber(): string
     {
         $year = now()->format('Y');
-        $lastReceipt = static::whereYear('created_at', $year)
+
+        // Trashed rows still occupy their unique receipt_number, so the
+        // sequence must count them or the next insert collides.
+        $lastReceipt = static::withTrashed()
+            ->whereYear('created_at', $year)
             ->orderByDesc('id')
             ->first();
 
         $sequence = $lastReceipt ? ((int) substr($lastReceipt->receipt_number, -5)) + 1 : 1;
 
         return sprintf('REC-%s-%05d', $year, $sequence);
+    }
+
+    /**
+     * Soft deletes do not cascade at the database level, so a deleted receipt
+     * has to hide its batches explicitly.
+     */
+    protected static function booted(): void
+    {
+        static::deleting(function (InventoryReceipt $receipt) {
+            if ($receipt->isForceDeleting()) {
+                return;
+            }
+
+            $receipt->batches()->each(fn (InventoryBatch $batch) => $batch->delete());
+        });
+
+        static::restoring(function (InventoryReceipt $receipt) {
+            $receipt->batches()->withTrashed()->each(fn (InventoryBatch $batch) => $batch->restore());
+        });
     }
 
     public function summary(): array

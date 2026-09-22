@@ -2,6 +2,8 @@
 
 namespace App\Http\Requests\Api\V1\DeviceCategory;
 
+use App\Models\DeviceCategory;
+use App\Rules\UniqueUnlessDeleted;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Str;
 
@@ -15,8 +17,8 @@ class StoreCategoryRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'name' => ['required', 'string', 'max:100', 'unique:device_categories,name'],
-            'slug' => ['sometimes', 'string', 'max:100', 'unique:device_categories,slug'],
+            'name' => ['required', 'string', 'max:100', new UniqueUnlessDeleted(DeviceCategory::class, 'name', 'category')],
+            'slug' => ['sometimes', 'string', 'max:100', new UniqueUnlessDeleted(DeviceCategory::class, 'slug', 'category')],
             'description' => ['nullable', 'string', 'max:500'],
             'icon' => ['nullable', 'string', 'max:50'],
             'is_active' => ['sometimes', 'boolean'],
@@ -27,8 +29,6 @@ class StoreCategoryRequest extends FormRequest
     {
         return [
             'name.required' => 'Please provide the category name.',
-            'name.unique' => 'A category with this name already exists.',
-            'slug.unique' => 'A category with this slug already exists.',
         ];
     }
 

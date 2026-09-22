@@ -6,11 +6,12 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Str;
 
 class Brand extends Model
 {
-    use HasFactory;
+    use HasFactory, SoftDeletes;
 
     protected $fillable = [
         'category_id',
@@ -41,6 +42,21 @@ class Brand extends Model
             if ($brand->isDirty('name') && ! $brand->isDirty('slug')) {
                 $brand->slug = Str::slug($brand->name);
             }
+        });
+
+        // Soft deletes do not cascade at the database level, so a deleted
+        // brand has to hide its own models explicitly. Without this a brand
+        // would vanish while its models stayed visible.
+        static::deleting(function (Brand $brand) {
+            if ($brand->isForceDeleting()) {
+                return;
+            }
+
+            $brand->productModels()->each(fn (ProductModel $model) => $model->delete());
+        });
+
+        static::restoring(function (Brand $brand) {
+            $brand->productModels()->withTrashed()->each(fn (ProductModel $model) => $model->restore());
         });
     }
 

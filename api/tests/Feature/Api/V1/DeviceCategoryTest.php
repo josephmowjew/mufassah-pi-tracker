@@ -222,7 +222,7 @@ describe('Device Category Update (Admin)', function () {
 });
 
 describe('Device Category Deletion (Admin)', function () {
-    it('allows super_admin to delete empty category', function () {
+    it('soft deletes an empty category instead of destroying it', function () {
         $admin = User::factory()->create();
         $admin->assignRole('super_admin');
         $category = DeviceCategory::factory()->create();
@@ -231,7 +231,12 @@ describe('Device Category Deletion (Admin)', function () {
             ->deleteJson(apiUrl("admin/device-categories/{$category->id}"))
             ->assertOk();
 
-        $this->assertDatabaseMissing('device_categories', ['id' => $category->id]);
+        // The row survives with a deleted_at stamp so it stays recoverable,
+        // and is hidden from the default scope.
+        $this->assertSoftDeleted('device_categories', ['id' => $category->id]);
+
+        expect(DeviceCategory::find($category->id))->toBeNull()
+            ->and(DeviceCategory::withTrashed()->find($category->id))->not->toBeNull();
     });
 
     it('prevents deletion of category with devices', function () {

@@ -48,18 +48,33 @@ class InventoryCatalogResolver
 
     private function findBrand(int $categoryId, string $name): ?Brand
     {
-        return Brand::query()
+        $brand = Brand::withTrashed()
             ->where('category_id', $categoryId)
             ->whereRaw('LOWER(TRIM(name)) = ?', [$this->normalizedName($name)])
             ->first();
+
+        // A previously deleted brand is restored rather than duplicated. The
+        // unique slug it still holds would reject a fresh insert anyway, and
+        // restoring keeps its original id and history.
+        if ($brand?->trashed()) {
+            $brand->restore();
+        }
+
+        return $brand;
     }
 
     private function findModel(int $brandId, string $name): ?ProductModel
     {
-        return ProductModel::query()
+        $model = ProductModel::withTrashed()
             ->where('brand_id', $brandId)
             ->whereRaw('LOWER(TRIM(name)) = ?', [$this->normalizedName($name)])
             ->first();
+
+        if ($model?->trashed()) {
+            $model->restore();
+        }
+
+        return $model;
     }
 
     private function createBrand(DeviceCategory $category, string $name): Brand
@@ -123,7 +138,9 @@ class InventoryCatalogResolver
             $base = 'brand-'.$category->id;
         }
 
-        return $this->nextAvailableSlug($base, fn (string $slug): bool => Brand::query()->where('slug', $slug)->exists());
+        // Trashed rows still hold their slug in the unique index, so the
+        // availability check has to include them.
+        return $this->nextAvailableSlug($base, fn (string $slug): bool => Brand::withTrashed()->where('slug', $slug)->exists());
     }
 
     private function uniqueModelSlug(string $name, int $brandId): string
@@ -133,7 +150,7 @@ class InventoryCatalogResolver
             $base = 'model-'.$brandId;
         }
 
-        return $this->nextAvailableSlug($base, fn (string $slug): bool => ProductModel::query()
+        return $this->nextAvailableSlug($base, fn (string $slug): bool => ProductModel::withTrashed()
             ->where('brand_id', $brandId)
             ->where('slug', $slug)
             ->exists());

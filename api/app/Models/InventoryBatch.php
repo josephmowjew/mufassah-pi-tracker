@@ -8,10 +8,11 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class InventoryBatch extends Model
 {
-    use HasFactory;
+    use HasFactory, SoftDeletes;
 
     protected $fillable = [
         'batch_number',
@@ -62,7 +63,12 @@ class InventoryBatch extends Model
     public static function generateBatchNumber(): string
     {
         $year = now()->format('Y');
-        $lastBatch = static::whereYear('created_at', $year)
+
+        // Trashed rows still occupy their unique batch_number, so the sequence
+        // must count them. Without withTrashed() a soft-deleted batch would
+        // hand its number to the next insert and violate the unique index.
+        $lastBatch = static::withTrashed()
+            ->whereYear('created_at', $year)
             ->orderByDesc('id')
             ->first();
 

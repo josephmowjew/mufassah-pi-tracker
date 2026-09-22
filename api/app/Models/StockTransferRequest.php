@@ -6,10 +6,11 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class StockTransferRequest extends Model
 {
-    use HasFactory;
+    use HasFactory, SoftDeletes;
 
     public const PENDING = 'pending';
 
@@ -58,6 +59,31 @@ class StockTransferRequest extends Model
 
     public static function nextNumber(): string
     {
-        return sprintf('STR-%s-%06d', now()->format('Y'), (static::whereYear('created_at', now()->year)->max('id') ?? 0) + 1);
+        // Trashed rows still occupy their unique request_number, so the
+        // sequence must count them or the next insert collides.
+        $lastId = static::withTrashed()
+            ->whereYear('created_at', now()->year)
+            ->max('id') ?? 0;
+
+        return sprintf('STR-%s-%06d', now()->format('Y'), $lastId + 1);
+    }
+
+    /**
+     * Soft deletes do not cascade at the database level, so a deleted request
+     * has to hide its line items explicitly.
+     */
+    protected static function booted(): void
+    {
+        static::deleting(function (StockTransferRequest $request) {
+            if ($request->isForceDeleting()) {
+                return;
+            }
+
+            $request->items()->each(fn (StockTransferRequestItem $item) => $item->delete());
+        });
+
+        static::restoring(function (StockTransferRequest $request) {
+            $request->items()->withTrashed()->each(fn (StockTransferRequestItem $item) => $item->restore());
+        });
     }
 }
