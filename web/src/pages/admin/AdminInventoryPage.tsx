@@ -1,12 +1,12 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Search, Package, Plus, Loader2, LayoutGrid, List, Layers } from 'lucide-react'
 import { Authorize } from '@/components/auth/Authorize'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
-import { PERMISSIONS } from '@/stores/auth-store'
+import { PERMISSIONS, ROLES, useAuthStore } from '@/stores/auth-store'
 import apiClient from '@/api/client'
 import { toast } from 'sonner'
-import type { Branch, Device, GroupedInventoryItem, InventoryBatch } from '@/types'
+import type { Branch, Device, DeviceDeletionImpact, GroupedInventoryItem, InventoryBatch } from '@/types'
 import ActionChallengePinModal, { type ActionChallengeInfo } from '@/components/admin/ActionChallengePinModal'
 import BranchScopeFilter from '@/components/admin/BranchScopeFilter'
 import StockViewTable from '@/components/inventory/StockViewTable'
@@ -16,6 +16,9 @@ import BulkAddDeviceModal from '@/components/inventory/BulkAddDeviceModal'
 import { CheckCircle, Clock, Tag, RotateCcw, AlertTriangle } from 'lucide-react'
 import { appendBranchScope } from '@/lib/branch-scope'
 import { useInventoryPinStore } from '@/stores/inventory-pin-store'
+import DeviceDeletionDialog from '@/components/admin/DeviceDeletionDialog'
+import DeviceDeletionImpactModal from '@/components/admin/DeviceDeletionImpactModal'
+import { getApiErrorMessage, requiresApiConfirmation } from '@/lib/utils'
 
 interface PaginatedResponse {
   data: Device[]
@@ -46,6 +49,15 @@ interface InventoryStats {
 
 type ViewMode = 'stock' | 'serial' | 'batches'
 
+const INVENTORY_DEVICE_DELETE_RETURN_PATH = '/admin/inventory'
+
+const deletionChallengeCopy = (deviceCount = 1) => ({
+  title: deviceCount > 1 ? 'Confirm bulk device deletion' : 'Confirm device deletion',
+  description: deviceCount > 1
+    ? 'The reviewed impact will be rechecked. Enter the PIN sent by email or revealed securely in notifications to remove all selected devices.'
+    : 'The reviewed impact will be rechecked. Enter the PIN sent by email or revealed securely in notifications to continue.',
+})
+
 const ADMINISTRATIVE_SALE_TITLE = 'Confirm administrative sale'
 const ADMINISTRATIVE_SALE_DESCRIPTION = 'This will mark the device sold and create an inventory financial movement without creating a POS sale or payment.'
 const ADMINISTRATIVE_SALE_RETURN_PATH = '/admin/inventory'
@@ -62,6 +74,8 @@ const formatDate = (value: string | null | undefined) => {
 
 export default function AdminInventoryPage() {
   const queryClient = useQueryClient()
+  const isSuperAdmin = useAuthStore((state) => state.isSuperAdmin())
+  const currentUser = useAuthStore((state) => state.user)
   const setActiveChallenge = useInventoryPinStore((state) => state.setActiveChallenge)
   const clearActiveChallenge = useInventoryPinStore((state) => state.clearActiveChallenge)
   const clearPin = useInventoryPinStore((state) => state.clearPin)
@@ -89,6 +103,20 @@ export default function AdminInventoryPage() {
     return activeChallenge?.challenge || null
   })
   const [saleChallengeError, setSaleChallengeError] = useState<string | null>(null)
+  const [deleteTargets, setDeleteTargets] = useState<Device[]>([])
+  const [deleteImpact, setDeleteImpact] = useState<DeviceDeletionImpact | null>(null)
+  const [deleteImpactError, setDeleteImpactError] = useState<string | null>(null)
+  const [deleteImpactConfirmed, setDeleteImpactConfirmed] = useState(false)
+  const [deleteReason, setDeleteReason] = useState('')
+  const [deleteNotes, setDeleteNotes] = useState('')
+  const [deleteWarning, setDeleteWarning] = useState<string | null>(null)
+  const [deleteChallenge, setDeleteChallenge] = useState<ActionChallengeInfo | null>(() => {
+    const activeChallenge = Object.values(useInventoryPinStore.getState().activeChallenges)
+      .find((item) => item.returnPath === INVENTORY_DEVICE_DELETE_RETURN_PATH && ['device_deletion', 'bulk_device_deletion'].includes(item.challenge.action))
+    return activeChallenge?.challenge || null
+  })
+  const [deleteChallengeError, setDeleteChallengeError] = useState<string | null>(null)
+  const deleteImpactRequestId = useRef(0)
 
   // View mode with localStorage persistence
   const [viewMode, setViewMode] = useState<ViewMode>(() => {
@@ -307,6 +335,184 @@ export default function AdminInventoryPage() {
     },
   })
 
+  const loadDeviceDeleteImpactMutation = useMutation({
+    mutationFn: async ({ devices }: { devices: Device[]; requestId: number }) => {
+      const response = await apiClient.post<{ success: boolean; data: DeviceDeletionImpact }>('/admin/devices/deletion-impact', {
+        device_ids: devices.map((device) => device.id),
+      })
+      return response.data.data
+    },
+    onSuccess: (impact, variables) => {
+      if (variables.requestId !== deleteImpactRequestId.current) return
+      setDeleteImpact(impact)
+      setDeleteImpactError(null)
+      setDeleteImpactConfirmed(false)
+    },
+    onError: (error, variables) => {
+      if (variables.requestId !== deleteImpactRequestId.current) return
+      setDeleteImpact(null)
+      setDeleteImpactError(getApiErrorMessage(error, 'Unable to load the device deletion impact.'))
+    },
+  })
+
+  const requestDeleteImpact = (devices: Device[]) => {
+    const requestId = ++deleteImpactRequestId.current
+    loadDeviceDeleteImpactMutation.mutate({ devices, requestId })
+  }
+
+  const requestDeviceDeleteMutation = useMutation({
+    mutationFn: async ({ devices, reason, notes, confirmHistoryLoss, impactFingerprint }: { devices: Device[]; reason: string; notes?: string; confirmHistoryLoss?: boolean; impactFingerprint?: string }) => {
+      const deviceIds = devices.map((device) => device.id)
+      const endpoint = deviceIds.length > 1
+        ? '/admin/devices/bulk-delete/request'
+        : `/admin/devices/${deviceIds[0]}/delete/request`
+      const body = deviceIds.length > 1
+        ? {
+            device_ids: deviceIds,
+            reason,
+            notes: notes || undefined,
+            confirm_impact: true,
+            impact_fingerprint: impactFingerprint,
+            confirm_history_loss: confirmHistoryLoss || undefined,
+          }
+        : {
+            reason,
+            notes: notes || undefined,
+            confirm_impact: true,
+            impact_fingerprint: impactFingerprint,
+            confirm_history_loss: confirmHistoryLoss || undefined,
+          }
+
+      const response = await apiClient.post<{ success: boolean; data: ActionChallengeInfo }>(endpoint, body)
+      return response.data.data
+    },
+    onSuccess: (challenge, variables) => {
+      const copy = deletionChallengeCopy(variables.devices.length)
+      setDeleteChallenge(challenge)
+      setActiveChallenge({ challenge, ...copy, returnPath: INVENTORY_DEVICE_DELETE_RETURN_PATH })
+      setDeleteChallengeError(null)
+      setDeleteWarning(null)
+      setSelectedProduct(null)
+      queryClient.invalidateQueries({ queryKey: ['notifications'] })
+      queryClient.invalidateQueries({ queryKey: ['notifications-unread-count'] })
+      toast.success(`Verification PIN sent for ${variables.devices.length} device${variables.devices.length === 1 ? '' : 's'} by email and available securely in notifications`)
+    },
+    onError: (error) => {
+      const responseData = (error as { response?: { data?: { impact?: DeviceDeletionImpact; impact_stale?: boolean } } }).response?.data
+      if (responseData?.impact) {
+        setDeleteImpact(responseData.impact)
+      }
+      if (responseData?.impact_stale) {
+        setDeleteImpactConfirmed(false)
+        toast.error('The deletion impact changed. Review the updated preview before continuing.')
+        return
+      }
+      if (requiresApiConfirmation(error)) {
+        setDeleteImpactConfirmed(true)
+        setDeleteWarning(getApiErrorMessage(error, 'Some selected devices have inventory history. Confirm if you still want to delete them.'))
+        return
+      }
+      setDeleteWarning(null)
+      toast.error(getApiErrorMessage(error, 'Unable to request device deletion'))
+    },
+  })
+
+  const verifyDeviceDeleteMutation = useMutation({
+    mutationFn: async ({ challengeId, pin }: { challengeId: number; pin: string }) => {
+      const response = await apiClient.post(`/admin/action-challenges/${challengeId}/verify`, { pin })
+      return response.data
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['admin-devices'] })
+      queryClient.invalidateQueries({ queryKey: ['admin-dashboard'] })
+      queryClient.invalidateQueries({ queryKey: ['branches'] })
+      queryClient.invalidateQueries({ queryKey: ['admin-inventory'] })
+      queryClient.invalidateQueries({ queryKey: ['inventory-devices'] })
+      queryClient.invalidateQueries({ queryKey: ['inventory-grouped'] })
+      queryClient.invalidateQueries({ queryKey: ['inventory-stats'] })
+      queryClient.invalidateQueries({ queryKey: ['inventory-batches'] })
+      queryClient.invalidateQueries({ queryKey: ['inventory-batch'] })
+      queryClient.invalidateQueries({ queryKey: ['inventory-receipts'] })
+      queryClient.invalidateQueries({ queryKey: ['stock-movements'] })
+      queryClient.invalidateQueries({ queryKey: ['product-options'] })
+      queryClient.invalidateQueries({ queryKey: ['device-categories-with-stock'] })
+      queryClient.invalidateQueries({ queryKey: ['customer-service-device-categories-with-stock'] })
+      queryClient.invalidateQueries({ queryKey: ['customer-service-product-options'] })
+      queryClient.invalidateQueries({ queryKey: ['admin-device-stats'] })
+      queryClient.invalidateQueries({ queryKey: ['iot-modules'] })
+      queryClient.invalidateQueries({ queryKey: ['devices-for-linking'] })
+      queryClient.invalidateQueries({ queryKey: ['geofences'] })
+      queryClient.invalidateQueries({ queryKey: ['device-geofences'] })
+      queryClient.invalidateQueries({ queryKey: ['catalog-brands'] })
+      queryClient.invalidateQueries({ queryKey: ['catalog-models'] })
+      queryClient.invalidateQueries({ queryKey: ['notifications'] })
+      queryClient.invalidateQueries({ queryKey: ['notifications-unread-count'] })
+      const deletedCount = deleteChallenge?.device_count || deleteTargets.length || 1
+      toast.success(`${deletedCount} device${deletedCount === 1 ? '' : 's'} deleted successfully`)
+      setDeleteChallenge(null)
+      clearPin(variables.challengeId)
+      clearActiveChallenge(variables.challengeId)
+      setDeleteChallengeError(null)
+      setDeleteWarning(null)
+      setDeleteTargets([])
+      setDeleteImpact(null)
+      setDeleteImpactError(null)
+      setDeleteImpactConfirmed(false)
+      setDeleteReason('')
+      setDeleteNotes('')
+      setSelectedProduct(null)
+    },
+    onError: (error) => {
+      const attemptsRemaining = (error as { response?: { data?: { attempts_remaining?: number } } }).response?.data?.attempts_remaining
+      if (typeof attemptsRemaining === 'number') {
+        setDeleteChallenge((current) => current ? { ...current, attempts_remaining: attemptsRemaining } : current)
+      }
+      setDeleteChallengeError(getApiErrorMessage(error, 'Invalid or expired PIN'))
+    },
+  })
+
+  const resendDeviceDeleteMutation = useMutation({
+    mutationFn: async (challengeId: number) => {
+      const response = await apiClient.post<{ success: boolean; data: ActionChallengeInfo }>(`/admin/action-challenges/${challengeId}/resend`)
+      return response.data.data
+    },
+    onSuccess: (challenge) => {
+      const copy = deletionChallengeCopy(challenge.device_count)
+      setDeleteChallenge(challenge)
+      clearPin(challenge.challenge_id)
+      setActiveChallenge({ challenge, ...copy, returnPath: INVENTORY_DEVICE_DELETE_RETURN_PATH })
+      setDeleteChallengeError(null)
+      queryClient.invalidateQueries({ queryKey: ['notifications'] })
+      queryClient.invalidateQueries({ queryKey: ['notifications-unread-count'] })
+      toast.success('A new PIN was sent and is available securely in notifications')
+    },
+    onError: (error) => {
+      setDeleteChallengeError(getApiErrorMessage(error, 'Unable to resend PIN'))
+    },
+  })
+
+  const openDeleteDialog = (targets: Device[]) => {
+    setDeleteTargets(targets)
+    setDeleteImpact(null)
+    setDeleteImpactError(null)
+    setDeleteImpactConfirmed(false)
+    setDeleteReason('')
+    setDeleteNotes('')
+    setDeleteWarning(null)
+    requestDeleteImpact(targets)
+  }
+
+  const closeDeleteDialog = () => {
+    deleteImpactRequestId.current += 1
+    setDeleteTargets([])
+    setDeleteImpact(null)
+    setDeleteImpactError(null)
+    setDeleteImpactConfirmed(false)
+    setDeleteWarning(null)
+    setDeleteReason('')
+    setDeleteNotes('')
+  }
+
   // Update inventory status mutation
   const updateStatusMutation = useMutation({
     mutationFn: async ({ deviceId, status, notes }: { deviceId: number; status: string; notes?: string }) => {
@@ -347,6 +553,11 @@ export default function AdminInventoryPage() {
   const isLoading = viewMode === 'stock' ? groupedLoading : viewMode === 'serial' ? serialLoading : batchesLoading
   const batches = batchesData?.data || []
   const batchesMeta = batchesData?.meta
+  const selectedBranchLabel = selectedBranchId
+    ? (branches?.find((branch) => String(branch.id) === selectedBranchId)?.name || 'Selected branch')
+    : isSuperAdmin
+      ? 'All branches'
+      : (currentUser?.branch?.name || 'Assigned branch')
 
   return (
     <Authorize permission={PERMISSIONS.ACCESS_ADMIN_PANEL} fallback={<div className="p-6">Access denied</div>}>
@@ -627,10 +838,74 @@ export default function AdminInventoryPage() {
         {selectedProduct && (
           <ProductDetailsModal
             product={selectedProduct}
+            branchId={selectedBranchId}
+            branchLabel={selectedBranchLabel}
+            inventoryStatus={inventoryStatus}
             onClose={() => setSelectedProduct(null)}
             onChangeStatus={handleOpenStatusModal}
+            onDeleteDevices={openDeleteDialog}
           />
         )}
+
+        <Authorize role={ROLES.SUPER_ADMIN}>
+          {deleteTargets.length > 0 && !deleteImpactConfirmed && (
+            <DeviceDeletionImpactModal
+              elevated
+              impact={deleteImpact}
+              isLoading={loadDeviceDeleteImpactMutation.isPending}
+              error={deleteImpactError}
+              onConfirm={() => setDeleteImpactConfirmed(true)}
+              onCancel={closeDeleteDialog}
+              onRetry={() => requestDeleteImpact(deleteTargets)}
+            />
+          )}
+
+          {deleteTargets.length > 0 && !deleteChallenge && deleteImpactConfirmed && deleteImpact && (
+            <DeviceDeletionDialog
+              elevated
+              devices={deleteTargets}
+              reason={deleteReason}
+              notes={deleteNotes}
+              warning={deleteWarning || (deleteImpact.devices.requires_history_confirmation > 0 ? 'These selected devices have inventory history. Proceeding will record any required stock write-off and keep the audit movements.' : null)}
+              isSubmitting={requestDeviceDeleteMutation.isPending}
+              onReasonChange={setDeleteReason}
+              onNotesChange={setDeleteNotes}
+              onSubmit={() => requestDeviceDeleteMutation.mutate({
+                devices: deleteTargets,
+                reason: deleteReason,
+                notes: deleteNotes,
+                impactFingerprint: deleteImpact.fingerprint,
+                confirmHistoryLoss: Boolean(deleteWarning) || deleteImpact.devices.requires_history_confirmation > 0,
+              })}
+              onCancel={closeDeleteDialog}
+              onDismissWarning={() => { setDeleteWarning(null); setDeleteImpactConfirmed(false); requestDeleteImpact(deleteTargets) }}
+            />
+          )}
+
+          {deleteChallenge && (
+            <ActionChallengePinModal
+              challenge={deleteChallenge}
+              title={deletionChallengeCopy(deleteChallenge.device_count).title}
+              description={deletionChallengeCopy(deleteChallenge.device_count).description}
+              error={deleteChallengeError}
+              isVerifying={verifyDeviceDeleteMutation.isPending}
+              isResending={resendDeviceDeleteMutation.isPending}
+              onVerify={(pin) => verifyDeviceDeleteMutation.mutate({ challengeId: deleteChallenge.challenge_id, pin })}
+              onResend={() => resendDeviceDeleteMutation.mutate(deleteChallenge.challenge_id)}
+              onClose={() => {
+                 if (deleteChallenge) {
+                   clearActiveChallenge(deleteChallenge.challenge_id)
+                   clearPin(deleteChallenge.challenge_id)
+                 }
+                 setDeleteChallenge(null)
+                 setDeleteChallengeError(null)
+                 setDeleteWarning(null)
+                 setDeleteImpactConfirmed(false)
+                 if (deleteTargets.length > 0) requestDeleteImpact(deleteTargets)
+               }}
+            />
+          )}
+        </Authorize>
 
         {batchForModal && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">

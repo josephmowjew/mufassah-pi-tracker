@@ -1,13 +1,14 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { Search, Smartphone, MapPin, User, Loader2, Wifi, WifiOff, Eye, Calendar, Tag, Hash, Palette, DollarSign, Clock, Activity, Battery, Signal, SquarePen, Trash2, AlertTriangle } from 'lucide-react'
 import { Authorize } from '@/components/auth/Authorize'
-import { PERMISSIONS } from '@/hooks/usePermission'
+import { PERMISSIONS, ROLES } from '@/hooks/usePermission'
 import apiClient from '@/api/client'
 import { toast } from 'sonner'
-import type { Device } from '@/types'
+import type { Device, DeviceDeletionImpact } from '@/types'
 import ActionChallengePinModal, { type ActionChallengeInfo } from '@/components/admin/ActionChallengePinModal'
+import DeviceDeletionImpactModal from '@/components/admin/DeviceDeletionImpactModal'
 import { getApiErrorMessage, requiresApiConfirmation } from '@/lib/utils'
 
 interface PaginatedResponse {
@@ -29,11 +30,15 @@ export default function AdminDevicesPage() {
   const [statusDevice, setStatusDevice] = useState<Device | null>(null)
   const [editingDevice, setEditingDevice] = useState<Device | null>(null)
   const [deleteDevice, setDeleteDevice] = useState<Device | null>(null)
+  const [deleteImpact, setDeleteImpact] = useState<DeviceDeletionImpact | null>(null)
+  const [deleteImpactError, setDeleteImpactError] = useState<string | null>(null)
+  const [deleteImpactConfirmed, setDeleteImpactConfirmed] = useState(false)
   const [deleteReason, setDeleteReason] = useState('')
   const [deleteNotes, setDeleteNotes] = useState('')
   const [deleteChallenge, setDeleteChallenge] = useState<ActionChallengeInfo | null>(null)
   const [deleteChallengeError, setDeleteChallengeError] = useState<string | null>(null)
   const [deleteWarning, setDeleteWarning] = useState<string | null>(null)
+  const deleteImpactRequestId = useRef(0)
   const [newStatus, setNewStatus] = useState('')
   const [editForm, setEditForm] = useState({
     brand: '',
@@ -92,11 +97,38 @@ export default function AdminDevicesPage() {
     },
   })
 
+  const loadDeviceDeleteImpactMutation = useMutation({
+    mutationFn: async ({ device }: { device: Device; requestId: number }) => {
+      const response = await apiClient.post<{ success: boolean; data: DeviceDeletionImpact }>('/admin/devices/deletion-impact', {
+        device_ids: [device.id],
+      })
+      return response.data.data
+    },
+    onSuccess: (impact, variables) => {
+      if (variables.requestId !== deleteImpactRequestId.current) return
+      setDeleteImpact(impact)
+      setDeleteImpactError(null)
+      setDeleteImpactConfirmed(false)
+    },
+    onError: (error, variables) => {
+      if (variables.requestId !== deleteImpactRequestId.current) return
+      setDeleteImpact(null)
+      setDeleteImpactError(getApiErrorMessage(error, 'Unable to load the device deletion impact.'))
+    },
+  })
+
+  const requestDeleteImpact = (device: Device) => {
+    const requestId = ++deleteImpactRequestId.current
+    loadDeviceDeleteImpactMutation.mutate({ device, requestId })
+  }
+
   const requestDeleteMutation = useMutation({
-    mutationFn: async ({ deviceId, reason, notes, confirmHistoryLoss }: { deviceId: number; reason: string; notes?: string; confirmHistoryLoss?: boolean }) => {
+    mutationFn: async ({ deviceId, reason, notes, confirmHistoryLoss, impactFingerprint }: { deviceId: number; reason: string; notes?: string; confirmHistoryLoss?: boolean; impactFingerprint?: string }) => {
       const response = await apiClient.post<{ success: boolean; data: ActionChallengeInfo }>(`/admin/devices/${deviceId}/delete/request`, {
         reason,
         notes: notes || undefined,
+        confirm_impact: true,
+        impact_fingerprint: impactFingerprint,
         confirm_history_loss: confirmHistoryLoss || undefined,
       })
       return response.data.data
@@ -110,7 +142,17 @@ export default function AdminDevicesPage() {
       toast.success('Verification PIN sent by email and available securely in notifications')
     },
     onError: (error) => {
+      const responseData = (error as { response?: { data?: { impact?: DeviceDeletionImpact; impact_stale?: boolean } } }).response?.data
+      if (responseData?.impact) {
+        setDeleteImpact(responseData.impact)
+      }
+      if (responseData?.impact_stale) {
+        setDeleteImpactConfirmed(false)
+        toast.error('The deletion impact changed. Review the updated preview before continuing.')
+        return
+      }
       if (requiresApiConfirmation(error)) {
+        setDeleteImpactConfirmed(true)
         setDeleteWarning(getApiErrorMessage(error, 'This device has inventory history. Confirm if you still want to delete it.'))
         return
       }
@@ -126,10 +168,24 @@ export default function AdminDevicesPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-devices'] })
+      queryClient.invalidateQueries({ queryKey: ['admin-inventory'] })
+      queryClient.invalidateQueries({ queryKey: ['inventory-devices'] })
+      queryClient.invalidateQueries({ queryKey: ['inventory-grouped'] })
+      queryClient.invalidateQueries({ queryKey: ['inventory-stats'] })
+      queryClient.invalidateQueries({ queryKey: ['inventory-batches'] })
+      queryClient.invalidateQueries({ queryKey: ['stock-movements'] })
+      queryClient.invalidateQueries({ queryKey: ['product-options'] })
+      queryClient.invalidateQueries({ queryKey: ['iot-modules'] })
+      queryClient.invalidateQueries({ queryKey: ['devices-for-linking'] })
+      queryClient.invalidateQueries({ queryKey: ['geofences'] })
+      queryClient.invalidateQueries({ queryKey: ['device-geofences'] })
       toast.success('Device deleted successfully')
       setDeleteChallenge(null)
       setDeleteChallengeError(null)
       setDeleteDevice(null)
+      setDeleteImpact(null)
+      setDeleteImpactError(null)
+      setDeleteImpactConfirmed(false)
       setDeleteReason('')
       setDeleteNotes('')
     },
@@ -155,6 +211,28 @@ export default function AdminDevicesPage() {
     },
   })
 
+  const openDeleteDialog = (device: Device) => {
+    setDeleteDevice(device)
+    setDeleteImpact(null)
+    setDeleteImpactError(null)
+    setDeleteImpactConfirmed(false)
+    setDeleteReason('')
+    setDeleteNotes('')
+    setDeleteWarning(null)
+    requestDeleteImpact(device)
+  }
+
+  const closeDeleteDialog = () => {
+    deleteImpactRequestId.current += 1
+    setDeleteDevice(null)
+    setDeleteImpact(null)
+    setDeleteImpactError(null)
+    setDeleteImpactConfirmed(false)
+    setDeleteWarning(null)
+    setDeleteReason('')
+    setDeleteNotes('')
+  }
+
   // Show error state
   if (error) {
     return (
@@ -169,6 +247,9 @@ export default function AdminDevicesPage() {
 
   const devices = data?.data || []
   const meta = data?.meta
+  const historyWarning = deleteImpact?.devices.requires_history_confirmation
+    ? 'These selected devices have inventory history. Proceeding will record any required stock write-off and keep the audit movements.'
+    : null
 
   const getStatusBadge = (status: string) => {
     const statusConfig: Record<string, { bg: string; text: string; dot: string }> = {
@@ -350,9 +431,9 @@ export default function AdminDevicesPage() {
                                 <Activity className="h-4 w-4" />
                               </button>
                             </Authorize>
-                            <Authorize permission={PERMISSIONS.DELETE_DEVICES}>
+                            <Authorize role={ROLES.SUPER_ADMIN}>
                               <button
-                                onClick={() => { setDeleteDevice(device); setDeleteWarning(null) }}
+                                onClick={() => openDeleteDialog(device)}
                                 className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                                 title="Delete device"
                               >
@@ -660,12 +741,23 @@ export default function AdminDevicesPage() {
         </>
       )}
 
+      {deleteDevice && !deleteImpactConfirmed && (
+        <DeviceDeletionImpactModal
+          impact={deleteImpact}
+          isLoading={loadDeviceDeleteImpactMutation.isPending}
+          error={deleteImpactError}
+          onConfirm={() => setDeleteImpactConfirmed(true)}
+          onCancel={closeDeleteDialog}
+          onRetry={() => deleteDevice && requestDeleteImpact(deleteDevice)}
+        />
+      )}
+
       {/* Delete Confirmation Modal */}
-      {deleteDevice && (
+      {deleteDevice && !deleteChallenge && deleteImpactConfirmed && deleteImpact && (
         <>
           <div
             className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-40"
-            onClick={() => { setDeleteDevice(null); setDeleteWarning(null) }}
+            onClick={closeDeleteDialog}
           />
           <div className="fixed inset-x-4 top-[20%] md:inset-x-auto md:left-1/2 md:-translate-x-1/2 md:w-full md:max-w-md bg-white rounded-2xl shadow-xl z-50 overflow-hidden">
             <div className="p-5 border-b border-slate-200">
@@ -675,14 +767,14 @@ export default function AdminDevicesPage() {
                 </div>
                 <div>
                   <h3 className="text-lg font-semibold text-slate-800">Delete Device</h3>
-                  <p className="text-sm text-slate-500">This action cannot be undone</p>
+                  <p className="text-sm text-slate-500">This removes the device from active inventory after PIN verification.</p>
                 </div>
               </div>
             </div>
             <div className="p-5 space-y-4">
               <p className="text-sm text-slate-600">
                 Are you sure you want to delete <span className="font-semibold">{deleteDevice.brand} {deleteDevice.model}</span>?
-                This will permanently remove the device and all associated data including locations and geofences.
+                This will soft-delete the device, unlink its IoT module, remove its geofences, and preserve location/audit history.
               </p>
               <div>
                 <label htmlFor="admin-delete-reason" className="mb-1 block text-sm font-medium text-slate-700">Reason <span className="text-red-500">*</span></label>
@@ -692,32 +784,32 @@ export default function AdminDevicesPage() {
                 <label htmlFor="admin-delete-notes" className="mb-1 block text-sm font-medium text-slate-700">Notes</label>
                 <textarea id="admin-delete-notes" value={deleteNotes} onChange={(event) => setDeleteNotes(event.target.value)} rows={2} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm placeholder:text-slate-400 focus:border-blue-500 focus:outline-none" placeholder="Optional context" />
               </div>
-              {deleteWarning && (
+              {(deleteWarning || historyWarning) && (
                 <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
                   <div className="flex items-start gap-2">
                     <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0 text-amber-600" />
                     <div>
                       <p className="font-semibold">Confirm deletion of tracked inventory</p>
-                      <p className="mt-1">{deleteWarning}</p>
-                      <p className="mt-2">Proceeding will permanently delete this device after PIN verification. This cannot be undone.</p>
+                      <p className="mt-1">{deleteWarning || historyWarning}</p>
+                      <p className="mt-2">Proceeding will soft-delete this device after PIN verification. Location, ownership, and inventory history will remain available for audit.</p>
                     </div>
                   </div>
-                  <button type="button" onClick={() => setDeleteWarning(null)} className="mt-3 text-xs font-semibold text-amber-800 underline">Go back and review</button>
+                  <button type="button" onClick={() => { setDeleteWarning(null); setDeleteImpactConfirmed(false); if (deleteDevice) requestDeleteImpact(deleteDevice) }} className="mt-3 text-xs font-semibold text-amber-800 underline">Review impact again</button>
                 </div>
               )}
               <div className="flex gap-2">
                 <button
-                  onClick={() => { setDeleteDevice(null); setDeleteWarning(null); setDeleteReason(''); setDeleteNotes('') }}
+                  onClick={closeDeleteDialog}
                   className="flex-1 px-4 py-2.5 bg-slate-100 text-slate-600 text-sm font-medium rounded-lg hover:bg-slate-200 transition-colors"
                 >
                   Cancel
                 </button>
                 <button
-                  onClick={() => requestDeleteMutation.mutate({ deviceId: deleteDevice.id, reason: deleteReason, notes: deleteNotes, confirmHistoryLoss: Boolean(deleteWarning) })}
+                  onClick={() => requestDeleteMutation.mutate({ deviceId: deleteDevice.id, reason: deleteReason, notes: deleteNotes, impactFingerprint: deleteImpact.fingerprint, confirmHistoryLoss: Boolean(deleteWarning) || deleteImpact.devices.requires_history_confirmation > 0 })}
                   disabled={!deleteReason.trim() || requestDeleteMutation.isPending}
                   className="flex-1 px-4 py-2.5 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 >
-                  {requestDeleteMutation.isPending ? 'Sending PIN...' : deleteWarning ? 'Proceed & send PIN' : 'Send PIN'}
+                  {requestDeleteMutation.isPending ? 'Sending PIN...' : (deleteWarning || historyWarning) ? 'Proceed & send PIN' : 'Send PIN'}
                 </button>
               </div>
             </div>
@@ -729,13 +821,19 @@ export default function AdminDevicesPage() {
         <ActionChallengePinModal
           challenge={deleteChallenge}
           title="Confirm device deletion"
-          description="Device deletion is irreversible. Enter the PIN sent to the administrator approval mailbox to continue."
+          description="The reviewed impact will be rechecked. Enter the PIN sent to the administrator approval mailbox to continue."
           error={deleteChallengeError}
           isVerifying={verifyDeleteMutation.isPending}
           isResending={resendDeleteMutation.isPending}
           onVerify={(pin) => verifyDeleteMutation.mutate({ challengeId: deleteChallenge.challenge_id, pin })}
           onResend={() => resendDeleteMutation.mutate(deleteChallenge.challenge_id)}
-          onClose={() => { setDeleteChallenge(null); setDeleteChallengeError(null); setDeleteWarning(null) }}
+          onClose={() => {
+             setDeleteChallenge(null)
+             setDeleteChallengeError(null)
+             setDeleteWarning(null)
+             setDeleteImpactConfirmed(false)
+             if (deleteDevice) requestDeleteImpact(deleteDevice)
+           }}
         />
       )}
 

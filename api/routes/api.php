@@ -408,15 +408,23 @@ Route::middleware(['auth:sanctum', 'not.suspended'])->group(function () {
 
         // Device management (admin view of all devices)
         Route::get('/devices', [AdminDeviceController::class, 'index'])->name('devices.index');
+        Route::post('/devices/deletion-impact', [InventoryDispositionController::class, 'deviceDeletionImpact'])
+            ->middleware(['role:super_admin', 'permission:delete-devices', 'throttle:6,1'])
+            ->name('devices.deletion-impact');
+        Route::get('/devices/{device}/deletion-impact', [InventoryDispositionController::class, 'deviceDeletionImpactForDevice'])
+            ->middleware(['role:super_admin', 'permission:delete-devices', 'throttle:6,1'])
+            ->name('devices.deletion-impact.single');
         Route::get('/devices/{device}', [AdminDeviceController::class, 'show'])->name('devices.show');
         Route::put('/devices/{device}', [AdminDeviceController::class, 'update'])->name('devices.update');
         Route::put('/devices/{device}/status', [AdminDeviceController::class, 'updateStatus'])->name('devices.status');
-        Route::delete('/devices/{device}', [AdminDeviceController::class, 'destroy'])->name('devices.destroy');
+        Route::delete('/devices/{device}', [AdminDeviceController::class, 'destroy'])
+            ->middleware('role:super_admin')
+            ->name('devices.destroy');
         Route::post('/devices/bulk-delete/request', [InventoryDispositionController::class, 'requestBulkDeviceDeletion'])
-            ->middleware(['permission:delete-devices', 'throttle:6,1'])
+            ->middleware(['role:super_admin', 'permission:delete-devices', 'throttle:6,1'])
             ->name('devices.bulk-delete.request');
         Route::post('/devices/{device}/delete/request', [InventoryDispositionController::class, 'requestDeviceDeletion'])
-            ->middleware(['permission:delete-devices', 'throttle:6,1'])
+            ->middleware(['role:super_admin', 'permission:delete-devices', 'throttle:6,1'])
             ->name('devices.delete.request');
 
         Route::prefix('action-challenges')->name('action-challenges.')->group(function () {

@@ -60,12 +60,8 @@ class DevicePolicy
      */
     public function delete(User $user, Device $device): bool
     {
-        // Owner can delete their device
-        if ($device->owner_id === $user->id) {
-            return true;
-        }
-
-        // Only super admin can delete any device
+        // Device deletion is a super-admin-only inventory action. The
+        // impact-preview/PIN workflow performs the actual soft delete.
         return $user->hasRole('super_admin');
     }
 

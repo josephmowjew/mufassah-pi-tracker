@@ -69,6 +69,7 @@ export default function SerialViewTable({ devices, isLoading, onChangeStatus, on
               <th className="text-left px-6 py-3 text-xs font-medium text-slate-500 uppercase tracking-wider">Device</th>
               <th className="text-left px-6 py-3 text-xs font-medium text-slate-500 uppercase tracking-wider">Serial</th>
               <th className="text-left px-6 py-3 text-xs font-medium text-slate-500 uppercase tracking-wider">Category</th>
+              <th className="text-left px-6 py-3 text-xs font-medium text-slate-500 uppercase tracking-wider">Branch</th>
               <th className="text-left px-6 py-3 text-xs font-medium text-slate-500 uppercase tracking-wider">Status</th>
               <th className="text-left px-6 py-3 text-xs font-medium text-slate-500 uppercase tracking-wider">IoT</th>
               <th className="text-left px-6 py-3 text-xs font-medium text-slate-500 uppercase tracking-wider">Added</th>
@@ -97,6 +98,9 @@ export default function SerialViewTable({ devices, isLoading, onChangeStatus, on
                 </td>
                 <td className="px-6 py-4">
                   <span className="text-sm text-slate-600">{device.category?.name || '-'}</span>
+                </td>
+                <td className="px-6 py-4">
+                  <span className="text-sm text-slate-600">{device.branch?.name || '-'}</span>
                 </td>
                 <td className="px-6 py-4">
                   {getInventoryStatusBadge(device)}

@@ -113,7 +113,14 @@ export default function ActionChallengePinModal({
           </div>
           {error && <p className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</p>}
           <div className="flex justify-between gap-2 pt-1">
-            <button type="button" onClick={onClose} className="rounded-lg px-4 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-100">Cancel</button>
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={isVerifying || isResending}
+              className="rounded-lg px-4 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Cancel
+            </button>
             <div className="flex gap-2">
               {onResend && (
                 <button type="button" onClick={onResend} disabled={isResending || !expired} className="rounded-lg border border-slate-300 px-3 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50">

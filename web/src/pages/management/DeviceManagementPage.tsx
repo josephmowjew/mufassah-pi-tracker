@@ -1,15 +1,16 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { Search, Smartphone, MapPin, User, Loader2, Wifi, WifiOff, Eye, Calendar, Tag, Hash, Palette, DollarSign, Clock, Activity, Battery, Signal, SquarePen, Trash2, Link2, Unlink, Plus } from 'lucide-react'
 import { Authorize } from '@/components/auth/Authorize'
-import { PERMISSIONS } from '@/stores/auth-store'
+import { PERMISSIONS, ROLES } from '@/stores/auth-store'
 import apiClient from '@/api/client'
 import { toast } from 'sonner'
-import type { Branch, Device, IotModule } from '@/types'
+import type { Branch, Device, DeviceDeletionImpact, IotModule } from '@/types'
 import ActionChallengePinModal, { type ActionChallengeInfo } from '@/components/admin/ActionChallengePinModal'
 import BranchScopeFilter from '@/components/admin/BranchScopeFilter'
 import DeviceDeletionDialog from '@/components/admin/DeviceDeletionDialog'
+import DeviceDeletionImpactModal from '@/components/admin/DeviceDeletionImpactModal'
 import { getApiErrorMessage, requiresApiConfirmation } from '@/lib/utils'
 import { appendBranchScope } from '@/lib/branch-scope'
 import { useInventoryPinStore } from '@/stores/inventory-pin-store'
@@ -29,8 +30,8 @@ const DEVICE_DELETE_RETURN_PATH = '/admin/devices'
 const deletionChallengeCopy = (deviceCount = 1) => ({
   title: deviceCount > 1 ? 'Confirm bulk device deletion' : 'Confirm device deletion',
   description: deviceCount > 1
-    ? 'Deletion is irreversible. Enter the PIN sent by email or revealed securely in notifications to remove all selected devices.'
-    : 'Device deletion is irreversible. Enter the PIN sent by email or revealed securely in notifications to continue.',
+    ? 'The reviewed impact will be rechecked. Enter the PIN sent by email or revealed securely in notifications to remove all selected devices.'
+    : 'The reviewed impact will be rechecked. Enter the PIN sent by email or revealed securely in notifications to continue.',
 })
 
 export default function DeviceManagementPage() {
@@ -47,6 +48,9 @@ export default function DeviceManagementPage() {
   const [statusDevice, setStatusDevice] = useState<Device | null>(null)
   const [editingDevice, setEditingDevice] = useState<Device | null>(null)
   const [deleteTargets, setDeleteTargets] = useState<Device[]>([])
+  const [deleteImpact, setDeleteImpact] = useState<DeviceDeletionImpact | null>(null)
+  const [deleteImpactError, setDeleteImpactError] = useState<string | null>(null)
+  const [deleteImpactConfirmed, setDeleteImpactConfirmed] = useState(false)
   const [deleteReason, setDeleteReason] = useState('')
   const [deleteNotes, setDeleteNotes] = useState('')
   const [deleteChallenge, setDeleteChallenge] = useState<ActionChallengeInfo | null>(() => {
@@ -56,6 +60,7 @@ export default function DeviceManagementPage() {
   })
   const [deleteChallengeError, setDeleteChallengeError] = useState<string | null>(null)
   const [deleteWarning, setDeleteWarning] = useState<string | null>(null)
+  const deleteImpactRequestId = useRef(0)
   const [newStatus, setNewStatus] = useState('')
   const [linkingDevice, setLinkingDevice] = useState<Device | null>(null)
   const [moduleSearch, setModuleSearch] = useState('')
@@ -126,8 +131,33 @@ export default function DeviceManagementPage() {
     },
   })
 
+  const loadDeviceDeleteImpactMutation = useMutation({
+    mutationFn: async ({ devices }: { devices: Device[]; requestId: number }) => {
+      const response = await apiClient.post<{ success: boolean; data: DeviceDeletionImpact }>('/admin/devices/deletion-impact', {
+        device_ids: devices.map((device) => device.id),
+      })
+      return response.data.data
+    },
+    onSuccess: (impact, variables) => {
+      if (variables.requestId !== deleteImpactRequestId.current) return
+      setDeleteImpact(impact)
+      setDeleteImpactError(null)
+      setDeleteImpactConfirmed(false)
+    },
+    onError: (error, variables) => {
+      if (variables.requestId !== deleteImpactRequestId.current) return
+      setDeleteImpact(null)
+      setDeleteImpactError(getApiErrorMessage(error, 'Unable to load the device deletion impact.'))
+    },
+  })
+
+  const requestDeleteImpact = (devices: Device[]) => {
+    const requestId = ++deleteImpactRequestId.current
+    loadDeviceDeleteImpactMutation.mutate({ devices, requestId })
+  }
+
   const requestDeleteMutation = useMutation({
-    mutationFn: async ({ devices, reason, notes, confirmHistoryLoss }: { devices: Device[]; reason: string; notes?: string; confirmHistoryLoss?: boolean }) => {
+    mutationFn: async ({ devices, reason, notes, confirmHistoryLoss, impactFingerprint }: { devices: Device[]; reason: string; notes?: string; confirmHistoryLoss?: boolean; impactFingerprint?: string }) => {
       const deviceIds = devices.map((device) => device.id)
       const endpoint = deviceIds.length > 1
         ? '/admin/devices/bulk-delete/request'
@@ -137,11 +167,15 @@ export default function DeviceManagementPage() {
             device_ids: deviceIds,
             reason,
             notes: notes || undefined,
+            confirm_impact: true,
+            impact_fingerprint: impactFingerprint,
             confirm_history_loss: confirmHistoryLoss || undefined,
           }
         : {
             reason,
             notes: notes || undefined,
+            confirm_impact: true,
+            impact_fingerprint: impactFingerprint,
             confirm_history_loss: confirmHistoryLoss || undefined,
           }
       const response = await apiClient.post<{ success: boolean; data: ActionChallengeInfo }>(endpoint, body)
@@ -158,7 +192,17 @@ export default function DeviceManagementPage() {
       toast.success('Verification PIN sent for ' + variables.devices.length + ' device' + (variables.devices.length === 1 ? '' : 's') + ' by email and available securely in notifications')
     },
     onError: (error) => {
+      const responseData = (error as { response?: { data?: { impact?: DeviceDeletionImpact; impact_stale?: boolean } } }).response?.data
+      if (responseData?.impact) {
+        setDeleteImpact(responseData.impact)
+      }
+      if (responseData?.impact_stale) {
+        setDeleteImpactConfirmed(false)
+        toast.error('The deletion impact changed. Review the updated preview before continuing.')
+        return
+      }
       if (requiresApiConfirmation(error)) {
+        setDeleteImpactConfirmed(true)
         setDeleteWarning(getApiErrorMessage(error, 'Some selected devices have inventory history. Confirm if you still want to delete them.'))
         return
       }
@@ -174,6 +218,17 @@ export default function DeviceManagementPage() {
     },
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['admin-devices'] })
+      queryClient.invalidateQueries({ queryKey: ['admin-inventory'] })
+      queryClient.invalidateQueries({ queryKey: ['inventory-devices'] })
+      queryClient.invalidateQueries({ queryKey: ['inventory-grouped'] })
+      queryClient.invalidateQueries({ queryKey: ['inventory-stats'] })
+      queryClient.invalidateQueries({ queryKey: ['inventory-batches'] })
+      queryClient.invalidateQueries({ queryKey: ['stock-movements'] })
+      queryClient.invalidateQueries({ queryKey: ['product-options'] })
+      queryClient.invalidateQueries({ queryKey: ['iot-modules'] })
+      queryClient.invalidateQueries({ queryKey: ['devices-for-linking'] })
+      queryClient.invalidateQueries({ queryKey: ['geofences'] })
+      queryClient.invalidateQueries({ queryKey: ['device-geofences'] })
       const deletedCount = deleteChallenge?.device_count || deleteTargets.length || 1
       toast.success(deletedCount + ' device' + (deletedCount === 1 ? '' : 's') + ' deleted successfully')
       setDeleteChallenge(null)
@@ -181,6 +236,9 @@ export default function DeviceManagementPage() {
       clearActiveChallenge(variables.challengeId)
       setDeleteChallengeError(null)
       setDeleteTargets([])
+      setDeleteImpact(null)
+      setDeleteImpactError(null)
+      setDeleteImpactConfirmed(false)
       setSelectedDevices([])
       setDeleteReason('')
       setDeleteNotes('')
@@ -344,13 +402,21 @@ export default function DeviceManagementPage() {
 
   const openDeleteDialog = (targets: Device[]) => {
     setDeleteTargets(targets)
+    setDeleteImpact(null)
+    setDeleteImpactError(null)
+    setDeleteImpactConfirmed(false)
     setDeleteReason('')
     setDeleteNotes('')
     setDeleteWarning(null)
+    requestDeleteImpact(targets)
   }
 
   const closeDeleteDialog = () => {
+    deleteImpactRequestId.current += 1
     setDeleteTargets([])
+    setDeleteImpact(null)
+    setDeleteImpactError(null)
+    setDeleteImpactConfirmed(false)
     setDeleteWarning(null)
     setDeleteReason('')
     setDeleteNotes('')
@@ -430,7 +496,7 @@ export default function DeviceManagementPage() {
                 >
                   Clear selection
                 </button>
-                <Authorize permission={PERMISSIONS.DELETE_DEVICES}>
+                <Authorize role={ROLES.SUPER_ADMIN}>
                   <button
                     type="button"
                     onClick={() => openDeleteDialog(selectedDevices)}
@@ -582,7 +648,7 @@ export default function DeviceManagementPage() {
                                 <Activity className="h-4 w-4" />
                               </button>
                             </Authorize>
-                            <Authorize permission={PERMISSIONS.DELETE_DEVICES}>
+                            <Authorize role={ROLES.SUPER_ADMIN}>
                               <button
                                 onClick={() => openDeleteDialog([device])}
                                 className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
@@ -930,12 +996,23 @@ export default function DeviceManagementPage() {
         </>
       )}
 
-      {deleteTargets.length > 0 && (
+      {deleteTargets.length > 0 && !deleteImpactConfirmed && (
+        <DeviceDeletionImpactModal
+          impact={deleteImpact}
+          isLoading={loadDeviceDeleteImpactMutation.isPending}
+          error={deleteImpactError}
+          onConfirm={() => setDeleteImpactConfirmed(true)}
+          onCancel={closeDeleteDialog}
+          onRetry={() => requestDeleteImpact(deleteTargets)}
+        />
+      )}
+
+      {deleteTargets.length > 0 && !deleteChallenge && deleteImpactConfirmed && deleteImpact && (
         <DeviceDeletionDialog
           devices={deleteTargets}
           reason={deleteReason}
           notes={deleteNotes}
-          warning={deleteWarning}
+          warning={deleteWarning || (deleteImpact.devices.requires_history_confirmation > 0 ? 'These selected devices have inventory history. Proceeding will record any required stock write-off and keep the audit movements.' : null)}
           isSubmitting={requestDeleteMutation.isPending}
           onReasonChange={setDeleteReason}
           onNotesChange={setDeleteNotes}
@@ -943,10 +1020,11 @@ export default function DeviceManagementPage() {
             devices: deleteTargets,
             reason: deleteReason,
             notes: deleteNotes,
-            confirmHistoryLoss: Boolean(deleteWarning),
+            impactFingerprint: deleteImpact.fingerprint,
+            confirmHistoryLoss: Boolean(deleteWarning) || deleteImpact.devices.requires_history_confirmation > 0,
           })}
           onCancel={closeDeleteDialog}
-          onDismissWarning={() => setDeleteWarning(null)}
+          onDismissWarning={() => { setDeleteWarning(null); setDeleteImpactConfirmed(false); requestDeleteImpact(deleteTargets) }}
         />
       )}
 
@@ -960,7 +1038,17 @@ export default function DeviceManagementPage() {
           isResending={resendDeleteMutation.isPending}
           onVerify={(pin) => verifyDeleteMutation.mutate({ challengeId: deleteChallenge.challenge_id, pin })}
           onResend={() => resendDeleteMutation.mutate(deleteChallenge.challenge_id)}
-          onClose={() => { setDeleteChallenge(null); setDeleteChallengeError(null); setDeleteWarning(null) }}
+          onClose={() => {
+             if (deleteChallenge) {
+               clearActiveChallenge(deleteChallenge.challenge_id)
+               clearPin(deleteChallenge.challenge_id)
+             }
+             setDeleteChallenge(null)
+             setDeleteChallengeError(null)
+             setDeleteWarning(null)
+             setDeleteImpactConfirmed(false)
+             if (deleteTargets.length > 0) requestDeleteImpact(deleteTargets)
+           }}
         />
       )}
 

@@ -7,11 +7,14 @@ use App\Models\DeviceCategory;
 use App\Models\InventoryActionChallenge;
 use App\Models\InventoryBatch;
 use App\Models\InventoryMovement;
+use App\Models\IotModule;
 use App\Models\Sale;
+use App\Models\TheftReport;
 use App\Models\User;
 use App\Notifications\AdministrativeSaleCompletedNotification;
 use App\Notifications\InventoryActionApprovalPinNotification;
 use App\Notifications\InventoryActionPinAvailableNotification;
+use App\Services\DeviceDeletionImpactService;
 use App\Services\InventoryMovementService;
 use Illuminate\Routing\Middleware\ThrottleRequests;
 use Illuminate\Support\Facades\Cache;
@@ -41,6 +44,14 @@ function dispositionDevice(array $overrides = []): Device
         'inventory_status' => InventoryStatus::IN_STOCK,
         'purchase_price' => 100000,
     ], $overrides));
+}
+
+function dispositionImpactFingerprint(int|array $deviceIds): string
+{
+    $ids = is_array($deviceIds) ? $deviceIds : [$deviceIds];
+    $service = app(DeviceDeletionImpactService::class);
+
+    return $service->fingerprint($service->loadDevices($ids));
 }
 
 function verifyDispositionChallenge(int $challengeId, User $admin, string $pin = '123456')
@@ -167,8 +178,10 @@ it('reveals the emailed PIN after password confirmation without consuming a veri
     $challengeId = $this->actingAs($this->admin)
         ->postJson("/api/v1/admin/devices/{$device->id}/delete/request", [
             'reason' => 'Secure reveal test',
+            'confirm_impact' => true,
+            'impact_fingerprint' => dispositionImpactFingerprint($device->id),
         ])
-        ->assertCreated()
+        ->assertStatus(202)
         ->json('data.challenge_id');
 
     Notification::assertSentOnDemand(InventoryActionApprovalPinNotification::class, function ($notification) use (&$emailedPin) {
@@ -197,8 +210,8 @@ it('does not allow another administrator to reveal an initiators PIN', function 
     $device = dispositionDevice();
     Notification::fake();
     $challengeId = $this->actingAs($this->admin)
-        ->postJson("/api/v1/admin/devices/{$device->id}/delete/request", ['reason' => 'Ownership test'])
-        ->assertCreated()
+        ->postJson("/api/v1/admin/devices/{$device->id}/delete/request", ['reason' => 'Ownership test', 'confirm_impact' => true, 'impact_fingerprint' => dispositionImpactFingerprint($device->id)])
+        ->assertStatus(202)
         ->json('data.challenge_id');
 
     $otherAdmin = User::factory()->create(['branch_id' => $this->branch->id]);
@@ -212,8 +225,8 @@ it('does not allow another administrator to reveal an initiators PIN', function 
 it('marks the persisted in-app notification read on reveal and completed on verification', function () {
     $device = dispositionDevice();
     $challengeId = $this->actingAs($this->admin)
-        ->postJson("/api/v1/admin/devices/{$device->id}/delete/request", ['reason' => 'Notification lifecycle test'])
-        ->assertCreated()
+        ->postJson("/api/v1/admin/devices/{$device->id}/delete/request", ['reason' => 'Notification lifecycle test', 'confirm_impact' => true, 'impact_fingerprint' => dispositionImpactFingerprint($device->id)])
+        ->assertStatus(202)
         ->json('data.challenge_id');
 
     $notification = $this->admin->notifications()
@@ -242,8 +255,8 @@ it('replaces the in-app PIN on resend and allows resending an expired challenge'
     $device = dispositionDevice();
     Notification::fake();
     $challengeId = $this->actingAs($this->admin)
-        ->postJson("/api/v1/admin/devices/{$device->id}/delete/request", ['reason' => 'Resend test'])
-        ->assertCreated()
+        ->postJson("/api/v1/admin/devices/{$device->id}/delete/request", ['reason' => 'Resend test', 'confirm_impact' => true, 'impact_fingerprint' => dispositionImpactFingerprint($device->id)])
+        ->assertStatus(202)
         ->json('data.challenge_id');
 
     $firstPin = $this->actingAs($this->admin)
@@ -411,6 +424,154 @@ it('uses the inventory batch buying price when the device cost is absent', funct
         ->assertJsonPath('data.summary.combined_inventory_realized_value', 120000);
 });
 
+it('keeps device deletion super-admin-only even when a store admin has the delete permission', function () {
+    $storeAdmin = User::factory()->create([
+        'email' => 'store-admin-deletion@example.test',
+        'branch_id' => $this->branch->id,
+    ]);
+    $storeAdmin->assignRole('store_admin');
+    $storeAdmin->givePermissionTo('delete-devices');
+    $device = dispositionDevice();
+
+    $this->actingAs($storeAdmin)
+        ->postJson("/api/v1/admin/devices/{$device->id}/delete/request", [
+            'reason' => 'Attempted cleanup',
+        ])
+        ->assertForbidden();
+
+    $this->actingAs($storeAdmin)
+        ->postJson('/api/v1/admin/devices/deletion-impact', [
+            'device_ids' => [$device->id],
+        ])
+        ->assertForbidden();
+
+    $this->actingAs($storeAdmin)
+        ->getJson("/api/v1/admin/devices/{$device->id}/deletion-impact")
+        ->assertForbidden();
+});
+
+it('exposes a super-admin device deletion impact preview', function () {
+    $device = dispositionDevice();
+
+    $this->actingAs($this->admin)
+        ->postJson('/api/v1/admin/devices/deletion-impact', [
+            'device_ids' => [$device->id],
+        ])
+        ->assertOk()
+        ->assertJsonPath('data.subject.count', 1)
+        ->assertJsonPath('data.devices.total', 1)
+        ->assertJsonPath('data.devices.eligible', 1)
+        ->assertJsonPath('data.devices.will_be_written_off', 1)
+        ->assertJsonPath('data.stock_impact.units_leaving_stock', 1)
+        ->assertJsonPath('data.stock_impact.value_at_cost', 100000)
+        ->assertJsonPath('data.side_effects.preserve_catalog_records', true);
+});
+
+it('exposes a single-device deletion impact endpoint', function () {
+    $device = dispositionDevice();
+
+    $this->actingAs($this->admin)
+        ->getJson("/api/v1/admin/devices/{$device->id}/deletion-impact")
+        ->assertOk()
+        ->assertJsonPath('data.devices.total', 1)
+        ->assertJsonPath('data.detail.0.id', $device->id);
+});
+
+it('marks protected devices in the deletion impact', function () {
+    $device = dispositionDevice([
+        'inventory_status' => InventoryStatus::SOLD,
+        'owner_id' => $this->admin->id,
+    ]);
+
+    $this->actingAs($this->admin)
+        ->postJson('/api/v1/admin/devices/deletion-impact', [
+            'device_ids' => [$device->id],
+        ])
+        ->assertOk()
+        ->assertJsonPath('data.devices.eligible', 0)
+        ->assertJsonPath('data.devices.blocked', 1)
+        ->assertJsonPath('data.detail.0.protected', true)
+        ->assertJsonPath('data.detail.0.protection_reasons.0', 'already sold');
+});
+
+it('blocks devices with an open theft report', function () {
+    $device = dispositionDevice();
+    $device->update(['status' => 'stolen']);
+    TheftReport::factory()->for($device, 'device')->create(['reported_by' => $this->admin->id]);
+
+    $this->actingAs($this->admin)
+        ->postJson('/api/v1/admin/devices/deletion-impact', [
+            'device_ids' => [$device->id],
+        ])
+        ->assertOk()
+        ->assertJsonPath('data.devices.blocked', 1)
+        ->assertJsonPath('data.detail.0.protection_reasons.0', 'flagged as stolen');
+
+    $this->actingAs($this->admin)
+        ->postJson("/api/v1/admin/devices/{$device->id}/delete/request", [
+            'reason' => 'Attempted theft cleanup',
+            'confirm_impact' => true,
+            'impact_fingerprint' => dispositionImpactFingerprint($device->id),
+        ])
+        ->assertStatus(422)
+        ->assertJsonValidationErrors('device');
+});
+
+it('requires impact confirmation before creating a device deletion challenge', function () {
+    $device = dispositionDevice();
+
+    $this->actingAs($this->admin)
+        ->postJson("/api/v1/admin/devices/{$device->id}/delete/request", [
+            'reason' => 'Review required',
+        ])
+        ->assertStatus(409)
+        ->assertJsonPath('requires_confirmation', true)
+        ->assertJsonPath('impact.devices.total', 1);
+
+    $this->actingAs($this->admin)
+        ->postJson("/api/v1/admin/devices/{$device->id}/delete/request", [
+            'reason' => 'Missing fingerprint',
+            'confirm_impact' => true,
+        ])
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors('impact_fingerprint');
+
+    $this->actingAs($this->admin)
+        ->postJson("/api/v1/admin/devices/{$device->id}/delete/request", [
+            'reason' => 'Confirmed cleanup',
+            'confirm_impact' => true,
+            'impact_fingerprint' => dispositionImpactFingerprint($device->id),
+        ])
+        ->assertStatus(202)
+        ->assertJsonPath('data.device_count', 1)
+        ->assertJsonPath('data.impact.devices.total', 1);
+});
+
+it('rejects a stale impact fingerprint before creating a device deletion challenge', function () {
+    $device = dispositionDevice();
+    $preview = $this->actingAs($this->admin)
+        ->postJson('/api/v1/admin/devices/deletion-impact', [
+            'device_ids' => [$device->id],
+        ])
+        ->assertOk();
+    $fingerprint = $preview->json('data.fingerprint');
+    expect($fingerprint)->toBeString()->not->toBeEmpty();
+
+    $device->update(['purchase_price' => 125000]);
+
+    $this->actingAs($this->admin)
+        ->postJson("/api/v1/admin/devices/{$device->id}/delete/request", [
+            'reason' => 'Stale review',
+            'confirm_impact' => true,
+            'impact_fingerprint' => $fingerprint,
+        ])
+        ->assertStatus(409)
+        ->assertJsonPath('impact_stale', true)
+        ->assertJsonPath('impact.devices.total', 1);
+
+    expect(InventoryActionChallenge::count())->toBe(0);
+});
+
 it('deletes multiple devices with one PIN challenge and returns the complete result', function () {
     $devices = [
         dispositionDevice(['inventory_batch_id' => null]),
@@ -423,8 +584,10 @@ it('deletes multiple devices with one PIN challenge and returns the complete res
             'device_ids' => collect($devices)->pluck('id')->all(),
             'reason' => 'OVERSTOCK',
             'notes' => 'Bulk cleanup',
+            'confirm_impact' => true,
+            'impact_fingerprint' => dispositionImpactFingerprint(collect($devices)->pluck('id')->all()),
         ])
-        ->assertCreated()
+        ->assertStatus(202)
         ->assertJsonPath('data.device_count', 2)
         ->json('data.challenge_id');
 
@@ -438,6 +601,58 @@ it('deletes multiple devices with one PIN challenge and returns the complete res
     foreach ($devices as $device) {
         expect(Device::withTrashed()->find($device->id)->deleted_at)->not->toBeNull();
     }
+    expect(InventoryMovement::whereIn('device_id', collect($devices)->pluck('id')->all())
+        ->where('movement_type', InventoryMovement::TYPE_WRITE_OFF)
+        ->count())->toBe(2);
+});
+
+it('unlinks an IoT module through the device foreign key before soft deletion', function () {
+    $device = dispositionDevice();
+    $module = IotModule::factory()->create();
+    $device->update(['iot_module_id' => $module->id]);
+
+    $this->actingAs($this->admin)
+        ->postJson('/api/v1/admin/devices/deletion-impact', [
+            'device_ids' => [$device->id],
+        ])
+        ->assertOk()
+        ->assertJsonPath('data.related.iot_modules_unlinked', 1)
+        ->assertJsonPath('data.detail.0.iot_module_id', $module->module_id);
+
+    $challenge = $this->actingAs($this->admin)
+        ->postJson("/api/v1/admin/devices/{$device->id}/delete/request", [
+            'reason' => 'Retired device',
+            'confirm_impact' => true,
+            'impact_fingerprint' => dispositionImpactFingerprint($device->id),
+        ])
+        ->assertStatus(202)
+        ->json('data.challenge_id');
+
+    verifyDispositionChallenge($challenge, $this->admin)->assertSuccessful();
+
+    expect(Device::withTrashed()->find($device->id)->iot_module_id)->toBeNull()
+        ->and(IotModule::find($module->id))->not->toBeNull();
+});
+
+it('rejects a device deletion challenge when the reviewed impact changes before PIN verification', function () {
+    $device = dispositionDevice();
+    $challenge = $this->actingAs($this->admin)
+        ->postJson("/api/v1/admin/devices/{$device->id}/delete/request", [
+            'reason' => 'Drift check',
+            'confirm_impact' => true,
+            'impact_fingerprint' => dispositionImpactFingerprint($device->id),
+        ])
+        ->assertStatus(202)
+        ->json('data.challenge_id');
+
+    $device->update(['purchase_price' => 125000]);
+
+    verifyDispositionChallenge($challenge, $this->admin)
+        ->assertStatus(422)
+        ->assertJsonValidationErrors('challenge');
+
+    expect(Device::find($device->id))->not->toBeNull()
+        ->and(InventoryActionChallenge::find($challenge)->consumed_at)->toBeNull();
 });
 
 it('warns for tracked devices in a bulk deletion and then deletes all after explicit confirmation', function () {
@@ -460,18 +675,22 @@ it('warns for tracked devices in a bulk deletion and then deletes all after expl
         ->postJson('/api/v1/admin/devices/bulk-delete/request', [
             'device_ids' => $deviceIds,
             'reason' => 'OVERSTOCK',
+            'confirm_impact' => true,
+            'impact_fingerprint' => dispositionImpactFingerprint($deviceIds),
         ])
         ->assertStatus(409)
         ->assertJsonPath('requires_confirmation', true)
-        ->assertJsonPath('errors.device_ids.0', 'Some selected devices have inventory history. Proceeding will soft-delete them while preserving the existing audit movements.');
+        ->assertJsonPath('errors.confirm_history_loss.0', 'Some selected devices have inventory history. Confirm the write-off and keep the audit movements.');
 
     $challenge = $this->actingAs($this->admin)
         ->postJson('/api/v1/admin/devices/bulk-delete/request', [
             'device_ids' => $deviceIds,
             'reason' => 'OVERSTOCK',
+            'confirm_impact' => true,
+            'impact_fingerprint' => dispositionImpactFingerprint($deviceIds),
             'confirm_history_loss' => true,
         ])
-        ->assertCreated()
+        ->assertStatus(202)
         ->json('data.challenge_id');
 
     verifyDispositionChallenge($challenge, $this->admin)->assertSuccessful();
@@ -487,8 +706,10 @@ it('keeps a bulk deletion atomic when a selected device becomes protected before
         ->postJson('/api/v1/admin/devices/bulk-delete/request', [
             'device_ids' => [$first->id, $second->id],
             'reason' => 'Atomicity test',
+            'confirm_impact' => true,
+            'impact_fingerprint' => dispositionImpactFingerprint([$first->id, $second->id]),
         ])
-        ->assertCreated()
+        ->assertStatus(202)
         ->json('data.challenge_id');
 
     $second->update(['owner_id' => $this->admin->id]);
@@ -514,8 +735,10 @@ it('blocks legacy deletion and requires a PIN for a clean device deletion', func
         ->postJson("/api/v1/admin/devices/{$device->id}/delete/request", [
             'reason' => 'OVERSTOCK',
             'notes' => 'admin',
+            'confirm_impact' => true,
+            'impact_fingerprint' => dispositionImpactFingerprint($device->id),
         ])
-        ->assertCreated()
+        ->assertStatus(202)
         ->json('data.challenge_id');
 
     Notification::assertSentOnDemand(InventoryActionApprovalPinNotification::class, function ($notification, $channels, $notifiable) {
@@ -545,18 +768,22 @@ it('warns before deleting tracked inventory and allows explicit PIN-confirmed ov
         ->postJson("/api/v1/admin/devices/{$device->id}/delete/request", [
             'reason' => 'OVERSTOCK',
             'notes' => 'admin',
+            'confirm_impact' => true,
+            'impact_fingerprint' => dispositionImpactFingerprint($device->id),
         ])
         ->assertStatus(409)
         ->assertJsonPath('requires_confirmation', true)
-        ->assertJsonPath('errors.device.0', 'This device has inventory history. Proceeding will soft-delete the device while preserving the existing audit movements.');
+        ->assertJsonPath('errors.confirm_history_loss.0', 'This device has inventory history. Confirm the write-off and keep the audit movements.');
 
     $challenge = $this->actingAs($this->admin)
         ->postJson("/api/v1/admin/devices/{$device->id}/delete/request", [
             'reason' => 'OVERSTOCK',
             'notes' => 'admin',
+            'confirm_impact' => true,
+            'impact_fingerprint' => dispositionImpactFingerprint($device->id),
             'confirm_history_loss' => true,
         ])
-        ->assertCreated()
+        ->assertStatus(202)
         ->json('data.challenge_id');
 
     verifyDispositionChallenge($challenge, $this->admin)->assertSuccessful();

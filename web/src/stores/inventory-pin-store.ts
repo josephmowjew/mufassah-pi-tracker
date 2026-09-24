@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import type { DeviceDeletionImpact } from '@/types'
 
 export interface InventoryPinRevealContext {
   challengeId: number
@@ -15,6 +16,7 @@ export interface ActionChallengeInfo {
   expires_at: string
   attempts_remaining: number
   device_count?: number
+  impact?: DeviceDeletionImpact
   financial?: {
     unit_cost: number
     unit_price: number

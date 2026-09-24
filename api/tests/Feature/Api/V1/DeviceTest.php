@@ -304,7 +304,7 @@ describe('Device Update', function () {
 });
 
 describe('Device Deletion', function () {
-    it('allows owner to delete their device', function () {
+    it('requires the super-admin deletion workflow instead of allowing owner deletion', function () {
         $user = User::factory()->create();
         $user->assignRole('customer');
         $category = DeviceCategory::factory()->create();
@@ -312,9 +312,23 @@ describe('Device Deletion', function () {
 
         actingAs($user, 'sanctum')
             ->deleteJson(apiUrl("devices/{$device->id}"))
-            ->assertOk();
+            ->assertForbidden()
+            ->assertJsonPath('message', 'Device deletion is only available through the super-admin deletion workflow.');
 
-        $this->assertSoftDeleted('devices', ['id' => $device->id]);
+        $this->assertDatabaseHas('devices', ['id' => $device->id, 'deleted_at' => null]);
+    });
+
+    it('blocks the generic delete route for super admins too', function () {
+        $admin = User::factory()->create();
+        $admin->assignRole('super_admin');
+        $category = DeviceCategory::factory()->create();
+        $device = Device::factory()->for($category, 'category')->create();
+
+        actingAs($admin, 'sanctum')
+            ->deleteJson(apiUrl("devices/{$device->id}"))
+            ->assertForbidden();
+
+        $this->assertDatabaseHas('devices', ['id' => $device->id, 'deleted_at' => null]);
     });
 
     it('prevents non-owner from deleting device', function () {

@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import type { GroupedInventoryItem, Device } from '@/types'
 import {
@@ -24,26 +25,37 @@ import {
   Palette,
   Info,
   Activity,
-  Store
+  Store,
+  Trash2
 } from 'lucide-react'
+import { Authorize } from '@/components/auth/Authorize'
+import { ROLES } from '@/stores/auth-store'
+import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import apiClient from '@/api/client'
+import { appendBranchScope } from '@/lib/branch-scope'
 
 interface ProductDetailsModalProps {
   product: GroupedInventoryItem
+  branchId?: string
+  branchLabel?: string
+  inventoryStatus?: string
   onClose: () => void
   onChangeStatus: (device: Device) => void
+  onDeleteDevices: (devices: Device[]) => void
 }
 
-export default function ProductDetailsModal({ product, onClose, onChangeStatus }: ProductDetailsModalProps) {
-  // Fetch all devices matching this product combination
+export default function ProductDetailsModal({ product, branchId = '', branchLabel, inventoryStatus = '', onClose, onChangeStatus, onDeleteDevices }: ProductDetailsModalProps) {
+  // Fetch devices matching this product combination, honoring the active inventory filters
   const { data: devices, isLoading } = useQuery({
-    queryKey: ['inventory-devices', product.category_id, product.brand, product.model, product.color],
+    queryKey: ['inventory-devices', product.category_id, product.brand, product.model, product.color, branchId, inventoryStatus],
     queryFn: async () => {
       const params = new URLSearchParams({
         category_id: product.category_id.toString(),
         per_page: '100',
       })
+      if (inventoryStatus) params.append('inventory_status', inventoryStatus)
+      appendBranchScope(params, branchId)
 
       const response = await apiClient.get<{ success: boolean; data: Device[] }>(`/admin/inventory?${params}`)
 
@@ -62,6 +74,62 @@ export default function ProductDetailsModal({ product, onClose, onChangeStatus }
     },
   })
 
+  const getDeviceStatus = (device: Device): string => {
+    if (typeof device.inventory_status === 'string') {
+      return device.inventory_status
+    }
+    return device.inventory_status?.value || 'in_stock'
+  }
+
+  const isProtectedFromDeletion = (device: Device): boolean => {
+    const status = getDeviceStatus(device)
+    const trackingStatus = typeof device.status === 'string' ? device.status : device.status?.value
+    return device.is_sold === true
+      || status === 'sold'
+      || status === 'reserved'
+      || device.is_stolen === true
+      || trackingStatus === 'stolen'
+      || Boolean(device.owner_id)
+      || Boolean(device.sale_id)
+  }
+
+  const [selectedDeviceIds, setSelectedDeviceIds] = useState<number[]>([])
+  const deviceList = devices || []
+  const selectableDeviceList = deviceList.filter((device) => !isProtectedFromDeletion(device))
+  const validSelectedDeviceIds = selectedDeviceIds.filter((id) => selectableDeviceList.some((device) => device.id === id))
+  const selectedDevices = selectableDeviceList.filter((device) => validSelectedDeviceIds.includes(device.id))
+  const selectedCount = selectedDevices.length
+  const allLoadedSelected = selectableDeviceList.length > 0 && selectableDeviceList.every((device) => validSelectedDeviceIds.includes(device.id))
+  const someSelected = selectedCount > 0 && !allLoadedSelected
+  const isDeviceListTruncated = product.total > deviceList.length
+
+  const toggleDeviceSelection = (device: Device) => {
+    if (validSelectedDeviceIds.includes(device.id)) {
+      setSelectedDeviceIds(validSelectedDeviceIds.filter((id) => id !== device.id))
+      return
+    }
+    if (validSelectedDeviceIds.length >= 50) {
+      toast.error('You can select up to 50 devices at a time.')
+      return
+    }
+    setSelectedDeviceIds([...validSelectedDeviceIds, device.id])
+  }
+
+  const toggleLoadedSelection = () => {
+    if (allLoadedSelected) {
+      setSelectedDeviceIds([])
+      return
+    }
+
+    const additions = selectableDeviceList.filter((device) => !validSelectedDeviceIds.includes(device.id)).map((device) => device.id)
+    if (validSelectedDeviceIds.length + additions.length > 50) {
+      toast.error('You can select up to 50 devices at a time.')
+    }
+    setSelectedDeviceIds([...validSelectedDeviceIds, ...additions].slice(0, 50))
+  }
+
+  const clearSelection = () => setSelectedDeviceIds([])
+
   const getStatusInfo = (status: string) => {
     const statuses: Record<string, { label: string; icon: typeof CheckCircle2; bg: string; text: string; border: string }> = {
       in_stock: { label: 'In Stock', icon: CheckCircle2, bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200' },
@@ -71,13 +139,6 @@ export default function ProductDetailsModal({ product, onClose, onChangeStatus }
       faulty: { label: 'Faulty', icon: XCircle, bg: 'bg-red-50', text: 'text-red-700', border: 'border-red-200' },
     }
     return statuses[status] || { label: status, icon: Package, bg: 'bg-slate-50', text: 'text-slate-700', border: 'border-slate-200' }
-  }
-
-  const getDeviceStatus = (device: Device): string => {
-    if (typeof device.inventory_status === 'string') {
-      return device.inventory_status
-    }
-    return device.inventory_status?.value || 'in_stock'
   }
 
   const getTrackingStatus = (device: Device): string => {
@@ -132,7 +193,7 @@ export default function ProductDetailsModal({ product, onClose, onChangeStatus }
               </div>
               <div>
                 <h3 className="text-xl font-bold">{product.brand} {product.model}</h3>
-                <div className="mt-1 flex items-center gap-3 text-sm text-slate-300">
+                <div className="mt-1 flex flex-wrap items-center gap-3 text-sm text-slate-300">
                   <span className="flex items-center gap-1">
                     <Package className="h-4 w-4" />
                     {product.category_name}
@@ -143,6 +204,15 @@ export default function ProductDetailsModal({ product, onClose, onChangeStatus }
                       <span className="flex items-center gap-1.5">
                         <Palette className="h-4 w-4" />
                         {product.color}
+                      </span>
+                    </>
+                  )}
+                  {branchLabel && (
+                    <>
+                      <span className="text-slate-500">•</span>
+                      <span className="flex items-center gap-1.5 rounded-full bg-white/10 px-2.5 py-0.5 text-xs font-medium text-white">
+                        <Store className="h-3.5 w-3.5" />
+                        {branchLabel}
                       </span>
                     </>
                   )}
@@ -233,13 +303,58 @@ export default function ProductDetailsModal({ product, onClose, onChangeStatus }
         {/* Content */}
         <div className="flex-1 overflow-y-auto bg-slate-50">
           <div className="p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h4 className="font-semibold text-slate-800 flex items-center gap-2">
-                <Barcode className="h-5 w-5 text-slate-400" />
-                Individual Units
-              </h4>
-              <span className="text-sm text-slate-500">{devices?.length || 0} device{(devices?.length || 0) !== 1 ? 's' : ''} found</span>
+            <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex items-center gap-2">
+                <h4 className="font-semibold text-slate-800 flex items-center gap-2">
+                  <Barcode className="h-5 w-5 text-slate-400" />
+                  Individual Units
+                </h4>
+                <span className="text-sm text-slate-500">{deviceList.length} device{deviceList.length !== 1 ? 's' : ''} found</span>
+              </div>
+              <Authorize role={ROLES.SUPER_ADMIN}>
+                <div className="flex flex-wrap items-center gap-2">
+                  <label className="inline-flex cursor-pointer items-center gap-2 text-xs font-medium text-slate-600">
+                    <input
+                      type="checkbox"
+                      aria-label="Select up to 50 eligible loaded devices"
+                      checked={allLoadedSelected}
+                      disabled={isLoading || selectableDeviceList.length === 0}
+                      aria-checked={someSelected ? 'mixed' : allLoadedSelected}
+                      onChange={toggleLoadedSelection}
+                      className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                    />
+                    Select up to 50 eligible loaded
+                  </label>
+                  {selectedCount > 0 && (
+                    <>
+                      <span className="text-xs font-semibold text-blue-700">{selectedCount} selected</span>
+                      <button
+                        type="button"
+                        onClick={clearSelection}
+                        className="rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-100"
+                      >
+                        Clear
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onDeleteDevices(selectedDevices)}
+                        disabled={selectedDevices.length === 0}
+                        className="inline-flex items-center gap-1.5 rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                        Delete selected
+                      </button>
+                    </>
+                  )}
+                </div>
+              </Authorize>
             </div>
+
+            {devices && isDeviceListTruncated && !isLoading && (
+              <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                Showing the first {deviceList.length} matching units. Narrow the filters or delete the remaining units in a separate batch.
+              </div>
+            )}
 
             {isLoading ? (
               <div className="flex flex-col items-center justify-center py-16">
@@ -251,24 +366,38 @@ export default function ProductDetailsModal({ product, onClose, onChangeStatus }
               </div>
             ) : devices && devices.length > 0 ? (
               <div className="space-y-4">
-                {devices.map((device: Device) => {
+                {deviceList.map((device: Device) => {
                   const status = getDeviceStatus(device)
                   const statusInfo = getStatusInfo(status)
                   const StatusIcon = statusInfo.icon
                   const trackingStatus = getTrackingStatus(device)
+                  const isSelected = validSelectedDeviceIds.includes(device.id)
+                  const canSelect = !isProtectedFromDeletion(device)
 
                   return (
                     <div
                       key={device.id}
                       className={cn(
                         'bg-white rounded-xl border-2 overflow-hidden transition-all hover:shadow-lg',
-                        statusInfo.border
+                        statusInfo.border,
+                        isSelected && 'ring-2 ring-blue-500 ring-offset-2'
                       )}
                     >
                       {/* Device Header */}
                       <div className={cn('px-5 py-4 border-b', statusInfo.border, statusInfo.bg)}>
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-3">
+                            <Authorize role={ROLES.SUPER_ADMIN}>
+                              <input
+                                type="checkbox"
+                                aria-label={`Select device ${device.serial_number}`}
+                                checked={isSelected}
+                                disabled={!canSelect}
+                                title={canSelect ? 'Select device for deletion' : 'Protected inventory cannot be deleted'}
+                                onChange={() => toggleDeviceSelection(device)}
+                                className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
+                              />
+                            </Authorize>
                             <div className={cn(
                               'h-10 w-10 rounded-lg flex items-center justify-center',
                               statusInfo.bg, 'border', statusInfo.border
@@ -284,6 +413,11 @@ export default function ProductDetailsModal({ product, onClose, onChangeStatus }
                                 )}>
                                   {statusInfo.label}
                                 </span>
+                                {!canSelect && (
+                                  <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
+                                    Protected
+                                  </span>
+                                )}
                               </div>
                               <p className="text-sm text-slate-500 flex items-center gap-1 mt-0.5">
                                 <Hash className="h-3 w-3" />
@@ -352,6 +486,10 @@ export default function ProductDetailsModal({ product, onClose, onChangeStatus }
                                   <span className="text-sm font-medium text-slate-700">{device.category.name}</span>
                                 </div>
                               )}
+                              <div className="flex items-center justify-between p-2 bg-slate-50 rounded-lg">
+                                <span className="text-xs text-slate-500">Branch</span>
+                                <span className="text-sm font-medium text-slate-700">{device.branch?.name || '-'}</span>
+                              </div>
                             </div>
                           </div>
 

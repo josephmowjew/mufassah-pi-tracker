@@ -111,6 +111,95 @@ export interface Device {
   iot_module?: IotModule
 }
 
+export interface DeviceDeletionImpactDetail {
+  id: number
+  unique_device_code: string | null
+  serial_number: string | null
+  brand: string | null
+  model: string | null
+  color: string | null
+  inventory_status: string | null
+  inventory_status_label: string | null
+  tracking_status: string | null
+  open_theft_report_count: number
+  branch: string | null
+  branch_id: number | null
+  owner: string | null
+  batch_number: string | null
+  iot_module_id: string | null
+  geofence_count: number
+  location_count: number
+  inventory_movement_count: number
+  ownership_record_count: number
+  warranty_count: number
+  will_be_deleted: boolean
+  will_be_written_off: boolean
+  unit_cost: number | string | null
+  protected: boolean
+  requires_confirmation: boolean
+  protection_reasons: string[]
+}
+
+export interface DeviceDeletionImpact {
+  subject: {
+    type: string
+    count: number
+    branches: Array<{
+      id: number
+      name: string | null
+      count: number
+    }>
+  }
+  devices: {
+    total: number
+    eligible: number
+    blocked: number
+    requires_history_confirmation: number
+    by_status: Record<string, number>
+    will_be_deleted: number
+    will_be_written_off: number
+    already_out_of_stock: number
+    with_protected_history: number
+    protected_reasons: Record<string, number>
+  }
+  stock_impact: {
+    units_leaving_stock: number
+    units_already_out_of_stock: number
+    value_at_cost: number | string
+    value_at_cost_is_partial: boolean
+  }
+  related: {
+    iot_modules: number
+    iot_modules_unlinked: number
+    geofences: number
+    geofences_removed: number
+    locations: number
+    locations_preserved: number
+    inventory_batches: number
+    inventory_movements: number
+    inventory_movements_preserved: number
+    ownership_records_preserved: number
+    warranties_preserved: number
+    theft_reports_preserved: number
+    open_theft_reports: number
+    photos_preserved: number
+    sale_records_blocking: number
+    stock_transfers_blocking: number
+  }
+  side_effects: {
+    soft_delete_devices: boolean
+    write_off_on_hand_stock: boolean
+    remove_geofences: boolean
+    unlink_iot_modules: boolean
+    preserve_location_history: boolean
+    preserve_inventory_movements: boolean
+    preserve_catalog_records: boolean
+  }
+  detail: DeviceDeletionImpactDetail[]
+  warnings: string[]
+  fingerprint: string
+}
+
 export interface DeviceCategory {
   id: number
   name: string

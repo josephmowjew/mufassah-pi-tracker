@@ -2,7 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Suspense, lazy } from 'react'
 import { Toaster, toast } from 'sonner'
-import { getApiErrorMessage } from '@/lib/utils'
+import { getApiErrorMessage, requiresApiConfirmation } from '@/lib/utils'
 
 // Layouts
 import AuthLayout from '@/components/layout/AuthLayout'
@@ -102,6 +102,7 @@ const queryClient = new QueryClient({
     },
     mutations: {
       onError: (error) => {
+        if (requiresApiConfirmation(error)) return
         const message = getApiErrorMessage(error, 'Something went wrong. Please try again.')
         toast.error(message)
       },

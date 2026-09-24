@@ -87,31 +87,35 @@ class TheftReportController extends Controller
     {
         $this->authorize('create', TheftReport::class);
 
-        $device = Device::findOrFail($request->device_id);
+        return DB::transaction(function () use ($request) {
+            // Serialize report creation with super-admin device deletion so a
+            // report cannot be inserted after the deletion impact was checked.
+            $device = Device::query()->lockForUpdate()->findOrFail($request->device_id);
 
-        // Verify user owns the device or is admin
-        if ($device->owner_id !== $request->user()->id
-            && ! $request->user()->hasRole('super_admin')
-            && ! ($request->user()->hasRole('store_admin') && $request->user()->canAccessBranch($device->branch_id))) {
-            return response()->json([
-                'success' => false,
-                'message' => 'You can only report theft for your own devices.',
-            ], 403);
-        }
+            // Verify user owns the device or is admin
+            if ($device->owner_id !== $request->user()->id
+                && ! $request->user()->hasRole('super_admin')
+                && ! ($request->user()->hasRole('store_admin') && $request->user()->canAccessBranch($device->branch_id))) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'You can only report theft for your own devices.',
+                ], 403);
+            }
 
-        // Check if device already has an open theft report
-        $existingReport = TheftReport::where('device_id', $device->id)
-            ->open()
-            ->first();
+            // Check if device already has an open theft report while the
+            // device row is locked.
+            $existingReport = TheftReport::where('device_id', $device->id)
+                ->open()
+                ->lockForUpdate()
+                ->first();
 
-        if ($existingReport) {
-            return response()->json([
-                'success' => false,
-                'message' => 'This device already has an open theft report.',
-            ], 400);
-        }
+            if ($existingReport) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'This device already has an open theft report.',
+                ], 400);
+            }
 
-        return DB::transaction(function () use ($request, $device) {
             // Handle evidence photo uploads
             $evidencePhotos = [];
             if ($request->hasFile('evidence_photos')) {

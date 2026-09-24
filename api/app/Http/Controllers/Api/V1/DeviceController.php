@@ -144,22 +144,13 @@ class DeviceController extends BaseController
     }
 
     /**
-     * Delete a device.
+     * Device deletion is intentionally handled by the super-admin
+     * impact-preview and PIN workflow. Keep the generic API resource route
+     * closed so owners cannot bypass the inventory safeguards.
      */
     public function destroy(Device $device): JsonResponse
     {
-        $this->authorize('delete', $device);
-
-        // Delete photos from storage
-        if ($device->photos) {
-            foreach ($device->photos as $photo) {
-                Storage::disk('public')->delete($photo);
-            }
-        }
-
-        $device->delete();
-
-        return $this->success(null, 'Device deleted successfully.');
+        abort(403, 'Device deletion is only available through the super-admin deletion workflow.');
     }
 
     /**

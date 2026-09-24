@@ -13,6 +13,7 @@ use App\Models\InventoryActionChallenge;
 use App\Models\InventoryMovement;
 use App\Models\ProductModel;
 use App\Services\CatalogDeletionImpactService;
+use App\Services\DeviceDeletionImpactService;
 use App\Services\InventoryActionApprovalService;
 use App\Services\InventoryMovementService;
 use App\Services\SuperAdminSaleNotificationService;
@@ -28,6 +29,7 @@ class InventoryDispositionController extends BaseController
         private readonly InventoryMovementService $movementService,
         private readonly SuperAdminSaleNotificationService $superAdminSaleNotificationService,
         private readonly CatalogDeletionImpactService $deletionImpact,
+        private readonly DeviceDeletionImpactService $deviceDeletionImpact,
     ) {}
 
     public function requestAdministrativeSale(Request $request, Device $device): JsonResponse
@@ -82,50 +84,67 @@ class InventoryDispositionController extends BaseController
 
     public function requestDeviceDeletion(Request $request, Device $device): JsonResponse
     {
-        $this->authorizeInventoryBranch($request, $device);
+        $this->authorizeSuperAdminDeletion($request);
+        $devices = $this->deviceDeletionImpact->loadDevices([$device->id]);
+        $currentDevice = $devices->firstOrFail();
+        $this->authorizeInventoryBranch($request, $currentDevice);
 
         $validated = $request->validate([
             'reason' => ['required', 'string', 'max:255'],
             'notes' => ['nullable', 'string', 'max:1000'],
+            'confirm_impact' => ['sometimes', 'boolean'],
+            'impact_fingerprint' => ['required_with:confirm_impact', 'string', 'max:64'],
             'confirm_history_loss' => ['sometimes', 'boolean'],
         ]);
+        $confirmImpact = (bool) ($validated['confirm_impact'] ?? false);
         $confirmHistoryLoss = (bool) ($validated['confirm_history_loss'] ?? false);
+        $impact = $this->deviceDeletionImpact->forDevices($devices);
 
-        if ($this->requiresDeletionConfirmation($device) && ! $confirmHistoryLoss) {
-            return $this->deletionConfirmationWarning();
+        if ($this->isStaleDeviceImpact($validated['impact_fingerprint'] ?? null, $impact)) {
+            return $this->staleDeviceImpactConfirmation($impact);
         }
 
-        $this->assertDeletable($device, $confirmHistoryLoss);
+        if (! $confirmImpact) {
+            return $this->deletionImpactConfirmation($impact, 'Review the device deletion impact and confirm to continue.', 'confirm_impact');
+        }
+
+        if ($this->requiresDeletionConfirmation($currentDevice) && ! $confirmHistoryLoss) {
+            return $this->deletionImpactConfirmation($impact, 'This device has inventory history. Confirm the write-off and keep the audit movements.', 'confirm_history_loss');
+        }
+
+        $this->assertDeletable($currentDevice, $confirmHistoryLoss);
 
         $payload = [
-            'device_id' => $device->id,
-            'branch_id' => $device->branch_id,
+            'device_id' => $currentDevice->id,
+            'branch_id' => $currentDevice->branch_id,
             'reason' => $validated['reason'],
             'notes' => $validated['notes'] ?? null,
             'confirm_history_loss' => $confirmHistoryLoss,
+            'impact' => $impact,
+            'impact_fingerprint' => $this->deviceDeletionImpact->fingerprint($devices),
         ];
-        $challenge = $this->approvalService->create($request->user(), InventoryActionChallenge::ACTION_DEVICE_DELETION, $payload, $device);
+        $challenge = $this->approvalService->create($request->user(), InventoryActionChallenge::ACTION_DEVICE_DELETION, $payload, $currentDevice);
 
-        return $this->success($this->challengeData($challenge), 'A verification PIN was sent by email and is available securely in notifications.', 201);
+        return $this->success($this->challengeData($challenge, null, $impact), 'A verification PIN was sent by email and is available securely in notifications.', 202);
     }
 
     public function requestBulkDeviceDeletion(Request $request): JsonResponse
     {
+        $this->authorizeSuperAdminDeletion($request);
+
         $validated = $request->validate([
             'device_ids' => ['required', 'array', 'min:2', 'max:50'],
-            'device_ids.*' => ['integer', 'distinct'],
+            'device_ids.*' => ['integer', 'min:1', 'distinct'],
             'reason' => ['required', 'string', 'max:255'],
             'notes' => ['nullable', 'string', 'max:1000'],
+            'confirm_impact' => ['sometimes', 'boolean'],
+            'impact_fingerprint' => ['required_with:confirm_impact', 'string', 'max:64'],
             'confirm_history_loss' => ['sometimes', 'boolean'],
         ]);
+        $confirmImpact = (bool) ($validated['confirm_impact'] ?? false);
         $confirmHistoryLoss = (bool) ($validated['confirm_history_loss'] ?? false);
         $deviceIds = array_values(array_unique(array_map('intval', $validated['device_ids'])));
-
-        $devices = Device::query()
-            ->whereIn('id', $deviceIds)
-            ->orderBy('id')
-            ->get()
-            ->keyBy('id');
+        $devices = $this->deviceDeletionImpact->loadDevices($deviceIds);
 
         if ($devices->count() !== count($deviceIds)) {
             throw ValidationException::withMessages([
@@ -137,9 +156,17 @@ class InventoryDispositionController extends BaseController
             $this->authorizeInventoryBranch($request, $device);
         }
 
+        $impact = $this->deviceDeletionImpact->forDevices($devices);
+        if ($this->isStaleDeviceImpact($validated['impact_fingerprint'] ?? null, $impact)) {
+            return $this->staleDeviceImpactConfirmation($impact);
+        }
+        if (! $confirmImpact) {
+            return $this->deletionImpactConfirmation($impact, 'Review the device deletion impact and confirm to continue.', 'confirm_impact');
+        }
+
         $confirmationDevices = $devices->filter(fn (Device $device) => $this->requiresDeletionConfirmation($device));
         if ($confirmationDevices->isNotEmpty() && ! $confirmHistoryLoss) {
-            return $this->deletionConfirmationWarning($confirmationDevices);
+            return $this->deletionImpactConfirmation($impact, 'Some selected devices have inventory history. Confirm the write-off and keep the audit movements.', 'confirm_history_loss');
         }
 
         foreach ($devices as $device) {
@@ -152,6 +179,8 @@ class InventoryDispositionController extends BaseController
             'reason' => $validated['reason'],
             'notes' => $validated['notes'] ?? null,
             'confirm_history_loss' => $confirmHistoryLoss,
+            'impact' => $impact,
+            'impact_fingerprint' => $this->deviceDeletionImpact->fingerprint($devices),
         ];
         $firstDevice = $devices->firstOrFail();
         $challenge = $this->approvalService->create(
@@ -162,7 +191,42 @@ class InventoryDispositionController extends BaseController
             count($deviceIds).' devices',
         );
 
-        return $this->success($this->challengeData($challenge), 'A verification PIN was sent by email and is available securely in notifications.', 201);
+        return $this->success($this->challengeData($challenge, null, $impact), 'A verification PIN was sent by email and is available securely in notifications.', 202);
+    }
+
+    public function deviceDeletionImpact(Request $request): JsonResponse
+    {
+        $this->authorizeSuperAdminDeletion($request);
+
+        $validated = $request->validate([
+            'device_ids' => ['required', 'array', 'min:1', 'max:50'],
+            'device_ids.*' => ['integer', 'min:1', 'distinct'],
+        ]);
+
+        $deviceIds = array_values(array_unique(array_map('intval', $validated['device_ids'])));
+        $devices = $this->deviceDeletionImpact->loadDevices($deviceIds);
+
+        if ($devices->count() !== count($deviceIds)) {
+            throw ValidationException::withMessages([
+                'device_ids' => ['One or more selected devices no longer exist or have already been deleted. Refresh the list and try again.'],
+            ]);
+        }
+
+        foreach ($devices as $device) {
+            $this->authorizeInventoryBranch($request, $device);
+        }
+
+        return $this->success($this->deviceDeletionImpact->forDevices($devices));
+    }
+
+    public function deviceDeletionImpactForDevice(Request $request, Device $device): JsonResponse
+    {
+        $this->authorizeSuperAdminDeletion($request);
+        $devices = $this->deviceDeletionImpact->loadDevices([$device->id]);
+        $currentDevice = $devices->firstOrFail();
+        $this->authorizeInventoryBranch($request, $currentDevice);
+
+        return $this->success($this->deviceDeletionImpact->forDevices($devices));
     }
 
     public function resend(Request $request, InventoryActionChallenge $challenge): JsonResponse
@@ -208,7 +272,7 @@ class InventoryDispositionController extends BaseController
             function (array $payload, InventoryActionChallenge $lockedChallenge) use ($request) {
                 return match ($lockedChallenge->action) {
                     InventoryActionChallenge::ACTION_ADMINISTRATIVE_SALE => $this->executeAdministrativeSale($request, $payload, $lockedChallenge),
-                    InventoryActionChallenge::ACTION_DEVICE_DELETION => $this->executeDeviceDeletion($request, $payload),
+                    InventoryActionChallenge::ACTION_DEVICE_DELETION => $this->executeDeviceDeletion($request, $payload, $lockedChallenge),
                     InventoryActionChallenge::ACTION_PRODUCT_MODEL_DELETION,
                     InventoryActionChallenge::ACTION_BRAND_DELETION => $this->executeCatalogDeletion($request, $payload, $lockedChallenge),
                     default => throw ValidationException::withMessages(['challenge' => ['Unsupported inventory action.']]),
@@ -313,10 +377,10 @@ class InventoryDispositionController extends BaseController
         ];
     }
 
-    private function executeDeviceDeletion(Request $request, array $payload): array
+    private function executeDeviceDeletion(Request $request, array $payload, InventoryActionChallenge $challenge): array
     {
         if (array_key_exists('device_ids', $payload)) {
-            return $this->executeBulkDeviceDeletion($request, $payload);
+            return $this->executeBulkDeviceDeletion($request, $payload, $challenge);
         }
 
         $device = Device::query()->lockForUpdate()->findOrFail((int) $payload['device_id']);
@@ -326,14 +390,33 @@ class InventoryDispositionController extends BaseController
         if ((int) ($payload['branch_id'] ?? 0) !== (int) $device->branch_id) {
             throw ValidationException::withMessages(['challenge' => ['The device branch changed after this PIN was requested. Request a new PIN.']]);
         }
+        $this->assertDeviceImpactUnchanged(collect([$device]), $payload);
 
         $deviceName = trim("{$device->brand} {$device->model}");
+        $previousStatus = $device->inventory_status?->value;
+        if ($device->inventory_status?->isOnHand()) {
+            $this->movementService->recordWriteOff(
+                $device,
+                $request->user(),
+                (string) $payload['reason'],
+                $payload['notes'] ?? null,
+                Device::class,
+                $device->id,
+                [
+                    'action' => InventoryActionChallenge::ACTION_DEVICE_DELETION,
+                    'challenge_id' => (string) $challenge->id,
+                    'previous_status' => $previousStatus,
+                ],
+            );
+        }
+
         // Location history is telemetry, not catalog data. The device is
         // soft-deleted, so its trail survives for audit instead of being
         // destroyed as collateral.
         $device->geofences()->delete();
         if ($device->iot_module_id) {
-            $device->iotModule?->update(['device_id' => null]);
+            // The foreign key lives on devices; IotModule has no device_id column.
+            $device->update(['iot_module_id' => null]);
         }
         $device->delete();
 
@@ -346,7 +429,7 @@ class InventoryDispositionController extends BaseController
         return ['device_id' => (int) $payload['device_id'], 'device_name' => $deviceName];
     }
 
-    private function executeBulkDeviceDeletion(Request $request, array $payload): array
+    private function executeBulkDeviceDeletion(Request $request, array $payload, InventoryActionChallenge $challenge): array
     {
         $deviceIds = $this->challengeDeviceIds($payload);
         $devices = Device::query()
@@ -379,13 +462,33 @@ class InventoryDispositionController extends BaseController
             }
         }
 
+        $this->assertDeviceImpactUnchanged($devices, $payload);
+
         $deletedDevices = [];
         foreach ($devices as $device) {
             $deviceName = trim("{$device->brand} {$device->model}");
+            $previousStatus = $device->inventory_status?->value;
+            if ($device->inventory_status?->isOnHand()) {
+                $this->movementService->recordWriteOff(
+                    $device,
+                    $request->user(),
+                    (string) $payload['reason'],
+                    $payload['notes'] ?? null,
+                    Device::class,
+                    $device->id,
+                    [
+                        'action' => InventoryActionChallenge::ACTION_DEVICE_DELETION,
+                        'challenge_id' => (string) $challenge->id,
+                        'previous_status' => $previousStatus,
+                        'bulk' => true,
+                    ],
+                );
+            }
+
             // Keep the device's location history; only its zones are hidden.
             $device->geofences()->delete();
             if ($device->iot_module_id) {
-                $device->iotModule?->update(['device_id' => null]);
+                $device->update(['iot_module_id' => null]);
             }
             $device->delete();
 
@@ -403,6 +506,30 @@ class InventoryDispositionController extends BaseController
             'deleted_device_ids' => $deviceIds,
             'devices' => $deletedDevices,
         ];
+    }
+
+    /**
+     * Reject a challenge if the reviewed impact changed while the PIN was pending.
+     *
+     * @param  Collection<int, Device>  $devices
+     */
+    private function assertDeviceImpactUnchanged(Collection $devices, array $payload): void
+    {
+        $expectedFingerprint = $payload['impact_fingerprint'] ?? null;
+        if (! is_string($expectedFingerprint) || $expectedFingerprint === '') {
+            throw ValidationException::withMessages([
+                'challenge' => ['This deletion challenge has no reviewed impact. Request a new deletion challenge.'],
+            ]);
+        }
+
+        $deviceIds = $devices->pluck('id')->map(fn ($id) => (int) $id)->all();
+        $currentDevices = $this->deviceDeletionImpact->loadDevices($deviceIds);
+        if ($currentDevices->count() !== count($deviceIds)
+            || ! hash_equals($expectedFingerprint, $this->deviceDeletionImpact->fingerprint($currentDevices))) {
+            throw ValidationException::withMessages([
+                'challenge' => ['The selected device impact changed after the PIN was requested. Review the impact and request a new PIN.'],
+            ]);
+        }
     }
 
     /**
@@ -498,7 +625,7 @@ class InventoryDispositionController extends BaseController
             // Keep the device's location history; only its zones are hidden.
             $device->geofences()->delete();
             if ($device->iot_module_id) {
-                $device->iotModule?->update(['device_id' => null]);
+                $device->update(['iot_module_id' => null]);
             }
             $device->delete();
 
@@ -529,7 +656,7 @@ class InventoryDispositionController extends BaseController
         ];
     }
 
-    private function challengeData(InventoryActionChallenge $challenge, ?array $financial = null): array
+    private function challengeData(InventoryActionChallenge $challenge, ?array $financial = null, ?array $impact = null): array
     {
         $challenge->loadMissing('requestedBy');
 
@@ -542,12 +669,23 @@ class InventoryDispositionController extends BaseController
         ];
         if (isset($challenge->payload['device_ids']) && is_array($challenge->payload['device_ids'])) {
             $data['device_count'] = count($challenge->payload['device_ids']);
+        } elseif ($challenge->action === InventoryActionChallenge::ACTION_DEVICE_DELETION && isset($challenge->payload['device_id'])) {
+            $data['device_count'] = 1;
         }
         if ($financial !== null) {
             $data['financial'] = $financial;
         }
+        $storedImpact = $impact ?? (is_array($challenge->payload['impact'] ?? null) ? $challenge->payload['impact'] : null);
+        if ($storedImpact !== null) {
+            $data['impact'] = $storedImpact;
+        }
 
         return $data;
+    }
+
+    private function authorizeSuperAdminDeletion(Request $request): void
+    {
+        abort_unless($request->user()?->hasRole('super_admin'), 403, 'Only a super admin can delete devices.');
     }
 
     private function authorizeChallengeAction(Request $request, InventoryActionChallenge $challenge): void
@@ -556,8 +694,13 @@ class InventoryDispositionController extends BaseController
         if ($challenge->action === InventoryActionChallenge::ACTION_ADMINISTRATIVE_SALE && ! $user->can('manage-inventory')) {
             abort(403, 'You do not have permission to complete administrative sales.');
         }
-        if ($challenge->action === InventoryActionChallenge::ACTION_DEVICE_DELETION && ! $user->can('delete-devices')) {
-            abort(403, 'You do not have permission to delete devices.');
+        if ($challenge->action === InventoryActionChallenge::ACTION_DEVICE_DELETION) {
+            if (! $user->hasRole('super_admin')) {
+                abort(403, 'Only a super admin can delete devices.');
+            }
+            if (! $user->can('delete-devices')) {
+                abort(403, 'You do not have permission to delete devices.');
+            }
         }
         if (in_array($challenge->action, [
             InventoryActionChallenge::ACTION_PRODUCT_MODEL_DELETION,
@@ -608,33 +751,43 @@ class InventoryDispositionController extends BaseController
 
     private function requiresDeletionConfirmation(Device $device): bool
     {
-        return ! $this->hasProtectedDeletionHistory($device)
-            && ($device->inventory_batch_id !== null || $device->inventoryMovements()->exists());
+        return $this->deviceDeletionImpact->requiresHistoryConfirmation($device);
     }
 
-    private function deletionConfirmationWarning(?Collection $devices = null): JsonResponse
+    private function isStaleDeviceImpact(mixed $submittedFingerprint, array $impact): bool
     {
-        if ($devices !== null) {
-            $deviceNames = $devices->map(fn (Device $device) => trim("{$device->brand} {$device->model}") ?: "Device #{$device->id}")->values()->all();
+        return is_string($submittedFingerprint)
+            && $submittedFingerprint !== ''
+            && ! hash_equals((string) ($impact['fingerprint'] ?? ''), $submittedFingerprint);
+    }
 
-            return response()->json([
-                'success' => false,
-                'message' => 'Some selected devices have inventory history and require explicit confirmation before deletion.',
-                'errors' => [
-                    'device_ids' => ['Some selected devices have inventory history. Proceeding will soft-delete them while preserving the existing audit movements.'],
-                ],
-                'requires_confirmation' => true,
-                'devices' => $deviceNames,
-            ], 409);
-        }
+    private function staleDeviceImpactConfirmation(array $impact): JsonResponse
+    {
+        $message = 'The device deletion impact changed after it was reviewed. Review the updated impact and confirm again.';
 
         return response()->json([
             'success' => false,
-            'message' => 'This device has inventory history and requires explicit confirmation before deletion.',
+            'message' => $message,
             'errors' => [
-                'device' => ['This device has inventory history. Proceeding will soft-delete the device while preserving the existing audit movements.'],
+                'impact_fingerprint' => [$message],
             ],
             'requires_confirmation' => true,
+            'impact_stale' => true,
+            'impact' => $impact,
+        ], 409);
+    }
+
+    private function deletionImpactConfirmation(array $impact, string $message, string $field): JsonResponse
+    {
+        return response()->json([
+            'success' => false,
+            'message' => $message,
+            'errors' => [
+                $field => [$message],
+            ],
+            'requires_confirmation' => true,
+            'requires_history_confirmation' => (bool) ($impact['devices']['requires_history_confirmation'] ?? false),
+            'impact' => $impact,
         ], 409);
     }
 
@@ -657,35 +810,7 @@ class InventoryDispositionController extends BaseController
 
     private function assertDeletable(Device $device, bool $allowInventoryBatch = false): void
     {
-        if ($this->hasProtectedDeletionHistory($device)
-            || (! $allowInventoryBatch && ($device->inventory_batch_id || $device->inventoryMovements()->exists()))) {
-            throw ValidationException::withMessages([
-                'device' => ['This device has ownership or inventory history and cannot be deleted. Use the appropriate inventory disposition instead.'],
-            ]);
-        }
-    }
-
-    private function hasProtectedDeletionHistory(Device $device): bool
-    {
-        if ($device->sale_id
-            || $device->owner_id
-            || $device->stock_transfer_request_id
-            || $device->inventory_status === InventoryStatus::SOLD
-            || $device->ownershipHistory()->exists()
-            || $device->warranties()->exists()) {
-            return true;
-        }
-
-        return $device->inventoryMovements()
-            ->whereIn('movement_type', [
-                InventoryMovement::TYPE_SALE,
-                InventoryMovement::TYPE_SALE_CANCELLED,
-                InventoryMovement::TYPE_RESERVATION,
-                InventoryMovement::TYPE_RESERVATION_CANCELLED,
-                InventoryMovement::TYPE_REFUND,
-                InventoryMovement::TYPE_ADMINISTRATIVE_SALE,
-            ])
-            ->exists();
+        $this->deviceDeletionImpact->assertDeletable($device, $allowInventoryBatch);
     }
 
     private function logActivity(?Device $device, $user, string $event, string $description, array $properties): void
