@@ -54,6 +54,7 @@ class Device extends Model
         'status',
         'inventory_status',
         'sale_id',
+        'reserved_invoice_id',
         'sold_at',
         'sold_by_id',
         'notes',
@@ -150,6 +151,11 @@ class Device extends Model
     public function sale(): BelongsTo
     {
         return $this->belongsTo(Sale::class);
+    }
+
+    public function reservedInvoice(): BelongsTo
+    {
+        return $this->belongsTo(Invoice::class, 'reserved_invoice_id');
     }
 
     public function stockTransferRequest(): BelongsTo

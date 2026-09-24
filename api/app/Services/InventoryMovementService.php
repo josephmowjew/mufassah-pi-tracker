@@ -7,6 +7,8 @@ use App\Models\Device;
 use App\Models\InventoryBatch;
 use App\Models\InventoryMovement;
 use App\Models\InventoryReceipt;
+use App\Models\Invoice;
+use App\Models\InvoiceItem;
 use App\Models\Sale;
 use App\Models\SaleItem;
 use App\Models\User;
@@ -42,6 +44,44 @@ class InventoryMovementService
             'reference_type' => Sale::class,
             'reference_id' => $sale->id,
             'created_by_id' => $user?->id,
+        ]);
+    }
+
+    public function recordInvoiceReservation(Device $device, Invoice $invoice, ?InvoiceItem $invoiceItem = null, ?User $user = null, ?string $previousStatus = null): InventoryMovement
+    {
+        return $this->recordDeviceMovement($device, [
+            'movement_type' => InventoryMovement::TYPE_RESERVATION,
+            'branch_id' => $device->branch_id,
+            'previous_status' => $previousStatus ?? InventoryStatus::IN_STOCK->value,
+            'new_status' => InventoryStatus::RESERVED->value,
+            'reference_type' => Invoice::class,
+            'reference_id' => $invoice->id,
+            'created_by_id' => $user?->id,
+            'metadata' => [
+                'invoice_id' => $invoice->id,
+                'invoice_number' => $invoice->invoice_number,
+                'invoice_item_id' => $invoiceItem?->id,
+                'expires_at' => $invoice->expires_at?->toIso8601String(),
+            ],
+        ]);
+    }
+
+    public function recordInvoiceReservationCancelled(Device $device, Invoice $invoice, ?InvoiceItem $invoiceItem = null, ?User $user = null, ?string $reason = null, ?string $newStatus = null): InventoryMovement
+    {
+        return $this->recordDeviceMovement($device, [
+            'movement_type' => InventoryMovement::TYPE_RESERVATION_CANCELLED,
+            'branch_id' => $device->branch_id,
+            'previous_status' => InventoryStatus::RESERVED->value,
+            'new_status' => $newStatus ?? InventoryStatus::IN_STOCK->value,
+            'reference_type' => Invoice::class,
+            'reference_id' => $invoice->id,
+            'reason' => $reason,
+            'created_by_id' => $user?->id,
+            'metadata' => [
+                'invoice_id' => $invoice->id,
+                'invoice_number' => $invoice->invoice_number,
+                'invoice_item_id' => $invoiceItem?->id,
+            ],
         ]);
     }
 

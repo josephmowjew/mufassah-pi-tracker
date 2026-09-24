@@ -4,6 +4,7 @@ use App\Http\Controllers\Api\V1\Admin\AdminDashboardController;
 use App\Http\Controllers\Api\V1\Admin\AdminDeviceController;
 use App\Http\Controllers\Api\V1\Admin\AdminFamilyController;
 use App\Http\Controllers\Api\V1\Admin\AdminInventoryController;
+use App\Http\Controllers\Api\V1\Admin\AdminInvoiceController;
 use App\Http\Controllers\Api\V1\Admin\AdminProductCatalogController;
 use App\Http\Controllers\Api\V1\Admin\AdminReportController;
 use App\Http\Controllers\Api\V1\Admin\AdminSaleController;
@@ -66,6 +67,10 @@ Route::get('/health', function () {
 // Public receipt access (signed URL required)
 Route::get('/sales/{sale}/receipt', [AdminSaleController::class, 'publicReceipt'])
     ->name('sales.public-receipt');
+
+// Customer-facing invoice lookup. The random token is the only public identifier.
+Route::get('/invoices/public/{token}', [AdminInvoiceController::class, 'publicShow'])
+    ->name('invoices.public-show');
 
 // =============================================================================
 // PUBLIC ROUTES (No authentication required)
@@ -560,6 +565,17 @@ Route::middleware(['auth:sanctum', 'not.suspended'])->group(function () {
             Route::delete('/models/{productModel}', [AdminProductCatalogController::class, 'modelDestroy'])->middleware(['role:super_admin', 'throttle:6,1'])->name('models.destroy');
         });
 
+        // Invoices and 24-hour price-locked offers
+        Route::prefix('invoices')->name('invoices.')->middleware('permission:manage-sales')->group(function () {
+            Route::get('/', [AdminInvoiceController::class, 'index'])->name('index');
+            Route::post('/', [AdminInvoiceController::class, 'store'])->name('store');
+            Route::get('/{invoice}', [AdminInvoiceController::class, 'show'])->name('show');
+            Route::post('/{invoice}/redeem', [AdminInvoiceController::class, 'redeem'])->name('redeem');
+            Route::post('/{invoice}/resend', [AdminInvoiceController::class, 'resend'])->name('resend');
+            Route::post('/{invoice}/cancel', [AdminInvoiceController::class, 'cancel'])->name('cancel');
+            Route::get('/{invoice}/document', [AdminInvoiceController::class, 'document'])->name('document');
+        });
+
         // Sales management (POS)
         Route::prefix('sales')->name('sales.')->group(function () {
             Route::get('/', [AdminSaleController::class, 'index'])->name('index');
@@ -633,6 +649,17 @@ Route::middleware(['auth:sanctum', 'not.suspended'])->group(function () {
             Route::post('/cancel', [ShiftController::class, 'cancel'])->name('cancel');
             Route::get('/history', [ShiftController::class, 'history'])->name('history');
             Route::get('/{shift}', [ShiftController::class, 'show'])->name('show');
+        });
+
+        // Invoices (only the current representative's branch and records)
+        Route::prefix('invoices')->name('invoices.')->group(function () {
+            Route::get('/', [AdminInvoiceController::class, 'index'])->name('index');
+            Route::post('/', [AdminInvoiceController::class, 'store'])->name('store');
+            Route::get('/{invoice}', [AdminInvoiceController::class, 'show'])->name('show');
+            Route::post('/{invoice}/redeem', [AdminInvoiceController::class, 'redeem'])->name('redeem');
+            Route::post('/{invoice}/resend', [AdminInvoiceController::class, 'resend'])->name('resend');
+            Route::post('/{invoice}/cancel', [AdminInvoiceController::class, 'cancel'])->name('cancel');
+            Route::get('/{invoice}/document', [AdminInvoiceController::class, 'document'])->name('document');
         });
 
         // Sales (filtered by sold_by_id for current user)

@@ -823,6 +823,64 @@ export interface SaleItem {
   updated_at: string
 }
 
+// Invoice types
+export type InvoiceStatusValue = 'sent' | 'expired' | 'cancelled' | 'converted'
+
+export interface InvoiceItem {
+  id: number
+  device_id: number
+  item_description: string
+  unit_price: number | string
+  discount: number | string
+  tax_rate: number | string
+  tax: number | string
+  total_price: number | string
+  selling_price: number | string
+  cost_price?: number | string | null
+  profit_amount?: number | string | null
+  pricing_source?: string | null
+  product_specs?: Record<string, unknown> | null
+  device?: Device
+  subscription_plan?: SubscriptionPlan
+  created_at: string
+}
+
+export interface Invoice {
+  id: number
+  invoice_number: string
+  customer_id: number
+  recipient_email: string
+  branch_id: number | null
+  status: StatusObject<InvoiceStatusValue>
+  issued_at: string
+  expires_at: string
+  remaining_seconds: number
+  is_redeemable: boolean
+  vat_applicable: boolean
+  tax_rate: number | string
+  tax_label: string
+  tax_display: string
+  subtotal: number | string
+  tax_amount: number | string
+  discount_amount: number | string
+  total_amount: number | string
+  currency: string
+  notes: string | null
+  emailed_at?: string | null
+  redeemed_at?: string | null
+  cancelled_at?: string | null
+  cancellation_reason?: string | null
+  converted_sale_id?: number | null
+  items_count?: number
+  items?: InvoiceItem[]
+  customer?: User
+  branch?: Branch
+  created_by?: User
+  converted_sale?: Sale
+  created_at: string
+  updated_at: string
+}
+
 // Family types
 export type FamilyRoleValue = 'admin' | 'guardian' | 'member' | 'child'
 export type FamilyMemberStatusValue = 'pending' | 'active' | 'removed'

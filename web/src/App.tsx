@@ -37,6 +37,7 @@ const VerifyEmailPage = lazy(() => import('@/pages/auth/VerifyEmailPage'))
 const HomePage = lazy(() => import('@/pages/public/HomePage'))
 const AboutPage = lazy(() => import('@/pages/public/AboutPage'))
 const VacanciesPage = lazy(() => import('@/pages/public/VacanciesPage'))
+const InvoicePublicPage = lazy(() => import('@/pages/invoices/InvoicePublicPage'))
 
 const DashboardPage = lazy(() => import('@/pages/dashboard/DashboardPage'))
 const DevicesPage = lazy(() => import('@/pages/devices/DevicesPage'))
@@ -79,6 +80,7 @@ const AdminVacanciesPage = lazy(() => import('@/pages/admin/AdminVacanciesPage')
 const DeviceManagementPage = lazy(() => import('@/pages/management/DeviceManagementPage'))
 const IoTModulesPage = lazy(() => import('@/pages/management/IoTModulesPage'))
 const SalesPage = lazy(() => import('@/pages/sales/SalesPage'))
+const InvoicesPage = lazy(() => import('@/pages/invoices/InvoicesPage'))
 const AdminTrackingPage = lazy(() => import('@/pages/admin/AdminTrackingPage'))
 
 // Customer Service pages
@@ -140,6 +142,7 @@ function App() {
               <Route path="/" element={<HomePage />} />
               <Route path="/about" element={<AboutPage />} />
               <Route path="/vacancies" element={<VacanciesPage />} />
+              <Route path="/invoices/:token" element={<InvoicePublicPage />} />
             </Route>
 
             {/* Auth routes */}
@@ -192,6 +195,7 @@ function App() {
                 <Route path="/admin/inventory" element={<AdminInventoryPage />} />
                 <Route path="/admin/stock-movements" element={<AdminStockMovementsPage />} />
                 <Route path="/admin/sales" element={<SalesPage />} />
+                 <Route path="/admin/invoices" element={<InvoicesPage />} />
                 <Route path="/admin/shifts" element={<AdminShiftsPage />} />
                 <Route path="/admin/notifications" element={<NotificationsPage />} />
                 <Route path="/admin/theft-reports" element={<AdminTheftReportsPage />} />
@@ -214,6 +218,7 @@ function App() {
               <Route element={<CustomerServiceLayout />}>
                 <Route path="/customer-service" element={<CustomerServiceDashboard />} />
                 <Route path="/customer-service/sales" element={<CustomerServiceSalesPage />} />
+                 <Route path="/customer-service/invoices" element={<InvoicesPage />} />
                 <Route path="/customer-service/sales/new" element={<CustomerServiceNewSalePage />} />
                 <Route path="/customer-service/sales/:id" element={<CustomerServiceSaleDetailPage />} />
                 <Route path="/customer-service/devices" element={<CustomerServiceDevicesPage />} />

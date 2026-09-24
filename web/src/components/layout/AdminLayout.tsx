@@ -29,6 +29,7 @@ import {
   ArrowLeftRight,
   Building2,
   BriefcaseBusiness,
+  ReceiptText,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -54,6 +55,7 @@ const adminNavigation: NavItem[] = [
   { name: 'Product Catalog', href: '/admin/catalog', icon: Layers, allowedRoles: [ROLES.SUPER_ADMIN] },
   { name: 'Categories', href: '/admin/categories', icon: Grid3x3, allowedRoles: [ROLES.SUPER_ADMIN] },
   { name: 'Sales', href: '/admin/sales', icon: ShoppingCart },
+  { name: 'Invoices', href: '/admin/invoices', icon: ReceiptText },
   { name: 'Shifts', href: '/admin/shifts', icon: Clock, allowedRoles: [ROLES.SUPER_ADMIN, ROLES.STORE_ADMIN] },
   { name: 'Communications', href: '/admin/communications', icon: Bell, allowedRoles: [ROLES.SUPER_ADMIN] },
   { name: 'Vacancies', href: '/admin/vacancies', icon: BriefcaseBusiness, allowedRoles: [ROLES.SUPER_ADMIN] },

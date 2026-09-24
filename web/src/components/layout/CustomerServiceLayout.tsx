@@ -8,6 +8,7 @@ import {
   LogOut,
   Menu,
   User,
+  ReceiptText,
 } from 'lucide-react'
 import { useAuthStore } from '@/stores/auth-store'
 import { useLogout } from '@/hooks/useAuth'
@@ -32,6 +33,11 @@ export default function CustomerServiceLayout() {
       name: 'My Sales',
       path: '/customer-service/sales',
       icon: ShoppingCart,
+    },
+    {
+      name: 'Invoices',
+      path: '/customer-service/invoices',
+      icon: ReceiptText,
     },
     {
       name: 'Devices',
