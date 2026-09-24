@@ -303,7 +303,7 @@ export default function ProductDetailsModal({ product, branchId = '', branchLabe
         {/* Content */}
         <div className="flex-1 overflow-y-auto bg-slate-50">
           <div className="p-6">
-            <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="sticky top-0 z-20 -mx-6 mb-4 flex flex-col gap-3 border-b border-slate-200 bg-slate-50/95 px-6 py-3 shadow-sm backdrop-blur sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-center gap-2">
                 <h4 className="font-semibold text-slate-800 flex items-center gap-2">
                   <Barcode className="h-5 w-5 text-slate-400" />
