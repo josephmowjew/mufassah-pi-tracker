@@ -17,8 +17,18 @@ return new class extends Migration
             $table->enum('status', ['sent', 'expired', 'cancelled', 'converted'])->default('sent');
             $table->string('public_token', 80)->unique();
             $table->string('recipient_email');
-            $table->timestamp('issued_at');
-            $table->timestamp('expires_at');
+
+            // dateTime, not timestamp: production runs MariaDB 10.6 with
+            // explicit_defaults_for_timestamp=0. Under that setting a `timestamp`
+            // declared NOT NULL without an explicit DEFAULT is given the implicit
+            // zero-date default '0000-00-00 00:00:00', which strict mode rejects
+            // outright (SQLSTATE 42000 / error 1067 "Invalid default value for
+            // expires_at"). DATETIME carries no implicit zero-date default, so it
+            // creates cleanly on MariaDB and MySQL alike. The Invoice model casts
+            // both columns to 'datetime', so reads and writes are unchanged.
+            $table->dateTime('issued_at');
+            $table->dateTime('expires_at');
+
             $table->boolean('vat_applicable')->default(true);
             $table->decimal('tax_rate', 5, 2)->default(17.5);
             $table->string('tax_label', 40)->default('VAT');

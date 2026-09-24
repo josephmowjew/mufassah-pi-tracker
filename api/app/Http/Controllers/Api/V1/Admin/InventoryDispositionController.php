@@ -10,7 +10,6 @@ use App\Models\ActivityLog;
 use App\Models\Brand;
 use App\Models\Device;
 use App\Models\InventoryActionChallenge;
-use App\Models\InventoryMovement;
 use App\Models\ProductModel;
 use App\Services\CatalogDeletionImpactService;
 use App\Services\DeviceDeletionImpactService;
