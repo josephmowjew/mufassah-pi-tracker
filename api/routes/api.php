@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\V1\Admin\AdminInventoryController;
 use App\Http\Controllers\Api\V1\Admin\AdminInvoiceController;
 use App\Http\Controllers\Api\V1\Admin\AdminProductCatalogController;
 use App\Http\Controllers\Api\V1\Admin\AdminReportController;
+use App\Http\Controllers\Api\V1\Admin\AdminReportExportController;
 use App\Http\Controllers\Api\V1\Admin\AdminSaleController;
 use App\Http\Controllers\Api\V1\Admin\AdminShiftController;
 use App\Http\Controllers\Api\V1\Admin\AdminStockMovementController;
@@ -491,12 +492,16 @@ Route::middleware(['auth:sanctum', 'not.suspended'])->group(function () {
 
         // Reports
         Route::prefix('reports')->name('reports.')->group(function () {
+            Route::get('/sales', [AdminReportController::class, 'sales'])->name('sales');
             Route::get('/theft', [AdminReportController::class, 'theft'])->name('theft');
             Route::get('/revenue', [AdminReportController::class, 'revenue'])->name('revenue');
             Route::get('/devices', [AdminReportController::class, 'devices'])->name('devices');
             Route::get('/stock', [AdminReportController::class, 'stock'])->name('stock');
             Route::get('/subscriptions', [AdminReportController::class, 'subscriptions'])->name('subscriptions');
             Route::get('/users', [AdminReportController::class, 'users'])->name('users');
+
+            // Excel export — same scope parameters as the endpoints above.
+            Route::get('/export', AdminReportExportController::class)->name('export');
         });
 
         // Inventory management

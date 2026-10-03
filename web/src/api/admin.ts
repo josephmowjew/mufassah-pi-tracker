@@ -163,6 +163,39 @@ export interface AdminUserFilters {
   status?: string
 }
 
+/**
+ * Scope parameters shared by every report endpoint and the Excel exporter.
+ *
+ * Omitting `branch_id` asks for the global scope. Only a super admin can widen
+ * scope this way — branch-scoped admins are pinned server-side regardless.
+ */
+export interface ReportFilters {
+  from?: string
+  to?: string
+  branch_id?: string | number | null
+  all_branches?: boolean
+  group_by?: string
+}
+
+export type ReportType =
+  | 'sales'
+  | 'revenue'
+  | 'stock'
+  | 'devices'
+  | 'theft'
+  | 'subscriptions'
+  | 'users'
+
+export function reportQuery(filters: ReportFilters = {}): string {
+  const params = new URLSearchParams()
+  if (filters.from) params.append('from', filters.from)
+  if (filters.to) params.append('to', filters.to)
+  if (filters.branch_id) params.append('branch_id', String(filters.branch_id))
+  if (filters.all_branches) params.append('all_branches', '1')
+  if (filters.group_by) params.append('group_by', filters.group_by)
+  return params.toString()
+}
+
 export const adminApi = {
   // Dashboard
   getDashboardStats: async (filters: AdminDashboardFilters = {}): Promise<DashboardStats> => {
@@ -289,37 +322,65 @@ export const adminApi = {
   },
 
   // Reports
-  getUsersReport: async (params?: { from?: string; to?: string }): Promise<unknown> => {
-    const searchParams = new URLSearchParams()
-    if (params?.from) searchParams.append('from', params.from)
-    if (params?.to) searchParams.append('to', params.to)
-    const response = await apiClient.get(`/admin/reports/users?${searchParams}`)
+  getSalesReport: async (filters: ReportFilters = {}): Promise<unknown> => {
+    const response = await apiClient.get(`/admin/reports/sales?${reportQuery(filters)}`)
     return response.data
   },
 
-  getDevicesReport: async (params?: { from?: string; to?: string }): Promise<unknown> => {
-    const searchParams = new URLSearchParams()
-    if (params?.from) searchParams.append('from', params.from)
-    if (params?.to) searchParams.append('to', params.to)
-    const response = await apiClient.get(`/admin/reports/devices?${searchParams}`)
+  getUsersReport: async (filters: ReportFilters = {}): Promise<unknown> => {
+    const response = await apiClient.get(`/admin/reports/users?${reportQuery(filters)}`)
     return response.data
   },
 
-  getRevenueReport: async (params?: { from?: string; to?: string }): Promise<unknown> => {
-    const searchParams = new URLSearchParams()
-    if (params?.from) searchParams.append('from', params.from)
-    if (params?.to) searchParams.append('to', params.to)
-    const response = await apiClient.get(`/admin/reports/revenue?${searchParams}`)
+  getDevicesReport: async (filters: ReportFilters = {}): Promise<unknown> => {
+    const response = await apiClient.get(`/admin/reports/devices?${reportQuery(filters)}`)
     return response.data
   },
 
-  getTheftReport: async (params?: { from?: string; to?: string }): Promise<unknown> => {
-    const searchParams = new URLSearchParams()
-    if (params?.from) searchParams.append('from', params.from)
-    if (params?.to) searchParams.append('to', params.to)
-    const response = await apiClient.get(`/admin/reports/theft?${searchParams}`)
+  getRevenueReport: async (filters: ReportFilters = {}): Promise<unknown> => {
+    const response = await apiClient.get(`/admin/reports/revenue?${reportQuery(filters)}`)
     return response.data
   },
+
+  getTheftReport: async (filters: ReportFilters = {}): Promise<unknown> => {
+    const response = await apiClient.get(`/admin/reports/theft?${reportQuery(filters)}`)
+    return response.data
+  },
+
+  /**
+   * Download a report as an Excel workbook.
+   *
+   * Returns the blob and the server-chosen filename rather than saving directly,
+   * so the caller decides when the browser should write the file.
+   */
+  exportReport: async (
+    report: ReportType,
+    filters: ReportFilters = {}
+  ): Promise<{ blob: Blob; filename: string }> => {
+    const query = reportQuery(filters)
+    const response = await apiClient.get(
+      `/admin/reports/export?report=${report}${query ? `&${query}` : ''}`,
+      // Exports can be large; the client default of 10s is too tight.
+      { responseType: 'blob', timeout: 120000 }
+    )
+
+    return {
+      blob: response.data as Blob,
+      filename: filenameFromDisposition(response.headers['content-disposition'], report),
+    }
+  },
+}
+
+/** Pull the server-chosen filename out of a Content-Disposition header. */
+function filenameFromDisposition(header: unknown, fallback: string): string {
+  if (typeof header === 'string') {
+    const match = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(header)
+    if (match?.[1]) {
+      return decodeURIComponent(match[1])
+    }
+  }
+
+  return `mufassah-${fallback}-report.xlsx`
 }
 
 export default adminApi

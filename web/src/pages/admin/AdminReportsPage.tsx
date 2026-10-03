@@ -1,8 +1,71 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Download, Loader2, DollarSign, Smartphone, AlertTriangle, Users, TrendingUp, Wifi, CheckCircle, Package, Building2 } from 'lucide-react'
+import {
+  Loader2, DollarSign, Smartphone, Users, TrendingUp,
+  Wifi, CheckCircle, Package, Building2, FileSpreadsheet, Filter,
+} from 'lucide-react'
 import apiClient from '@/api/client'
+import { adminApi, reportQuery, type ReportFilters, type ReportType } from '@/api/admin'
 import { useAuthStore } from '@/stores/auth-store'
+
+interface ReportMeta {
+  from: string | null
+  to: string | null
+  branch_id: number | null
+  all_branches: boolean
+  scope_label: string
+  period_label: string
+}
+
+interface SalesData {
+  filters: ReportMeta
+  summary: {
+    pos_sales_count: number
+    pos_revenue: number
+    pos_gross_profit: number
+    administrative_sales_count: number
+    administrative_sale_value: number
+    administrative_sale_profit: number
+    combined_revenue: number
+    combined_gross_profit: number
+    average_sale_value: number
+    units_sold: number
+  }
+  by_branch: Array<{
+    branch_id: number | null
+    branch_name: string
+    branch_code: string | null
+    pos_sales_count: number
+    pos_revenue: number
+    pos_gross_profit: number
+    administrative_sale_value: number
+    combined_revenue: number
+    combined_gross_profit: number
+  }>
+  by_product: Array<{
+    product: string
+    category: string
+    units_sold: number
+    revenue: number
+    gross_profit: number
+  }>
+  by_day: Array<{
+    date: string
+    pos_sales_count: number
+    pos_revenue: number
+    administrative_sale_value: number
+    combined_revenue: number
+  }>
+  recent_sales: Array<{
+    sale_number: string
+    sale_date: string | null
+    branch_name: string
+    customer_name: string
+    total_amount: number
+    gross_profit: number
+    payment_method: string
+  }>
+}
 
 interface RevenueData {
   summary: {
@@ -11,7 +74,7 @@ interface RevenueData {
     average_transaction: number
   }
   by_period: Array<{ period: string; transactions: number; revenue: number }>
-  by_method: Record<string, { count: number; total: number }>
+  by_method: Record<string, { count: number; total: number; label?: string }>
   by_plan: Record<string, { count: number; total: number }>
 }
 
@@ -61,11 +124,7 @@ interface BranchOption {
 }
 
 interface StockData {
-  filters: {
-    from: string | null
-    to: string | null
-    branch_id: number | null
-  }
+  filters: ReportMeta
   summary: {
     current_total: number
     current_in_stock: number
@@ -133,55 +192,130 @@ interface StockData {
   }>
 }
 
+const EXPORT_OPTIONS: Array<{ value: ReportType; label: string }> = [
+  { value: 'sales', label: 'Sales report' },
+  { value: 'revenue', label: 'Revenue report' },
+  { value: 'stock', label: 'Stock report' },
+  { value: 'devices', label: 'Device report' },
+  { value: 'theft', label: 'Theft report' },
+  { value: 'subscriptions', label: 'Subscription report' },
+  { value: 'users', label: 'User report' },
+]
+
+/** Local-time `YYYY-MM-DD`; `toISOString()` would shift the day across UTC. */
+function toIsoDate(date: Date): string {
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${date.getFullYear()}-${month}-${day}`
+}
+
+function monthRange(offset: number): { from: string; to: string } {
+  const now = new Date()
+  return {
+    from: toIsoDate(new Date(now.getFullYear(), now.getMonth() + offset, 1)),
+    to: toIsoDate(new Date(now.getFullYear(), now.getMonth() + offset + 1, 0)),
+  }
+}
+
+function yearRange(): { from: string; to: string } {
+  const year = new Date().getFullYear()
+  return { from: `${year}-01-01`, to: `${year}-12-31` }
+}
+
+function quarterRange(): { from: string; to: string } {
+  const now = new Date()
+  const startMonth = Math.floor(now.getMonth() / 3) * 3
+  return {
+    from: toIsoDate(new Date(now.getFullYear(), startMonth, 1)),
+    to: toIsoDate(new Date(now.getFullYear(), startMonth + 3, 0)),
+  }
+}
+
+/** A failed download still arrives as a Blob, so unwrap the JSON error envelope. */
+async function describeExportError(error: unknown): Promise<string> {
+  const data = (error as { response?: { data?: unknown } })?.response?.data
+
+  if (data instanceof Blob) {
+    try {
+      const payload = JSON.parse(await data.text()) as {
+        message?: string
+        errors?: Record<string, string[]>
+      }
+      const first = payload?.errors ? Object.values(payload.errors).flat()[0] : undefined
+      if (first) return first
+      if (payload?.message) return payload.message
+    } catch {
+      // Not a JSON body — fall through to the generic message.
+    }
+  }
+
+  if (error instanceof Error && error.message) return error.message
+
+  return 'Export failed. Please try again.'
+}
+
 export default function AdminReportsPage() {
   const isSuperAdmin = useAuthStore((state) => state.isSuperAdmin())
-  const [period, setPeriod] = useState<'month' | 'year'>('month')
-  const [stockFrom, setStockFrom] = useState('')
-  const [stockTo, setStockTo] = useState('')
-  const [stockBranchId, setStockBranchId] = useState('')
 
-  const stockQuery = new URLSearchParams()
-  if (stockFrom) stockQuery.append('from', stockFrom)
-  if (stockTo) stockQuery.append('to', stockTo)
-  if (stockBranchId) stockQuery.append('branch_id', stockBranchId)
-  const stockQueryString = stockQuery.toString()
+  const [from, setFrom] = useState('')
+  const [to, setTo] = useState('')
+  const [branchId, setBranchId] = useState('')
+  const [groupBy, setGroupBy] = useState<'day' | 'week' | 'month' | 'year'>('month')
+
+  const [exportType, setExportType] = useState<ReportType>('sales')
+  const [exporting, setExporting] = useState(false)
+  const [exportError, setExportError] = useState<string | null>(null)
+
+  const filters = useMemo<ReportFilters>(
+    () => ({
+      from: from || undefined,
+      to: to || undefined,
+      branch_id: branchId || undefined,
+      // An explicit global request; the server ignores it for branch-scoped roles.
+      all_branches: isSuperAdmin && !branchId ? true : undefined,
+      group_by: groupBy,
+    }),
+    [from, to, branchId, groupBy, isSuperAdmin]
+  )
+
+  const query = reportQuery(filters)
+
+  const { data: salesData, isLoading: salesLoading } = useQuery({
+    queryKey: ['admin-reports-sales', query],
+    queryFn: async () => {
+      const response = await apiClient.get<{ success: boolean; data: SalesData }>(`/admin/reports/sales?${query}`)
+      return response.data.data
+    },
+  })
 
   const { data: revenueData, isLoading: revenueLoading } = useQuery({
-    queryKey: ['admin-reports-revenue', period],
+    queryKey: ['admin-reports-revenue', query],
     queryFn: async () => {
-      const response = await apiClient.get<{ success: boolean; data: RevenueData }>(
-        `/admin/reports/revenue?group_by=${period}`
-      )
+      const response = await apiClient.get<{ success: boolean; data: RevenueData }>(`/admin/reports/revenue?${query}`)
       return response.data.data
     },
   })
 
   const { data: devicesData, isLoading: devicesLoading } = useQuery({
-    queryKey: ['admin-reports-devices'],
+    queryKey: ['admin-reports-devices', query],
     queryFn: async () => {
-      const response = await apiClient.get<{ success: boolean; data: DevicesData }>(
-        '/admin/reports/devices'
-      )
+      const response = await apiClient.get<{ success: boolean; data: DevicesData }>(`/admin/reports/devices?${query}`)
       return response.data.data
     },
   })
 
   const { data: theftData, isLoading: theftLoading } = useQuery({
-    queryKey: ['admin-reports-theft'],
+    queryKey: ['admin-reports-theft', query],
     queryFn: async () => {
-      const response = await apiClient.get<{ success: boolean; data: TheftData }>(
-        '/admin/reports/theft'
-      )
+      const response = await apiClient.get<{ success: boolean; data: TheftData }>(`/admin/reports/theft?${query}`)
       return response.data.data
     },
   })
 
   const { data: usersData, isLoading: usersLoading } = useQuery({
-    queryKey: ['admin-reports-users'],
+    queryKey: ['admin-reports-users', query],
     queryFn: async () => {
-      const response = await apiClient.get<{ success: boolean; data: UsersData }>(
-        '/admin/reports/users'
-      )
+      const response = await apiClient.get<{ success: boolean; data: UsersData }>(`/admin/reports/users?${query}`)
       return response.data.data
     },
   })
@@ -192,14 +326,13 @@ export default function AdminReportsPage() {
       const response = await apiClient.get<{ data: BranchOption[] }>('/admin/branches')
       return response.data.data
     },
+    enabled: isSuperAdmin,
   })
 
   const { data: stockData, isLoading: stockLoading } = useQuery({
-    queryKey: ['admin-reports-stock', stockFrom, stockTo, stockBranchId],
+    queryKey: ['admin-reports-stock', query],
     queryFn: async () => {
-      const response = await apiClient.get<{ success: boolean; data: StockData }>(
-        `/admin/reports/stock${stockQueryString ? `?${stockQueryString}` : ''}`
-      )
+      const response = await apiClient.get<{ success: boolean; data: StockData }>(`/admin/reports/stock?${query}`)
       return response.data.data
     },
   })
@@ -213,30 +346,174 @@ export default function AdminReportsPage() {
     return `${days} ${days === 1 ? 'day' : 'days'}`
   }
 
-  const isLoading = revenueLoading || devicesLoading || theftLoading || usersLoading || stockLoading
+  const isLoading = salesLoading || revenueLoading || devicesLoading || theftLoading || usersLoading || stockLoading
+
+  const applyPreset = (range: { from: string; to: string } | null) => {
+    setFrom(range?.from ?? '')
+    setTo(range?.to ?? '')
+  }
+
+  const handleExport = async () => {
+    setExporting(true)
+    setExportError(null)
+
+    try {
+      const { blob, filename } = await adminApi.exportReport(exportType, filters)
+
+      // A failed request can still resolve as a Blob; detect the JSON envelope.
+      if (blob.type.includes('json')) {
+        throw new Error(await describeExportError({ response: { data: blob } }))
+      }
+
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = filename
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      URL.revokeObjectURL(url)
+    } catch (error) {
+      setExportError(await describeExportError(error))
+    } finally {
+      setExporting(false)
+    }
+  }
+
+  const scopeLabel = salesData?.filters.scope_label ?? stockData?.filters.scope_label
+  const periodLabel = salesData?.filters.period_label ?? stockData?.filters.period_label
 
   return (
     <div className="space-y-6">
       {/* Page Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-slate-800" style={{ fontFamily: 'var(--font-heading)' }}>
-            Reports & Analytics
+            Reports &amp; Analytics
           </h1>
-          <p className="text-slate-500 text-sm mt-1">Comprehensive overview of system metrics</p>
+          <p className="text-slate-500 text-sm mt-1">
+            {scopeLabel && periodLabel
+              ? `${scopeLabel} · ${periodLabel}`
+              : 'Comprehensive overview of system metrics'}
+          </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <select
+            aria-label="Report to export"
             className="px-4 py-2.5 rounded-lg border border-slate-200 bg-white text-sm text-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-colors"
-            value={period}
-            onChange={(e) => setPeriod(e.target.value as 'month' | 'year')}
+            value={exportType}
+            onChange={(event) => setExportType(event.target.value as ReportType)}
           >
-            <option value="month">Monthly</option>
-            <option value="year">Yearly</option>
+            {EXPORT_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
           </select>
-          <button className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-100 text-slate-600 text-sm font-medium hover:bg-slate-200 transition-colors">
-            <Download className="h-4 w-4" />
-            Export
+          <button
+            type="button"
+            onClick={handleExport}
+            disabled={exporting}
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
+          >
+            {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSpreadsheet className="h-4 w-4" />}
+            {exporting ? 'Preparing…' : 'Export to Excel'}
+          </button>
+        </div>
+      </div>
+
+      {exportError && (
+        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {exportError}
+        </div>
+      )}
+
+      {/* Filters */}
+      <div className="bg-white rounded-xl border border-slate-200/60 shadow-sm p-5">
+        <div className="flex items-center gap-2 mb-4">
+          <Filter className="h-4 w-4 text-slate-500" />
+          <h2 className="text-sm font-semibold text-slate-700">Report filters</h2>
+          <span className="text-xs text-slate-400">Applies to every section and to the export</span>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          <div>
+            <label className="block text-xs font-medium text-slate-500 mb-1">From</label>
+            <input
+              type="date"
+              value={from}
+              onChange={(event) => setFrom(event.target.value)}
+              className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-white text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-500 mb-1">To</label>
+            <input
+              type="date"
+              value={to}
+              onChange={(event) => setTo(event.target.value)}
+              className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-white text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+            />
+          </div>
+          {isSuperAdmin ? (
+            <div>
+              <label className="block text-xs font-medium text-slate-500 mb-1">Branch</label>
+              <select
+                value={branchId}
+                onChange={(event) => setBranchId(event.target.value)}
+                className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-white text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+              >
+                <option value="">All branches</option>
+                {branches?.map((branch) => (
+                  <option key={branch.id} value={branch.id}>
+                    {branch.name}{branch.code ? ` (${branch.code})` : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : (
+            <div>
+              <label className="block text-xs font-medium text-slate-500 mb-1">Branch</label>
+              <div className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-slate-50 text-sm text-slate-500">
+                Your assigned branch
+              </div>
+            </div>
+          )}
+          <div>
+            <label className="block text-xs font-medium text-slate-500 mb-1">Group by</label>
+            <select
+              value={groupBy}
+              onChange={(event) => setGroupBy(event.target.value as 'day' | 'week' | 'month' | 'year')}
+              className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-white text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+            >
+              <option value="day">Day</option>
+              <option value="week">Week</option>
+              <option value="month">Month</option>
+              <option value="year">Year</option>
+            </select>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap gap-2 mt-4">
+          {[
+            { label: 'This month', range: () => monthRange(0) },
+            { label: 'Last month', range: () => monthRange(-1) },
+            { label: 'This quarter', range: quarterRange },
+            { label: 'This year', range: yearRange },
+          ].map((preset) => (
+            <button
+              key={preset.label}
+              type="button"
+              onClick={() => applyPreset(preset.range())}
+              className="px-3 py-1.5 rounded-lg bg-slate-100 text-slate-600 text-xs font-medium hover:bg-slate-200 transition-colors"
+            >
+              {preset.label}
+            </button>
+          ))}
+          <button
+            type="button"
+            onClick={() => applyPreset(null)}
+            className="px-3 py-1.5 rounded-lg bg-slate-100 text-slate-600 text-xs font-medium hover:bg-slate-200 transition-colors"
+          >
+            All time
           </button>
         </div>
       </div>
@@ -255,7 +532,18 @@ export default function AdminReportsPage() {
                   <DollarSign className="h-6 w-6 text-white" />
                 </div>
                 <div>
-                  <p className="text-sm text-slate-500">Total Revenue</p>
+                  <p className="text-sm text-slate-500">Device sales</p>
+                  <p className="text-xl font-bold text-slate-800">{formatCurrency(salesData?.summary.combined_revenue || 0)}</p>
+                </div>
+              </div>
+            </div>
+            <div className="bg-white rounded-xl border border-slate-200/60 p-5 shadow-sm">
+              <div className="flex items-center gap-4">
+                <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-violet-400 to-violet-600 flex items-center justify-center">
+                  <TrendingUp className="h-6 w-6 text-white" />
+                </div>
+                <div>
+                  <p className="text-sm text-slate-500">Subscription revenue</p>
                   <p className="text-xl font-bold text-slate-800">{formatCurrency(revenueData?.summary.total_revenue || 0)}</p>
                 </div>
               </div>
@@ -273,17 +561,6 @@ export default function AdminReportsPage() {
             </div>
             <div className="bg-white rounded-xl border border-slate-200/60 p-5 shadow-sm">
               <div className="flex items-center gap-4">
-                <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-red-400 to-red-600 flex items-center justify-center">
-                  <AlertTriangle className="h-6 w-6 text-white" />
-                </div>
-                <div>
-                  <p className="text-sm text-slate-500">Theft Reports</p>
-                  <p className="text-xl font-bold text-slate-800">{theftData?.summary.total || 0}</p>
-                </div>
-              </div>
-            </div>
-            <div className="bg-white rounded-xl border border-slate-200/60 p-5 shadow-sm">
-              <div className="flex items-center gap-4">
                 <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-slate-400 to-slate-600 flex items-center justify-center">
                   <Users className="h-6 w-6 text-white" />
                 </div>
@@ -295,52 +572,158 @@ export default function AdminReportsPage() {
             </div>
           </div>
 
+          {/* Sales Report */}
+          <div className="bg-white rounded-xl border border-slate-200/60 shadow-sm">
+            <div className="p-5 border-b border-slate-200/60">
+              <h2 className="text-base font-semibold text-slate-800" style={{ fontFamily: 'var(--font-heading)' }}>
+                Sales Report
+              </h2>
+              <p className="text-sm text-slate-500 mt-1">
+                Completed POS device sales plus administrative sales for the selected scope and period
+              </p>
+            </div>
+
+            <div className="p-5 space-y-5">
+              <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+                <div className="p-4 bg-slate-50 rounded-xl">
+                  <p className="text-xs text-slate-500 font-medium">POS Sales</p>
+                  <p className="text-2xl font-bold text-slate-800">{salesData?.summary.pos_sales_count || 0}</p>
+                </div>
+                <div className="p-4 bg-emerald-50 rounded-xl">
+                  <p className="text-xs text-emerald-600 font-medium">POS Revenue</p>
+                  <p className="text-lg font-bold text-emerald-700">{formatCurrency(salesData?.summary.pos_revenue || 0)}</p>
+                </div>
+                <div className="p-4 bg-teal-50 rounded-xl">
+                  <p className="text-xs text-teal-600 font-medium">Gross Profit</p>
+                  <p className="text-lg font-bold text-teal-700">{formatCurrency(salesData?.summary.pos_gross_profit || 0)}</p>
+                </div>
+                <div className="p-4 bg-violet-50 rounded-xl">
+                  <p className="text-xs text-violet-600 font-medium">Administrative</p>
+                  <p className="text-lg font-bold text-violet-700">{formatCurrency(salesData?.summary.administrative_sale_value || 0)}</p>
+                </div>
+                <div className="p-4 bg-blue-50 rounded-xl">
+                  <p className="text-xs text-blue-600 font-medium">Combined Revenue</p>
+                  <p className="text-lg font-bold text-blue-700">{formatCurrency(salesData?.summary.combined_revenue || 0)}</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
+                <div>
+                  <div className="flex items-center gap-2 mb-3">
+                    <Building2 className="h-4 w-4 text-slate-500" />
+                    <h3 className="text-sm font-semibold text-slate-700">Sales by branch</h3>
+                  </div>
+                  <div className="overflow-x-auto rounded-lg border border-slate-200">
+                    <table className="min-w-full divide-y divide-slate-200 text-sm">
+                      <thead className="bg-slate-50">
+                        <tr>
+                          <th className="px-3 py-2 text-left font-medium text-slate-500">Branch</th>
+                          <th className="px-3 py-2 text-right font-medium text-slate-500">Sales</th>
+                          <th className="px-3 py-2 text-right font-medium text-slate-500">Revenue</th>
+                          <th className="px-3 py-2 text-right font-medium text-slate-500">Profit</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {salesData?.by_branch.length ? salesData.by_branch.map((branch) => (
+                          <tr key={`${branch.branch_id ?? 'none'}-${branch.branch_name}`}>
+                            <td className="px-3 py-2 text-slate-700">{branch.branch_name}</td>
+                            <td className="px-3 py-2 text-right text-slate-700">{branch.pos_sales_count}</td>
+                            <td className="px-3 py-2 text-right text-slate-700">{formatCurrency(branch.combined_revenue)}</td>
+                            <td className="px-3 py-2 text-right text-slate-700">{formatCurrency(branch.combined_gross_profit)}</td>
+                          </tr>
+                        )) : (
+                          <tr>
+                            <td colSpan={4} className="px-3 py-8 text-center text-slate-400">No sales in this period</td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                <div>
+                  <div className="flex items-center gap-2 mb-3">
+                    <Package className="h-4 w-4 text-slate-500" />
+                    <h3 className="text-sm font-semibold text-slate-700">Sales by product</h3>
+                  </div>
+                  <div className="overflow-x-auto rounded-lg border border-slate-200">
+                    <table className="min-w-full divide-y divide-slate-200 text-sm">
+                      <thead className="bg-slate-50">
+                        <tr>
+                          <th className="px-3 py-2 text-left font-medium text-slate-500">Product</th>
+                          <th className="px-3 py-2 text-right font-medium text-slate-500">Units</th>
+                          <th className="px-3 py-2 text-right font-medium text-slate-500">Revenue</th>
+                          <th className="px-3 py-2 text-right font-medium text-slate-500">Profit</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {salesData?.by_product.length ? salesData.by_product.slice(0, 10).map((product, index) => (
+                          <tr key={`${product.product}-${index}`}>
+                            <td className="px-3 py-2 text-slate-700">
+                              <div className="font-medium">{product.product}</div>
+                              <div className="text-xs text-slate-400">{product.category}</div>
+                            </td>
+                            <td className="px-3 py-2 text-right text-slate-700">{product.units_sold}</td>
+                            <td className="px-3 py-2 text-right text-slate-700">{formatCurrency(product.revenue)}</td>
+                            <td className="px-3 py-2 text-right text-slate-700">{formatCurrency(product.gross_profit)}</td>
+                          </tr>
+                        )) : (
+                          <tr>
+                            <td colSpan={4} className="px-3 py-8 text-center text-slate-400">No product sales in this period</td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <h3 className="text-sm font-semibold text-slate-700 mb-3">Recent sales</h3>
+                <div className="overflow-x-auto rounded-lg border border-slate-200">
+                  <table className="min-w-full divide-y divide-slate-200 text-sm">
+                    <thead className="bg-slate-50">
+                      <tr>
+                        <th className="px-3 py-2 text-left font-medium text-slate-500">Sale</th>
+                        <th className="px-3 py-2 text-left font-medium text-slate-500">Date</th>
+                        <th className="px-3 py-2 text-left font-medium text-slate-500">Branch</th>
+                        <th className="px-3 py-2 text-left font-medium text-slate-500">Customer</th>
+                        <th className="px-3 py-2 text-right font-medium text-slate-500">Total</th>
+                        <th className="px-3 py-2 text-right font-medium text-slate-500">Profit</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {salesData?.recent_sales.length ? salesData.recent_sales.slice(0, 15).map((sale) => (
+                        <tr key={sale.sale_number}>
+                          <td className="px-3 py-2 font-medium text-slate-700">{sale.sale_number}</td>
+                          <td className="px-3 py-2 text-slate-600">{sale.sale_date || '—'}</td>
+                          <td className="px-3 py-2 text-slate-600">{sale.branch_name}</td>
+                          <td className="px-3 py-2 text-slate-600">{sale.customer_name}</td>
+                          <td className="px-3 py-2 text-right text-slate-700">{formatCurrency(sale.total_amount)}</td>
+                          <td className="px-3 py-2 text-right text-slate-700">{formatCurrency(sale.gross_profit)}</td>
+                        </tr>
+                      )) : (
+                        <tr>
+                          <td colSpan={6} className="px-3 py-8 text-center text-slate-400">No sales in this period</td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+                <p className="text-xs text-slate-400 mt-2">
+                  Showing the 15 most recent. Export to Excel for the full list.
+                </p>
+              </div>
+            </div>
+          </div>
+
           {/* Stock Report */}
           <div className="bg-white rounded-xl border border-slate-200/60 shadow-sm">
             <div className="p-5 border-b border-slate-200/60">
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-                <div>
-                  <h2 className="text-base font-semibold text-slate-800" style={{ fontFamily: 'var(--font-heading)' }}>
-                    Stock Report
-                  </h2>
-                  <p className="text-sm text-slate-500 mt-1">Current inventory, received stock, and sold stock by branch and date range</p>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 lg:min-w-[620px]">
-                  <div>
-                    <label className="block text-xs font-medium text-slate-500 mb-1">From</label>
-                    <input
-                      type="date"
-                      value={stockFrom}
-                      onChange={(event) => setStockFrom(event.target.value)}
-                      className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-white text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-slate-500 mb-1">To</label>
-                    <input
-                      type="date"
-                      value={stockTo}
-                      onChange={(event) => setStockTo(event.target.value)}
-                      className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-white text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
-                    />
-                  </div>
-                  {isSuperAdmin && <div>
-                    <label className="block text-xs font-medium text-slate-500 mb-1">Branch</label>
-                    <select
-                      value={stockBranchId}
-                      onChange={(event) => setStockBranchId(event.target.value)}
-                      className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-white text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
-                    >
-                      <option value="">All Branches</option>
-                      {branches?.map((branch) => (
-                        <option key={branch.id} value={branch.id}>
-                          {branch.name}{branch.code ? ` (${branch.code})` : ''}
-                        </option>
-                      ))}
-                    </select>
-                  </div>}
-                </div>
-              </div>
+              <h2 className="text-base font-semibold text-slate-800" style={{ fontFamily: 'var(--font-heading)' }}>
+                Stock Report
+              </h2>
+              <p className="text-sm text-slate-500 mt-1">Current inventory, received stock, and sold stock by branch and date range</p>
             </div>
 
             <div className="p-5 space-y-5">
@@ -518,11 +901,11 @@ export default function AdminReportsPage() {
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Revenue Overview */}
+            {/* Subscription Revenue */}
             <div className="bg-white rounded-xl border border-slate-200/60 shadow-sm">
               <div className="p-5 border-b border-slate-200/60">
                 <h2 className="text-base font-semibold text-slate-800" style={{ fontFamily: 'var(--font-heading)' }}>
-                  Revenue Overview
+                  Subscription Revenue
                 </h2>
               </div>
               <div className="p-5 space-y-4">
