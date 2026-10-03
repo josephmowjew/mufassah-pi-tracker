@@ -6,20 +6,24 @@ use App\Enums\InvoiceStatus;
 use App\Enums\PaymentMethod;
 use App\Http\Controllers\Api\V1\BaseController;
 use App\Http\Resources\InvoiceResource;
+use App\Models\InventoryActionChallenge;
 use App\Models\Invoice;
 use App\Notifications\InvoiceEmailNotification;
+use App\Services\InventoryActionApprovalService;
 use App\Services\InvoiceDocumentService;
 use App\Services\InvoiceService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class AdminInvoiceController extends BaseController
 {
     public function __construct(
         private readonly InvoiceService $invoiceService,
         private readonly InvoiceDocumentService $documentService,
+        private readonly InventoryActionApprovalService $approvalService,
     ) {}
 
     public function index(Request $request): JsonResponse
@@ -163,13 +167,48 @@ class AdminInvoiceController extends BaseController
     {
         $this->authorizeInvoice($request, $invoice);
         $validated = $request->validate([
-            'reason' => ['nullable', 'string', 'max:1000'],
+            'reason' => ['required', 'string', 'max:1000'],
         ]);
 
-        $invoice = $this->invoiceService->cancel($invoice, $request->user(), $validated['reason'] ?? null);
-        $invoice->load(['customer', 'branch', 'createdBy', 'items.device.category']);
+        if ($invoice->status !== InvoiceStatus::SENT) {
+            throw ValidationException::withMessages([
+                'invoice' => ['Only an active invoice can be cancelled.'],
+            ]);
+        }
 
-        return $this->success(new InvoiceResource($invoice), 'Invoice cancelled successfully');
+        if ($invoice->isExpired()) {
+            $this->invoiceService->expireIfNeeded($invoice, $request->user());
+            throw ValidationException::withMessages([
+                'invoice' => ['This invoice has already expired and cannot be cancelled.'],
+            ]);
+        }
+
+        $items = $invoice->items()->with('device')->get();
+        $firstDevice = $items->first()?->device;
+        if (! $firstDevice) {
+            throw ValidationException::withMessages([
+                'invoice' => ['This invoice has no devices to release.'],
+            ]);
+        }
+
+        $challenge = $this->approvalService->create(
+            $request->user(),
+            InventoryActionChallenge::ACTION_INVOICE_CANCELLATION,
+            [
+                'invoice_id' => $invoice->id,
+                'invoice_number' => $invoice->invoice_number,
+                'reason' => $validated['reason'],
+                'device_ids' => $items->pluck('device_id')->map(fn ($id) => (int) $id)->all(),
+            ],
+            $firstDevice,
+            "Invoice {$invoice->invoice_number}",
+        );
+
+        return $this->success(
+            $this->challengeData($challenge),
+            'A verification PIN was sent by email and is available securely in notifications.',
+            202,
+        );
     }
 
     public function document(Request $request, Invoice $invoice): mixed
@@ -187,6 +226,20 @@ class AdminInvoiceController extends BaseController
         }
 
         return $this->documentService->generatePdf($invoice);
+    }
+
+    private function challengeData(InventoryActionChallenge $challenge): array
+    {
+        $challenge->loadMissing('requestedBy');
+
+        return [
+            'challenge_id' => $challenge->id,
+            'action' => $challenge->action,
+            'masked_email' => $this->approvalService->maskedEmail($this->approvalService->approvalEmail()),
+            'expires_at' => $challenge->expires_at?->toIso8601String(),
+            'attempts_remaining' => max(0, $challenge->max_attempts - $challenge->attempts),
+            'device_count' => count((array) ($challenge->payload['device_ids'] ?? [])),
+        ];
     }
 
     private function authorizeInvoice(Request $request, Invoice $invoice): void

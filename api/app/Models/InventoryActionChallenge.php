@@ -18,6 +18,8 @@ class InventoryActionChallenge extends Model
 
     public const ACTION_BRAND_DELETION = 'brand_deletion';
 
+    public const ACTION_INVOICE_CANCELLATION = 'invoice_cancellation';
+
     protected $fillable = [
         'requested_by_id',
         'action',

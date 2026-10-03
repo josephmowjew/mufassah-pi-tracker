@@ -17,6 +17,7 @@ import {
 } from 'lucide-react'
 import apiClient from '@/api/client'
 import { devicesApi } from '@/api/devices'
+import ActionChallengePinModal, { type ActionChallengeInfo } from '@/components/admin/ActionChallengePinModal'
 import { toast } from 'sonner'
 import type { Branch, Invoice, ProductOptions, User as UserType } from '@/types'
 
@@ -70,6 +71,7 @@ export default function InvoicesPage() {
   const basePath = isCustomerService ? '/customer-service' : '/admin'
   const customersPath = isCustomerService ? '/customer-service/customers' : '/admin/users'
   const optionsPath = isCustomerService ? '/customer-service/inventory/product-options' : '/admin/inventory/product-options'
+  const actionChallengePath = isCustomerService ? '/customer-service/action-challenges' : '/admin/action-challenges'
 
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState('')
@@ -77,6 +79,10 @@ export default function InvoicesPage() {
   const [showCreate, setShowCreate] = useState(false)
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null)
   const [invoiceToRedeem, setInvoiceToRedeem] = useState<Invoice | null>(null)
+  const [invoiceToCancel, setInvoiceToCancel] = useState<Invoice | null>(null)
+  const [cancelReason, setCancelReason] = useState('')
+  const [cancellationChallenge, setCancellationChallenge] = useState<ActionChallengeInfo | null>(null)
+  const [pinError, setPinError] = useState<string | null>(null)
   const [paymentMethod, setPaymentMethod] = useState('cash')
   const [paymentAmount, setPaymentAmount] = useState('')
   const [paymentReference, setPaymentReference] = useState('')
@@ -224,6 +230,59 @@ export default function InvoicesPage() {
     },
     onError: (error: Error & { response?: { data?: { message?: string } } }) => {
       toast.error(error.response?.data?.message || error.message || 'Failed to issue invoice')
+    },
+  })
+
+  const requestCancelMutation = useMutation({
+    mutationFn: async () => {
+      if (!invoiceToCancel) throw new Error('Select an invoice to cancel.')
+      if (!cancelReason.trim()) throw new Error('A cancellation reason is required.')
+      const response = await apiClient.post<{ data: ActionChallengeInfo }>(`${basePath}/invoices/${invoiceToCancel.id}/cancel`, {
+        reason: cancelReason.trim(),
+      })
+      return response.data.data
+    },
+    onSuccess: (challenge) => {
+      setInvoiceToCancel(null)
+      setCancelReason('')
+      setPinError(null)
+      setCancellationChallenge(challenge)
+    },
+    onError: (error: Error & { response?: { data?: { message?: string } } }) => {
+      toast.error(error.response?.data?.message || error.message || 'Failed to request cancellation PIN')
+    },
+  })
+
+  const verifyCancellationMutation = useMutation({
+    mutationFn: async ({ challengeId, pin }: { challengeId: number; pin: string }) => {
+      const response = await apiClient.post<{ data: Invoice }>(`${actionChallengePath}/${challengeId}/verify`, { pin })
+      return response.data.data
+    },
+    onSuccess: (invoice) => {
+      setCancellationChallenge(null)
+      setPinError(null)
+      setSelectedInvoice(invoice)
+      queryClient.invalidateQueries({ queryKey: ['invoices'] })
+      queryClient.invalidateQueries({ queryKey: ['invoice-product-options'] })
+      toast.success(`Invoice ${invoice.invoice_number} cancelled`)
+    },
+    onError: (error: Error & { response?: { data?: { message?: string } } }) => {
+      setPinError(error.response?.data?.message || 'PIN verification failed.')
+    },
+  })
+
+  const resendCancellationPinMutation = useMutation({
+    mutationFn: async (challengeId: number) => {
+      const response = await apiClient.post<{ data: ActionChallengeInfo }>(`${actionChallengePath}/${challengeId}/resend`)
+      return response.data.data
+    },
+    onSuccess: (challenge) => {
+      setCancellationChallenge(challenge)
+      setPinError(null)
+      toast.success('A new cancellation PIN was sent')
+    },
+    onError: (error: Error & { response?: { data?: { message?: string } } }) => {
+      setPinError(error.response?.data?.message || 'Failed to resend the cancellation PIN.')
     },
   })
 
@@ -435,6 +494,7 @@ export default function InvoicesPage() {
                       <button onClick={() => loadInvoice(invoice)} className="text-teal-600 hover:text-teal-800" title="View invoice"><FileText className="h-4 w-4" /></button>
                       <button onClick={() => resendMutation.mutate(invoice.id)} disabled={resendMutation.isPending} className="text-slate-600 hover:text-slate-900 disabled:opacity-50" title="Resend email"><Mail className="h-4 w-4" /></button>
                       <button onClick={() => downloadInvoice(invoice)} className="text-slate-600 hover:text-slate-900" title="Download PDF"><Printer className="h-4 w-4" /></button>
+                      {invoice.status.value === 'sent' && invoice.is_redeemable && <button onClick={() => { setInvoiceToCancel(invoice); setCancelReason(''); setPinError(null) }} className="text-red-600 hover:text-red-800" title="Cancel invoice"><XCircle className="h-4 w-4" /></button>}
                       {invoice.status.value === 'sent' && <button onClick={() => { setInvoiceToRedeem(invoice); setPaymentAmount(String(invoice.total_amount)); setPaymentMethod('cash') }} className="text-emerald-600 hover:text-emerald-800" title="Redeem invoice"><CheckCircle2 className="h-4 w-4" /></button>}
                     </div></td>
                   </tr>
@@ -445,6 +505,9 @@ export default function InvoicesPage() {
         )}
         {meta && meta.last_page > 1 && <div className="flex items-center justify-between border-t border-slate-200 px-6 py-4 text-sm text-slate-500"><span>Page {meta.current_page} of {meta.last_page}</span><div className="flex gap-2"><button disabled={page <= 1} onClick={() => setPage((value) => value - 1)} className="rounded-lg border border-slate-200 px-3 py-1 disabled:opacity-50">Previous</button><button disabled={page >= meta.last_page} onClick={() => setPage((value) => value + 1)} className="rounded-lg border border-slate-200 px-3 py-1 disabled:opacity-50">Next</button></div></div>}
       </div>
+
+      {invoiceToCancel && <CancelInvoiceModal invoice={invoiceToCancel} reason={cancelReason} isPending={requestCancelMutation.isPending} onChange={setCancelReason} onClose={() => setInvoiceToCancel(null)} onSubmit={() => requestCancelMutation.mutate()} />}
+      {cancellationChallenge && <ActionChallengePinModal challenge={cancellationChallenge} title="Cancel invoice" description={`Cancel ${cancellationChallenge.action === 'invoice_cancellation' ? 'this price-locked invoice' : 'the invoice'} and release its reserved devices.`} error={pinError} isVerifying={verifyCancellationMutation.isPending} isResending={resendCancellationPinMutation.isPending} onVerify={(pin) => verifyCancellationMutation.mutate({ challengeId: cancellationChallenge.challenge_id, pin })} onResend={() => resendCancellationPinMutation.mutate(cancellationChallenge.challenge_id)} onClose={() => { setCancellationChallenge(null); setPinError(null) }} />}
 
       {showNewCustomer && <NewCustomerModal form={newCustomerForm} errors={newCustomerErrors} isPending={createCustomerMutation.isPending} onChange={(field, value) => { setNewCustomerForm((current) => ({ ...current, [field]: value })); if (newCustomerErrors[field]) setNewCustomerErrors((current) => ({ ...current, [field]: undefined })) }} onClose={() => setShowNewCustomer(false)} onSubmit={() => createCustomerMutation.mutate()} />}
 
@@ -484,16 +547,20 @@ export default function InvoicesPage() {
         </div>
       )}
 
-      {selectedInvoice && <InvoiceDetails invoice={selectedInvoice} onClose={() => setSelectedInvoice(null)} onDownload={() => downloadInvoice(selectedInvoice)} onRedeem={() => { setInvoiceToRedeem(selectedInvoice); setPaymentAmount(String(selectedInvoice.total_amount)); setPaymentMethod('cash') }} />}
+      {selectedInvoice && <InvoiceDetails invoice={selectedInvoice} onClose={() => setSelectedInvoice(null)} onDownload={() => downloadInvoice(selectedInvoice)} onRedeem={() => { setInvoiceToRedeem(selectedInvoice); setPaymentAmount(String(selectedInvoice.total_amount)); setPaymentMethod('cash') }} onCancel={() => { setInvoiceToCancel(selectedInvoice); setCancelReason(''); setPinError(null) }} />}
       {invoiceToRedeem && <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4"><div className="w-full max-w-md rounded-xl bg-white shadow-xl"><div className="flex items-center justify-between border-b border-slate-200 px-5 py-4"><div><h2 className="font-semibold text-slate-900">Redeem {invoiceToRedeem.invoice_number}</h2><p className="text-xs text-slate-500">Frozen total: {formatMoney(invoiceToRedeem.total_amount)}</p></div><button onClick={() => setInvoiceToRedeem(null)} className="text-slate-400"><X className="h-5 w-5" /></button></div><div className="space-y-4 p-5"><div><label className="mb-1 block text-sm font-medium text-slate-700">Payment method</label><select value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"><option value="cash">Cash</option><option value="mobile_money">Mobile Money</option><option value="card">Card</option><option value="bank_transfer">Bank Transfer</option><option value="credit">Credit / On Account</option></select></div>{paymentMethod === 'cash' && <div><label className="mb-1 block text-sm font-medium text-slate-700">Amount paid</label><input type="number" min="0" step="0.01" value={paymentAmount} onChange={(event) => setPaymentAmount(event.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" /></div>}<div><label className="mb-1 block text-sm font-medium text-slate-700">Payment reference (optional)</label><input value={paymentReference} onChange={(event) => setPaymentReference(event.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" /></div><div className="flex justify-end gap-2"><button onClick={() => setInvoiceToRedeem(null)} className="rounded-lg border border-slate-200 px-4 py-2 text-sm">Cancel</button><button onClick={() => redeemMutation.mutate()} disabled={redeemMutation.isPending || (paymentMethod === 'cash' && Number(paymentAmount) < Number(invoiceToRedeem.total_amount))} className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50">{redeemMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}Redeem invoice</button></div></div></div></div>}
     </div>
   )
+}
+
+function CancelInvoiceModal({ invoice, reason, isPending, onChange, onClose, onSubmit }: { invoice: Invoice; reason: string; isPending: boolean; onChange: (value: string) => void; onClose: () => void; onSubmit: () => void }) {
+  return <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4"><div className="w-full max-w-md rounded-xl bg-white shadow-xl"><div className="flex items-center justify-between border-b border-slate-200 px-5 py-4"><div><h2 className="font-semibold text-slate-900">Cancel {invoice.invoice_number}</h2><p className="text-xs text-slate-500">The reserved devices will be released after PIN verification.</p></div><button type="button" onClick={onClose} className="text-slate-400 hover:text-slate-600"><X className="h-5 w-5" /></button></div><form onSubmit={(event) => { event.preventDefault(); onSubmit() }} className="space-y-4 p-5"><div className="rounded-lg bg-red-50 p-3 text-sm text-red-800"><p className="font-medium">This invoice will be permanently cancelled.</p><p className="mt-1 text-xs">A six-digit verification PIN will be sent before the cancellation is applied.</p></div><div><label htmlFor="invoice-cancel-reason" className="mb-1 block text-sm font-medium text-slate-700">Cancellation reason <span className="text-red-500">*</span></label><textarea id="invoice-cancel-reason" required value={reason} onChange={(event) => onChange(event.target.value)} rows={4} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20" placeholder="Explain why this invoice is being cancelled" /></div><div className="flex justify-end gap-2 pt-2"><button type="button" onClick={onClose} className="rounded-lg border border-slate-200 px-4 py-2 text-sm">Keep invoice</button><button type="submit" disabled={isPending || !reason.trim()} className="inline-flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50">{isPending && <Loader2 className="h-4 w-4 animate-spin" />}Request cancellation PIN</button></div></form></div></div>
 }
 
 function NewCustomerModal({ form, errors, isPending, onChange, onClose, onSubmit }: { form: NewCustomerFormData; errors: Partial<Record<keyof NewCustomerFormData, string>>; isPending: boolean; onChange: (field: keyof NewCustomerFormData, value: string) => void; onClose: () => void; onSubmit: () => void }) {
   return <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4"><div className="w-full max-w-md rounded-xl bg-white shadow-xl"><div className="flex items-center justify-between border-b border-slate-200 px-5 py-4"><div><h2 className="font-semibold text-slate-900">Create customer</h2><p className="text-xs text-slate-500">The new customer will be selected for this invoice.</p></div><button type="button" onClick={onClose} className="text-slate-400 hover:text-slate-600"><X className="h-5 w-5" /></button></div><form onSubmit={(event) => { event.preventDefault(); onSubmit() }} className="space-y-4 p-5"><div><label htmlFor="new-invoice-customer-name" className="mb-1 block text-sm font-medium text-slate-700">Full name <span className="text-red-500">*</span></label><input id="new-invoice-customer-name" required value={form.name} onChange={(event) => onChange('name', event.target.value)} className={`w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/20 ${errors.name ? 'border-red-300' : 'border-slate-200'}`} placeholder="Customer name" />{errors.name && <p className="mt-1 text-xs text-red-600">{errors.name}</p>}</div><div><label htmlFor="new-invoice-customer-email" className="mb-1 block text-sm font-medium text-slate-700">Email <span className="text-red-500">*</span></label><input id="new-invoice-customer-email" required type="email" value={form.email} onChange={(event) => onChange('email', event.target.value)} className={`w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/20 ${errors.email ? 'border-red-300' : 'border-slate-200'}`} placeholder="customer@example.com" />{errors.email && <p className="mt-1 text-xs text-red-600">{errors.email}</p>}</div><div><label htmlFor="new-invoice-customer-phone" className="mb-1 block text-sm font-medium text-slate-700">Phone number</label><input id="new-invoice-customer-phone" value={form.phone_number} onChange={(event) => onChange('phone_number', event.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/20" placeholder="Optional" /></div><div><label htmlFor="new-invoice-customer-national-id" className="mb-1 block text-sm font-medium text-slate-700">National ID</label><input id="new-invoice-customer-national-id" value={form.national_id} onChange={(event) => onChange('national_id', event.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/20" placeholder="Optional" /></div><div className="flex justify-end gap-2 pt-2"><button type="button" onClick={onClose} className="rounded-lg border border-slate-200 px-4 py-2 text-sm">Cancel</button><button type="submit" disabled={isPending} className="inline-flex items-center gap-2 rounded-lg bg-teal-600 px-4 py-2 text-sm font-medium text-white hover:bg-teal-700 disabled:opacity-50">{isPending && <Loader2 className="h-4 w-4 animate-spin" />}Create and select</button></div></form></div></div>
 }
 
-function InvoiceDetails({ invoice, onClose, onDownload, onRedeem }: { invoice: Invoice; onClose: () => void; onDownload: () => void; onRedeem: () => void }) {
-  return <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"><div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-xl bg-white shadow-xl"><div className="sticky top-0 flex items-center justify-between border-b border-slate-200 bg-white px-6 py-4"><div><h2 className="font-semibold text-slate-900">{invoice.invoice_number}</h2><p className="text-xs text-slate-500">Issued {formatDate(invoice.issued_at)} · {invoice.is_redeemable ? `Expires ${formatDate(invoice.expires_at)}` : invoice.status.label}</p></div><div className="flex items-center gap-2"><button onClick={onDownload} className="rounded-lg border border-slate-200 p-2 text-slate-600 hover:bg-slate-50" title="Download PDF"><Printer className="h-4 w-4" /></button><button onClick={onClose} className="rounded-lg p-2 text-slate-400 hover:bg-slate-100"><X className="h-5 w-5" /></button></div></div><div className="space-y-5 p-6"><div className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-slate-50 p-4"><div><p className="text-sm font-medium text-slate-900">{invoice.customer?.name || 'Customer'}</p><p className="text-xs text-slate-500">{invoice.recipient_email}</p></div><div className="text-right"><p className="text-xs text-slate-500">Total</p><p className="text-xl font-semibold text-slate-900">{formatMoney(invoice.total_amount)}</p></div></div><div className="overflow-x-auto"><table className="w-full text-sm"><thead className="bg-slate-50 text-left text-xs uppercase text-slate-500"><tr><th className="px-3 py-2">Item</th><th className="px-3 py-2 text-right">Unit</th><th className="px-3 py-2 text-right">Discount</th><th className="px-3 py-2 text-right">VAT</th><th className="px-3 py-2 text-right">Total</th></tr></thead><tbody className="divide-y divide-slate-200">{(invoice.items || []).map((item) => <tr key={item.id}><td className="px-3 py-3 text-slate-800">{item.item_description}</td><td className="px-3 py-3 text-right">{formatMoney(item.unit_price)}</td><td className="px-3 py-3 text-right">{formatMoney(item.discount)}</td><td className="px-3 py-3 text-right">{invoice.vat_applicable ? `${item.tax_rate}%: ${formatMoney(item.tax)}` : 'Not applicable'}</td><td className="px-3 py-3 text-right font-medium">{formatMoney(item.total_price)}</td></tr>)}</tbody></table></div><div className="ml-auto max-w-xs space-y-2 text-sm"><div className="flex justify-between"><span className="text-slate-500">Subtotal</span><span>{formatMoney(invoice.subtotal)}</span></div><div className="flex justify-between"><span className="text-slate-500">Discount</span><span>-{formatMoney(invoice.discount_amount)}</span></div><div className="flex justify-between"><span className="text-slate-500">VAT</span><span>{invoice.vat_applicable ? `${invoice.tax_rate}%: ${formatMoney(invoice.tax_amount)}` : 'Not applicable'}</span></div><div className="flex justify-between border-t border-slate-200 pt-2 text-base font-semibold"><span>Total</span><span>{formatMoney(invoice.total_amount)}</span></div></div>{invoice.notes && <div className="rounded-lg bg-amber-50 p-3 text-sm text-amber-800"><strong>Notes:</strong> {invoice.notes}</div>}<div className="flex justify-end gap-2">{invoice.status.value === 'sent' && <button onClick={onRedeem} className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700"><CheckCircle2 className="h-4 w-4" />Redeem now</button>}<button onClick={onClose} className="rounded-lg border border-slate-200 px-4 py-2 text-sm">Close</button></div></div></div></div>
+function InvoiceDetails({ invoice, onClose, onDownload, onRedeem, onCancel }: { invoice: Invoice; onClose: () => void; onDownload: () => void; onRedeem: () => void; onCancel: () => void }) {
+  return <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"><div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-xl bg-white shadow-xl"><div className="sticky top-0 flex items-center justify-between border-b border-slate-200 bg-white px-6 py-4"><div><h2 className="font-semibold text-slate-900">{invoice.invoice_number}</h2><p className="text-xs text-slate-500">Issued {formatDate(invoice.issued_at)} · {invoice.is_redeemable ? `Expires ${formatDate(invoice.expires_at)}` : invoice.status.label}</p></div><div className="flex items-center gap-2"><button onClick={onDownload} className="rounded-lg border border-slate-200 p-2 text-slate-600 hover:bg-slate-50" title="Download PDF"><Printer className="h-4 w-4" /></button><button onClick={onClose} className="rounded-lg p-2 text-slate-400 hover:bg-slate-100"><X className="h-5 w-5" /></button></div></div><div className="space-y-5 p-6"><div className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-slate-50 p-4"><div><p className="text-sm font-medium text-slate-900">{invoice.customer?.name || 'Customer'}</p><p className="text-xs text-slate-500">{invoice.recipient_email}</p></div><div className="text-right"><p className="text-xs text-slate-500">Total</p><p className="text-xl font-semibold text-slate-900">{formatMoney(invoice.total_amount)}</p></div></div><div className="overflow-x-auto"><table className="w-full text-sm"><thead className="bg-slate-50 text-left text-xs uppercase text-slate-500"><tr><th className="px-3 py-2">Item</th><th className="px-3 py-2 text-right">Unit</th><th className="px-3 py-2 text-right">Discount</th><th className="px-3 py-2 text-right">VAT</th><th className="px-3 py-2 text-right">Total</th></tr></thead><tbody className="divide-y divide-slate-200">{(invoice.items || []).map((item) => <tr key={item.id}><td className="px-3 py-3 text-slate-800">{item.item_description}</td><td className="px-3 py-3 text-right">{formatMoney(item.unit_price)}</td><td className="px-3 py-3 text-right">{formatMoney(item.discount)}</td><td className="px-3 py-3 text-right">{invoice.vat_applicable ? `${item.tax_rate}%: ${formatMoney(item.tax)}` : 'Not applicable'}</td><td className="px-3 py-3 text-right font-medium">{formatMoney(item.total_price)}</td></tr>)}</tbody></table></div><div className="ml-auto max-w-xs space-y-2 text-sm"><div className="flex justify-between"><span className="text-slate-500">Subtotal</span><span>{formatMoney(invoice.subtotal)}</span></div><div className="flex justify-between"><span className="text-slate-500">Discount</span><span>-{formatMoney(invoice.discount_amount)}</span></div><div className="flex justify-between"><span className="text-slate-500">VAT</span><span>{invoice.vat_applicable ? `${invoice.tax_rate}%: ${formatMoney(invoice.tax_amount)}` : 'Not applicable'}</span></div><div className="flex justify-between border-t border-slate-200 pt-2 text-base font-semibold"><span>Total</span><span>{formatMoney(invoice.total_amount)}</span></div></div>{invoice.notes && <div className="rounded-lg bg-amber-50 p-3 text-sm text-amber-800"><strong>Notes:</strong> {invoice.notes}</div>}<div className="flex justify-end gap-2">{invoice.status.value === 'sent' && invoice.is_redeemable && <button onClick={onCancel} className="inline-flex items-center gap-2 rounded-lg border border-red-200 px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-50"><XCircle className="h-4 w-4" />Cancel invoice</button>}{invoice.status.value === 'sent' && <button onClick={onRedeem} className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700"><CheckCircle2 className="h-4 w-4" />Redeem now</button>}<button onClick={onClose} className="rounded-lg border border-slate-200 px-4 py-2 text-sm">Close</button></div></div></div></div>
 }

@@ -10,6 +10,7 @@ use App\Models\InventoryMovement;
 use App\Models\Invoice;
 use App\Models\Sale;
 use App\Models\User;
+use App\Notifications\InventoryActionApprovalPinNotification;
 use App\Notifications\InvoiceEmailNotification;
 use Illuminate\Support\Facades\Notification;
 
@@ -219,6 +220,49 @@ describe('Admin invoices', function () {
             ->assertOk()
             ->assertSee('VAT is not applicable')
             ->assertSee($stored->invoice_number);
+    });
+
+    it('requires and consumes a PIN before cancelling an active invoice', function () {
+        Notification::fake();
+        $batch = invoiceBatch($this->branch, $this->category, 'INV-BATCH-CANCEL-PIN', 1200);
+        $device = invoiceDevice($batch, $this->branch, $this->category);
+
+        $invoiceId = $this->actingAs($this->admin)
+            ->postJson('/api/v1/admin/invoices', invoicePayload($device, $this->customer))
+            ->assertCreated()
+            ->json('data.id');
+
+        $challenge = $this->actingAs($this->admin)
+            ->postJson("/api/v1/admin/invoices/{$invoiceId}/cancel", [
+                'reason' => 'Customer requested a different product',
+            ])
+            ->assertStatus(202)
+            ->assertJsonPath('data.action', 'invoice_cancellation')
+            ->json('data');
+
+        $pin = null;
+        Notification::assertSentOnDemand(
+            InventoryActionApprovalPinNotification::class,
+            function ($notification) use (&$pin) {
+                $pin = $notification->pin;
+
+                return true;
+            },
+        );
+
+        expect($pin)->toBeString()->toHaveLength(6);
+        expect(Invoice::findOrFail($invoiceId)->status->value)->toBe('sent');
+
+        $this->actingAs($this->admin)
+            ->postJson('/api/v1/admin/action-challenges/'.$challenge['challenge_id'].'/verify', [
+                'pin' => $pin,
+            ])
+            ->assertOk()
+            ->assertJsonPath('data.status.value', 'cancelled');
+
+        expect(Invoice::findOrFail($invoiceId)->status->value)->toBe('cancelled')
+            ->and($device->fresh()->inventory_status)->toBe(InventoryStatus::IN_STOCK)
+            ->and($device->fresh()->reserved_invoice_id)->toBeNull();
     });
 
     it('redeems an invoice only once and remains idempotent', function () {

@@ -667,6 +667,19 @@ Route::middleware(['auth:sanctum', 'not.suspended'])->group(function () {
             Route::get('/{invoice}/document', [AdminInvoiceController::class, 'document'])->name('document');
         });
 
+        // PIN-protected invoice actions for the current customer-service record
+        Route::prefix('action-challenges')->name('action-challenges.')->group(function () {
+            Route::post('/{challenge}/reveal', [InventoryDispositionController::class, 'reveal'])
+                ->middleware('throttle:5,1')
+                ->name('reveal');
+            Route::post('/{challenge}/verify', [InventoryDispositionController::class, 'verify'])
+                ->middleware('throttle:10,1')
+                ->name('verify');
+            Route::post('/{challenge}/resend', [InventoryDispositionController::class, 'resend'])
+                ->middleware('throttle:3,1')
+                ->name('resend');
+        });
+
         // Sales (filtered by sold_by_id for current user)
         Route::prefix('sales')->name('sales.')->group(function () {
             Route::get('/', [CustomerServiceSaleController::class, 'index'])->name('index');

@@ -6,15 +6,18 @@ use App\Enums\InventoryStatus;
 use App\Http\Controllers\Api\V1\BaseController;
 use App\Http\Resources\DeviceResource;
 use App\Http\Resources\InventoryMovementResource;
+use App\Http\Resources\InvoiceResource;
 use App\Models\ActivityLog;
 use App\Models\Brand;
 use App\Models\Device;
 use App\Models\InventoryActionChallenge;
+use App\Models\Invoice;
 use App\Models\ProductModel;
 use App\Services\CatalogDeletionImpactService;
 use App\Services\DeviceDeletionImpactService;
 use App\Services\InventoryActionApprovalService;
 use App\Services\InventoryMovementService;
+use App\Services\InvoiceService;
 use App\Services\SuperAdminSaleNotificationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -27,6 +30,7 @@ class InventoryDispositionController extends BaseController
         private readonly InventoryActionApprovalService $approvalService,
         private readonly InventoryMovementService $movementService,
         private readonly SuperAdminSaleNotificationService $superAdminSaleNotificationService,
+        private readonly InvoiceService $invoiceService,
         private readonly CatalogDeletionImpactService $deletionImpact,
         private readonly DeviceDeletionImpactService $deviceDeletionImpact,
     ) {}
@@ -244,6 +248,7 @@ class InventoryDispositionController extends BaseController
         $targetLabel = match ($challenge->action) {
             InventoryActionChallenge::ACTION_PRODUCT_MODEL_DELETION,
             InventoryActionChallenge::ACTION_BRAND_DELETION => $challenge->payload['subject_label'] ?? null,
+            InventoryActionChallenge::ACTION_INVOICE_CANCELLATION => 'Invoice '.($challenge->payload['invoice_number'] ?? ''),
             default => count($deviceIds) > 1 ? count($deviceIds).' devices' : null,
         };
 
@@ -274,6 +279,7 @@ class InventoryDispositionController extends BaseController
                     InventoryActionChallenge::ACTION_DEVICE_DELETION => $this->executeDeviceDeletion($request, $payload, $lockedChallenge),
                     InventoryActionChallenge::ACTION_PRODUCT_MODEL_DELETION,
                     InventoryActionChallenge::ACTION_BRAND_DELETION => $this->executeCatalogDeletion($request, $payload, $lockedChallenge),
+                    InventoryActionChallenge::ACTION_INVOICE_CANCELLATION => $this->executeInvoiceCancellation($request, $payload, $lockedChallenge),
                     default => throw ValidationException::withMessages(['challenge' => ['Unsupported inventory action.']]),
                 };
             },
@@ -317,6 +323,30 @@ class InventoryDispositionController extends BaseController
         ], 'PIN revealed securely.')
             ->header('Cache-Control', 'no-store, no-cache, must-revalidate, private')
             ->header('Pragma', 'no-cache');
+    }
+
+    private function executeInvoiceCancellation(Request $request, array $payload, InventoryActionChallenge $challenge): InvoiceResource
+    {
+        $invoice = Invoice::query()->findOrFail((int) ($payload['invoice_id'] ?? 0));
+
+        if ($invoice->status !== \App\Enums\InvoiceStatus::SENT || $invoice->isExpired()) {
+            throw ValidationException::withMessages([
+                'invoice' => ['This invoice is no longer active and cannot be cancelled.'],
+            ]);
+        }
+
+        $cancelled = $this->invoiceService->cancel(
+            $invoice,
+            $request->user(),
+            (string) ($payload['reason'] ?? 'Invoice cancellation'),
+        );
+
+        return new InvoiceResource($cancelled->load([
+            'customer',
+            'branch',
+            'createdBy',
+            'items.device.category',
+        ]));
     }
 
     private function executeAdministrativeSale(Request $request, array $payload, InventoryActionChallenge $challenge): array
@@ -706,6 +736,23 @@ class InventoryDispositionController extends BaseController
             InventoryActionChallenge::ACTION_BRAND_DELETION,
         ], true) && ! $user->hasRole('super_admin')) {
             abort(403, 'Only a super admin can override a catalog deletion.');
+        }
+        if ($challenge->action === InventoryActionChallenge::ACTION_INVOICE_CANCELLATION) {
+            $invoice = Invoice::query()->findOrFail((int) ($challenge->payload['invoice_id'] ?? 0));
+            if ($user->hasRole('super_admin')) {
+                return;
+            }
+            if ($user->hasRole('customer_service')) {
+                abort_unless(
+                    (int) $invoice->created_by_id === (int) $user->id
+                        && (int) $invoice->branch_id === $user->requiredBranchScopeId(),
+                    403,
+                    'You are not allowed to cancel this invoice.',
+                );
+
+                return;
+            }
+            abort_unless($user->canAccessBranch($invoice->branch_id), 403, 'You are not allowed to cancel this invoice.');
         }
     }
 
