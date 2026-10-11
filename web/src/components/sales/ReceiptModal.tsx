@@ -21,22 +21,61 @@ export default function ReceiptModal({ sale, onClose, onPrint }: ReceiptModalPro
     <>
       {/* Print Styles */}
       <style>{`
+        @page {
+          size: 80mm auto;
+          margin: 0;
+        }
+
         @media print {
+          html,
+          body {
+            width: 80mm !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            background: #fff !important;
+          }
+
           body * {
             visibility: hidden;
           }
+
           #receipt-content, #receipt-content * {
             visibility: visible;
+            color: #000 !important;
+            border-color: #000 !important;
+            text-shadow: none !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
           }
+
           #receipt-content {
             position: absolute;
-            left: 50%;
-            transform: translateX(-50%);
+            left: 0;
+            right: 0;
             top: 0;
-            width: 80mm;
-            margin: 0;
-            padding: 0;
+            width: 74mm;
+            margin: 0 auto !important;
+            padding: 2mm !important;
             background: white !important;
+            font-size: 12pt !important;
+            font-weight: 700 !important;
+            line-height: 1.35 !important;
+          }
+
+          #receipt-content .text-xs {
+            font-size: 10pt !important;
+          }
+
+          #receipt-content .text-lg {
+            font-size: 14pt !important;
+          }
+
+          #receipt-content [class~="text-[10px]"] {
+            font-size: 9pt !important;
+          }
+
+          #receipt-content .text-base {
+            font-size: 13pt !important;
           }
         }
       `}</style>
