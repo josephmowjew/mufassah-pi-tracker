@@ -1,28 +1,74 @@
+import { useEffect, useRef, useState } from 'react'
 import { Printer, X } from 'lucide-react'
+import { createPortal, flushSync } from 'react-dom'
 import type { Sale } from '@/types'
+
+type ReceiptCopy = 'customer' | 'company'
 
 interface ReceiptModalProps {
   sale: Sale
   onClose: () => void
-  onPrint?: () => void
 }
 
-export default function ReceiptModal({ sale, onClose, onPrint }: ReceiptModalProps) {
+export default function ReceiptModal({ sale, onClose }: ReceiptModalProps) {
+  const [step, setStep] = useState<ReceiptCopy | 'complete'>('customer')
+  const [receiptCopy, setReceiptCopy] = useState<ReceiptCopy>('customer')
+  const [isPrinting, setIsPrinting] = useState(false)
+  const [printError, setPrintError] = useState<string | null>(null)
+  const pendingCopy = useRef<ReceiptCopy | null>(null)
+
+  useEffect(() => {
+    // Browsers fire afterprint on both print and cancel. Staff can reprint
+    // either copy and explicitly finish after checking the paper receipts.
+    const handleAfterPrint = () => {
+      const copy = pendingCopy.current
+      if (!copy) return
+
+      pendingCopy.current = null
+      setIsPrinting(false)
+      setReceiptCopy('company')
+      setStep(current => {
+        if (copy === 'company') return 'complete'
+        return current === 'customer' ? 'company' : current
+      })
+    }
+
+    window.addEventListener('afterprint', handleAfterPrint)
+    return () => window.removeEventListener('afterprint', handleAfterPrint)
+  }, [])
+
   const formatDateTime = (dateString: string) => {
     return new Date(dateString).toLocaleString()
   }
 
-  const handlePrint = () => {
-    window.print()
-    onPrint?.()
+  const handlePrint = (copy: ReceiptCopy) => {
+    if (pendingCopy.current) return
+    pendingCopy.current = copy
+
+    // Commit the copy label before the browser captures the print document.
+    flushSync(() => {
+      setReceiptCopy(copy)
+      setIsPrinting(true)
+      setPrintError(null)
+    })
+
+    try {
+      window.print()
+    } catch {
+      pendingCopy.current = null
+      setIsPrinting(false)
+      setPrintError('Unable to open printing. Please try again.')
+    }
   }
 
-  return (
+  // The receipt must be outside the dashboard so it can be the only print
+  // layout. Hidden dashboard content still creates pages in the print job.
+  return createPortal(
     <>
       {/* Print Styles */}
       <style>{`
         @page {
-          size: 80mm auto;
+          size: auto;
           margin: 0;
         }
 
@@ -33,10 +79,30 @@ export default function ReceiptModal({ sale, onClose, onPrint }: ReceiptModalPro
             margin: 0 !important;
             padding: 0 !important;
             background: #fff !important;
+            height: auto !important;
+            min-height: 0 !important;
+            overflow: visible !important;
           }
 
-          body * {
-            visibility: hidden;
+          body > :not(#receipt-modal) {
+            display: none !important;
+          }
+
+          /* Fixed elements repeat on every printed page. Use normal flow so
+             long receipts continue onto the next page without duplicating. */
+          #receipt-modal,
+          #receipt-dialog {
+            position: static !important;
+            display: block !important;
+            width: 80mm !important;
+            max-width: none !important;
+            height: auto !important;
+            max-height: none !important;
+            overflow: visible !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            background: #fff !important;
+            box-shadow: none !important;
           }
 
           #receipt-content, #receipt-content * {
@@ -49,10 +115,7 @@ export default function ReceiptModal({ sale, onClose, onPrint }: ReceiptModalPro
           }
 
           #receipt-content {
-            position: absolute;
-            left: 0;
-            right: 0;
-            top: 0;
+            position: static;
             width: 74mm;
             margin: 0 auto !important;
             padding: 2mm !important;
@@ -80,20 +143,32 @@ export default function ReceiptModal({ sale, onClose, onPrint }: ReceiptModalPro
         }
       `}</style>
 
-      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[70] p-4">
-        <div className="bg-white rounded-xl shadow-2xl w-full max-w-md">
+      <div id="receipt-modal" className="fixed inset-0 bg-black/50 flex items-center justify-center z-[70] p-4">
+        <div id="receipt-dialog" role="dialog" aria-modal="true" aria-labelledby="receipt-title" className="bg-white rounded-xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto">
           {/* Header */}
           <div className="sticky top-0 bg-white border-b border-slate-200 px-4 py-3 flex items-center justify-between print:hidden">
             <div>
-              <h2 className="text-lg font-bold text-slate-900">Receipt</h2>
+              <h2 id="receipt-title" className="text-lg font-bold text-slate-900">Sales receipts</h2>
               <p className="text-xs text-slate-500">{sale.sale_number}</p>
             </div>
             <button
               onClick={onClose}
+              aria-label="Close receipts"
               className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors"
             >
               <X className="h-4 w-4" />
             </button>
+          </div>
+
+          <div className="border-b border-slate-200 bg-slate-50 px-4 py-3 print:hidden">
+            <p role="status" className="text-sm font-semibold text-slate-900">
+              {step === 'customer' ? '1 of 2: Customer receipt' : step === 'company' ? '2 of 2: Company receipt' : 'Finish receipt printing'}
+            </p>
+            <p className="mt-1 text-xs text-slate-600">
+              {step === 'complete'
+                ? 'Check that both receipts printed correctly. Reprint either copy below if needed.'
+                : 'Set Copies to 1 in each print dialog. Print the customer receipt first, then the company receipt.'}
+            </p>
           </div>
 
           {/* Receipt Content - Thermal Printer Style */}
@@ -105,6 +180,9 @@ export default function ReceiptModal({ sale, onClose, onPrint }: ReceiptModalPro
               </h3>
               <p className="text-xs text-slate-500 mt-1">T-PIN: 70474293</p>
               <p className="text-xs text-slate-500 mt-1">Device Sales Receipt</p>
+              <p data-receipt-copy className="text-xs font-bold text-slate-900 mt-1">
+                {receiptCopy === 'customer' ? 'Customer copy' : 'Company copy'}
+              </p>
             </div>
 
             {/* Sale Info */}
@@ -220,23 +298,50 @@ export default function ReceiptModal({ sale, onClose, onPrint }: ReceiptModalPro
           </div>
 
           {/* Actions */}
-          <div className="sticky bottom-0 bg-slate-50 border-t border-slate-200 px-4 py-3 flex gap-2 print:hidden">
-            <button
-              onClick={onClose}
-              className="flex-1 px-3 py-2 text-sm border border-slate-200 rounded-lg hover:bg-white transition-colors font-medium text-slate-700"
-            >
-              Close
-            </button>
-            <button
-              onClick={handlePrint}
-              className="flex-1 px-3 py-2 bg-slate-800 text-white rounded-lg hover:bg-slate-900 transition-colors font-medium text-sm flex items-center justify-center gap-2"
-            >
-              <Printer className="h-4 w-4" />
-              Print
-            </button>
+          <div className="sticky bottom-0 bg-slate-50 border-t border-slate-200 px-4 py-3 print:hidden">
+            {printError && <p role="alert" className="mb-3 text-sm text-red-700">{printError}</p>}
+            {step !== 'customer' && (
+              <div className="mb-3 flex flex-wrap gap-x-4 gap-y-2">
+                <button
+                  onClick={() => handlePrint('customer')}
+                  disabled={isPrinting}
+                  className="text-xs font-medium text-slate-700 underline disabled:opacity-50"
+                >
+                  Reprint customer receipt
+                </button>
+                {step === 'complete' && (
+                  <button
+                    onClick={() => handlePrint('company')}
+                    disabled={isPrinting}
+                    className="text-xs font-medium text-slate-700 underline disabled:opacity-50"
+                  >
+                    Reprint company receipt
+                  </button>
+                )}
+              </div>
+            )}
+            <div className="flex gap-2">
+              {step !== 'complete' && (
+                <button
+                  onClick={onClose}
+                  className="px-3 py-2 text-sm border border-slate-200 rounded-lg hover:bg-white transition-colors font-medium text-slate-700"
+                >
+                  Close
+                </button>
+              )}
+              <button
+                onClick={() => step === 'complete' ? onClose() : handlePrint(step)}
+                disabled={isPrinting}
+                className="flex-1 px-3 py-2 bg-slate-800 text-white rounded-lg hover:bg-slate-900 transition-colors font-medium text-sm flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {step !== 'complete' && <Printer className="h-4 w-4 shrink-0" />}
+                {isPrinting ? 'Print dialog open…' : step === 'customer' ? 'Print customer receipt' : step === 'company' ? 'Print company receipt' : 'Finish'}
+              </button>
+            </div>
           </div>
         </div>
       </div>
-    </>
+    </>,
+    document.body,
   )
 }

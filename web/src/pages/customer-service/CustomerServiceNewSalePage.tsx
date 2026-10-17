@@ -1025,13 +1025,6 @@ export default function CustomerServiceNewSalePage() {
             setShowReceiptModal(false)
             navigate('/customer-service/sales')
           }}
-          onPrint={() => {
-            // After printing, navigate to sales page
-            setTimeout(() => {
-              setShowReceiptModal(false)
-              navigate('/customer-service/sales')
-            }, 500)
-          }}
         />
       )}
     </div>
