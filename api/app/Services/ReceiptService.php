@@ -17,7 +17,14 @@ class ReceiptService
         $data = $this->prepareReceiptData($sale, $receiptCopy);
         $data['interactive'] = false;
 
-        $pdf = PDF::loadView("receipts.{$format}_receipt", $data);
+        $pdf = Pdf::loadView("receipts.{$format}_receipt", $data)
+            ->setOption('defaultMediaType', 'print');
+
+        // Roll PDFs must have the same width as their receipt layout. Long
+        // receipts paginate at that width rather than shrinking an A4 page.
+        $pdf->setPaper($format === 'thermal'
+            ? [0, 0, $data['paperWidth'] * 72 / 25.4, 297 * 72 / 25.4]
+            : 'a4');
 
         $filename = "receipt_{$sale->sale_number}_{$receiptCopy}.pdf";
 
@@ -42,14 +49,18 @@ class ReceiptService
      */
     public function generateBarcode(Sale $sale): string
     {
-        $generator = new \Picqer\Barcode\BarcodeGeneratorHTML;
+        $generator = new \Picqer\Barcode\BarcodeGeneratorSVG;
 
-        return $generator->getBarcode(
+        $svg = $generator->getBarcode(
             $sale->sale_number,
             $generator::TYPE_CODE_128,
             2,
             50
         );
+
+        // Scale the complete vector barcode within the paper, preserving all
+        // bars instead of clipping fixed-width HTML bars at the receipt edge.
+        return '<img src="data:image/svg+xml;base64,'.base64_encode($svg).'" alt="Receipt barcode" style="display:block;max-width:100%;height:auto;margin:0 auto;">';
     }
 
     /**
@@ -58,6 +69,7 @@ class ReceiptService
     protected function prepareReceiptData(Sale $sale, string $receiptCopy = 'customer'): array
     {
         $company = $this->getCompanyInfo();
+        $paperWidth = (int) config('receipt.thermal.width', 80);
 
         return [
             'company' => $company,
@@ -67,6 +79,7 @@ class ReceiptService
             'soldBy' => $sale->soldBy,
             'barcode' => $this->generateBarcode($sale),
             'receiptCopy' => $receiptCopy,
+            'paperWidth' => in_array($paperWidth, [58, 80], true) ? $paperWidth : 80,
         ];
     }
 

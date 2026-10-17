@@ -5,7 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Receipt - {{ $sale->sale_number }}</title>
     <style>
-        * {
+        /* The PDF renderer stores page margins on html; leave it out of resets. */
+        body, body * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
@@ -15,11 +16,14 @@
             font-family: 'Courier New', Courier, monospace;
             font-size: 14px;
             line-height: 1.4;
-            width: 80mm;
+            width: {{ $paperWidth }}mm;
+            max-width: 100%;
             padding: 3mm;
             background: #fff;
             color: #000;
             font-weight: bold;
+            overflow-wrap: anywhere;
+            word-wrap: break-word;
         }
 
         .receipt {
@@ -28,7 +32,7 @@
 
         @media screen {
             body.receipt-interactive { width: auto; padding: 16px; background: #f1f5f9; }
-            body.receipt-interactive .receipt { width: 80mm; max-width: 100%; margin: 0 auto; padding: 3mm; background: #fff; }
+            body.receipt-interactive .receipt { width: {{ $paperWidth }}mm; max-width: 100%; margin: 0 auto; padding: 3mm; background: #fff; }
         }
 
         .header {
@@ -57,9 +61,24 @@
         }
 
         .receipt-info-row {
-            display: flex;
-            justify-content: space-between;
+            display: table;
+            table-layout: fixed;
+            width: 100%;
             margin-bottom: 3px;
+        }
+
+        .receipt-info-row span, .total-row span {
+            display: table-cell;
+            vertical-align: top;
+        }
+
+        .receipt-info-row span:first-child, .total-row span:first-child {
+            width: 38%;
+            padding-right: 2mm;
+        }
+
+        .receipt-info-row span:last-child, .total-row span:last-child {
+            text-align: right;
         }
 
         .divider {
@@ -72,19 +91,16 @@
         }
 
         .item {
-            display: flex;
-            justify-content: space-between;
             margin-bottom: 5px;
             font-size: 13px;
         }
 
         .item-name {
-            flex: 1;
+            margin-bottom: 2px;
         }
 
         .item-price {
             text-align: right;
-            white-space: nowrap;
         }
 
         .totals-section {
@@ -93,8 +109,9 @@
         }
 
         .total-row {
-            display: flex;
-            justify-content: space-between;
+            display: table;
+            table-layout: fixed;
+            width: 100%;
             margin-bottom: 5px;
             font-size: 13px;
         }
@@ -139,13 +156,19 @@
 
         @media print {
             body {
-                width: 80mm;
+                width: auto;
+                max-width: {{ $paperWidth }}mm;
                 padding: 0;
             }
 
             .no-print {
                 display: none;
             }
+        }
+
+        @page {
+            size: auto;
+            margin: 3mm;
         }
     </style>
 </head>
@@ -198,7 +221,7 @@
             @foreach($items as $item)
                 <div class="item">
                     <div class="item-name">
-                        {{ \Illuminate\Support\Str::limit($item->item_description, 35) }}
+                        {{ $item->item_description }}
                     </div>
                     <div class="item-price">
                         {{ number_format($item->total_price, 2) }}

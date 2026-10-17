@@ -891,7 +891,7 @@ describe('Admin Sales', function () {
     });
 
     it('supports labelled copies and guided printing on direct and signed receipt pages', function () {
-        config(['receipt.logo' => null]);
+        config(['receipt.logo' => null, 'receipt.thermal.width' => 80]);
         $sale = Sale::create([
             'sale_number' => 'SALE-2026-COPIES-01',
             'customer_id' => $this->customer->id,
@@ -937,6 +937,9 @@ describe('Admin Sales', function () {
 
                 expect($pdf->headers->get('Content-Disposition'))->toContain("_{$copy}.pdf")
                     ->and($pdf->getContent())->toStartWith('%PDF-');
+
+                preg_match('/\/MediaBox\s*\[\s*[\d.]+\s+[\d.]+\s+([\d.]+)/', $pdf->getContent(), $pageSize);
+                expect((float) $pageSize[1])->toEqualWithDelta(($format === 'thermal' ? 80 : 210) * 72 / 25.4, 0.1);
             }
         }
 
@@ -946,6 +949,13 @@ describe('Admin Sales', function () {
         $this->actingAs($this->admin)
             ->getJson("/api/v1/admin/sales/{$sale->id}/receipt-url?copy=invalid")
             ->assertStatus(400);
+
+        config(['receipt.thermal.width' => 58]);
+        $narrowPdf = $this->actingAs($this->admin)
+            ->get("/api/v1/admin/sales/{$sale->id}/receipt?format=thermal&output=pdf")
+            ->assertOk();
+        preg_match('/\/MediaBox\s*\[\s*[\d.]+\s+[\d.]+\s+([\d.]+)/', $narrowPdf->getContent(), $pageSize);
+        expect((float) $pageSize[1])->toEqualWithDelta(58 * 72 / 25.4, 0.1);
     });
 
     it('allocates product-spec sales only from the seller branch', function () {

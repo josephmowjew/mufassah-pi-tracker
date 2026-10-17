@@ -5,7 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Receipt - {{ $sale->sale_number }}</title>
     <style>
-        * {
+        /* The PDF renderer stores page margins on html; leave it out of resets. */
+        body, body * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
@@ -26,6 +27,8 @@
             padding: 20mm;
             background: #fff;
             box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            overflow-wrap: anywhere;
+            word-wrap: break-word;
         }
 
         .header {
@@ -35,10 +38,12 @@
             border-bottom: 2px solid #333;
             padding-bottom: 20px;
             margin-bottom: 20px;
+            gap: 16px;
         }
 
         .company-info {
             flex: 1;
+            min-width: 0;
         }
 
         .company-name {
@@ -60,6 +65,8 @@
 
         .receipt-title {
             text-align: right;
+            min-width: 0;
+            max-width: 48%;
         }
 
         .receipt-title h1 {
@@ -76,7 +83,7 @@
 
         .info-grid {
             display: grid;
-            grid-template-columns: 1fr 1fr;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
             gap: 20px;
             margin-bottom: 30px;
         }
@@ -110,6 +117,7 @@
             width: 100%;
             margin-bottom: 30px;
             border-collapse: collapse;
+            table-layout: fixed;
         }
 
         .items-table thead {
@@ -167,7 +175,11 @@
             padding: 8px 0;
             border-bottom: 1px solid #ddd;
             font-size: 14px;
+            gap: 8px;
         }
+
+        .total-row span { min-width: 0; }
+        .receipt-container img { max-width: 100%; height: auto; }
 
         .total-row:last-child {
             border-bottom: none;
@@ -199,7 +211,7 @@
 
         .payment-grid {
             display: grid;
-            grid-template-columns: repeat(3, 1fr);
+            grid-template-columns: repeat(3, minmax(0, 1fr));
             gap: 15px;
         }
 
@@ -220,6 +232,8 @@
             font-weight: bold;
             color: #333;
         }
+
+        .payment-item label, .payment-item span { display: block; }
 
         .codes-section {
             display: flex;
@@ -302,6 +316,22 @@
             color: #721c24;
         }
 
+        @media screen and (max-width: 600px) {
+            .receipt-container { margin: 16px 0; padding: 16px; }
+            .header { display: block; }
+            .receipt-title { max-width: 100%; margin-top: 16px; text-align: left; }
+            .info-grid, .payment-grid { grid-template-columns: minmax(0, 1fr); }
+            .totals-section { display: block; }
+            .totals-box { width: 100%; padding: 12px; }
+            .payment-section, .footer { padding: 12px; }
+            .items-table thead { display: none; }
+            .items-table, .items-table tbody, .items-table tr, .items-table td { display: block; width: 100%; }
+            .items-table tr { margin-bottom: 16px; border: 1px solid #ddd; }
+            .items-table td { padding: 8px 12px; text-align: left !important; }
+            .items-table td:first-child { display: none; }
+            .items-table td::before { content: attr(data-label); display: block; font-size: 11px; color: #374151; margin-bottom: 4px; }
+        }
+
         @media print {
             body {
                 background: #fff;
@@ -310,13 +340,30 @@
             .receipt-container {
                 box-shadow: none;
                 margin: 0;
-                padding: 15mm;
+                padding: 0;
+                max-width: none;
             }
+
+            /* The PDF renderer supports table layout, rather than flex/grid. */
+            .header, .info-grid, .payment-grid, .total-row { display: table; table-layout: fixed; width: 100%; }
+            .company-info, .receipt-title, .info-box, .payment-item, .total-row span { display: table-cell; vertical-align: top; }
+            .company-info, .receipt-title { width: 50%; max-width: none; }
+            .totals-section, .codes-section { display: block; }
+            .totals-box { margin-left: auto; }
+            .total-row span:last-child { text-align: right; }
+            .items-table th, .items-table td { padding: 8px 4px; }
+            .header { padding-bottom: 12px; margin-bottom: 12px; }
+            .info-grid, .items-table, .totals-section, .payment-section, .codes-section { margin-bottom: 14px; }
+            .info-box { padding: 10px; }
+            .totals-box, .payment-section, .footer { padding: 12px; }
+            .codes-section { padding: 12px 0; page-break-inside: avoid; break-inside: avoid; }
 
             .no-print {
                 display: none;
             }
         }
+
+        @page { size: A4; margin: 12mm; }
     </style>
 </head>
 <body>
@@ -383,19 +430,19 @@
         <table class="items-table">
             <thead>
                 <tr>
-                    <th style="width: 50px;">#</th>
-                    <th>Item Description</th>
-                    <th style="width: 100px;">Unit Price</th>
-                    <th style="width: 100px;">Discount</th>
-                    <th style="width: 100px;">Tax</th>
-                    <th style="width: 100px;">Total</th>
+                    <th style="width: 5%;">#</th>
+                    <th style="width: 31%;">Item Description</th>
+                    <th style="width: 19%;">Unit Price</th>
+                    <th style="width: 13%;">Discount</th>
+                    <th style="width: 13%;">Tax</th>
+                    <th style="width: 19%;">Total</th>
                 </tr>
             </thead>
             <tbody>
                 @foreach($items as $index => $item)
                     <tr>
                         <td>{{ $index + 1 }}</td>
-                        <td>
+                        <td data-label="Item description">
                             <strong>{{ $item->item_description }}</strong>
                             @if($item->subscriptionPlan)
                                 <br><small style="color: #666;">{{ $item->subscriptionPlan->name }}</small>
@@ -404,10 +451,10 @@
                                 <br><small style="color: #999;">S/N: {{ $item->device->serial_number }}</small>
                             @endif
                         </td>
-                        <td>{{ config('receipt.currency', '$') . number_format($item->unit_price, 2) }}</td>
-                        <td>{{ $item->discount > 0 ? config('receipt.currency', '$') . number_format($item->discount, 2) : '-' }}</td>
-                        <td>{{ $item->tax > 0 ? config('receipt.currency', '$') . number_format($item->tax, 2) : '-' }}</td>
-                        <td>{{ config('receipt.currency', '$') . number_format($item->total_price, 2) }}</td>
+                        <td data-label="Unit price">{{ config('receipt.currency', '$') . ' ' . number_format($item->unit_price, 2) }}</td>
+                        <td data-label="Discount">{{ $item->discount > 0 ? config('receipt.currency', '$') . ' ' . number_format($item->discount, 2) : '-' }}</td>
+                        <td data-label="Tax">{{ $item->tax > 0 ? config('receipt.currency', '$') . ' ' . number_format($item->tax, 2) : '-' }}</td>
+                        <td data-label="Total">{{ config('receipt.currency', '$') . ' ' . number_format($item->total_price, 2) }}</td>
                     </tr>
                 @endforeach
             </tbody>

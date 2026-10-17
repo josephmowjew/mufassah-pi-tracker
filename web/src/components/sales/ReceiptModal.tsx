@@ -67,15 +67,38 @@ export default function ReceiptModal({ sale, onClose }: ReceiptModalProps) {
     <>
       {/* Print Styles */}
       <style>{`
+        #receipt-content {
+          overflow-wrap: anywhere;
+          word-wrap: break-word;
+        }
+
+        #receipt-content .flex {
+          gap: 2mm;
+        }
+
+        #receipt-content .flex > :first-child {
+          flex-shrink: 0;
+        }
+
+        #receipt-content .flex > :last-child {
+          min-width: 0;
+          text-align: right;
+        }
+
+        #receipt-content table { table-layout: fixed; }
+        #receipt-content td:first-child { padding-right: 2mm; }
+        #receipt-content td:last-child { width: 38%; }
+
         @page {
           size: auto;
-          margin: 0;
+          margin: 3mm;
         }
 
         @media print {
           html,
           body {
-            width: 80mm !important;
+            width: auto !important;
+            max-width: 80mm !important;
             margin: 0 !important;
             padding: 0 !important;
             background: #fff !important;
@@ -94,8 +117,8 @@ export default function ReceiptModal({ sale, onClose }: ReceiptModalProps) {
           #receipt-dialog {
             position: static !important;
             display: block !important;
-            width: 80mm !important;
-            max-width: none !important;
+            width: 100% !important;
+            max-width: 80mm !important;
             height: auto !important;
             max-height: none !important;
             overflow: visible !important;
@@ -117,6 +140,7 @@ export default function ReceiptModal({ sale, onClose }: ReceiptModalProps) {
           #receipt-content {
             position: static;
             width: 74mm;
+            max-width: 100%;
             margin: 0 auto !important;
             padding: 2mm !important;
             background: white !important;
@@ -140,6 +164,20 @@ export default function ReceiptModal({ sale, onClose }: ReceiptModalProps) {
           #receipt-content .text-base {
             font-size: 13pt !important;
           }
+
+          #receipt-content .flex > :last-child {
+            white-space: normal;
+            overflow: visible;
+            margin-left: 0;
+          }
+        }
+
+        @media print and (max-width: 60mm) {
+          #receipt-content .flex { display: block; }
+          #receipt-content .flex > :last-child { display: block; }
+          #receipt-content table, #receipt-content tbody,
+          #receipt-content tr, #receipt-content td { display: block; width: 100%; }
+          #receipt-content td:last-child { width: 100%; }
         }
       `}</style>
 
