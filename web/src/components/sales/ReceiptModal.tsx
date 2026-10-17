@@ -167,7 +167,9 @@ export default function ReceiptModal({ sale, onClose }: ReceiptModalProps) {
             <p className="mt-1 text-xs text-slate-600">
               {step === 'complete'
                 ? 'Check that both receipts printed correctly. Reprint either copy below if needed.'
-                : 'Set Copies to 1 in each print dialog. Print the customer receipt first, then the company receipt.'}
+                : step === 'company'
+                  ? 'Next, print one company receipt. Set Copies to 1. Reprint the customer receipt below if needed.'
+                  : 'Print one customer receipt, then continue to the company receipt. Set Copies to 1.'}
             </p>
           </div>
 
@@ -305,7 +307,7 @@ export default function ReceiptModal({ sale, onClose }: ReceiptModalProps) {
                 <button
                   onClick={() => handlePrint('customer')}
                   disabled={isPrinting}
-                  className="text-xs font-medium text-slate-700 underline disabled:opacity-50"
+                  className="min-h-10 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-50"
                 >
                   Reprint customer receipt
                 </button>
@@ -313,7 +315,7 @@ export default function ReceiptModal({ sale, onClose }: ReceiptModalProps) {
                   <button
                     onClick={() => handlePrint('company')}
                     disabled={isPrinting}
-                    className="text-xs font-medium text-slate-700 underline disabled:opacity-50"
+                    className="min-h-10 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-50"
                   >
                     Reprint company receipt
                   </button>
@@ -332,7 +334,7 @@ export default function ReceiptModal({ sale, onClose }: ReceiptModalProps) {
               <button
                 onClick={() => step === 'complete' ? onClose() : handlePrint(step)}
                 disabled={isPrinting}
-                className="flex-1 px-3 py-2 bg-slate-800 text-white rounded-lg hover:bg-slate-900 transition-colors font-medium text-sm flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="min-h-12 flex-1 px-4 py-3 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-colors font-semibold text-sm flex items-center justify-center gap-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-600 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {step !== 'complete' && <Printer className="h-4 w-4 shrink-0" />}
                 {isPrinting ? 'Print dialog open…' : step === 'customer' ? 'Print customer receipt' : step === 'company' ? 'Print company receipt' : 'Finish'}

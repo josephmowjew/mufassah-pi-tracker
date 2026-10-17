@@ -601,6 +601,11 @@ class AdminSaleController extends BaseController
 
         $format = $request->get('format', 'a4'); // a4 or thermal
         $output = $request->get('output', 'html'); // html or pdf
+        $receiptCopy = $request->get('copy', 'customer');
+
+        if (! \in_array($receiptCopy, ['customer', 'company'], true)) {
+            return $this->error('Invalid copy. Use "customer" or "company"', 400);
+        }
 
         if (! \in_array($format, ['a4', 'thermal'], true)) {
             return $this->error('Invalid format. Use "a4" or "thermal"', 400);
@@ -611,11 +616,11 @@ class AdminSaleController extends BaseController
         }
 
         if ($output === 'pdf') {
-            return $receiptService->generatePdf($sale, $format);
+            return $receiptService->generatePdf($sale, $format, $receiptCopy);
         }
 
         // Return HTML view
-        $html = $receiptService->generateHtml($sale, $format);
+        $html = $receiptService->generateHtml($sale, $format, $receiptCopy);
 
         return response($html)
             ->header('Content-Type', 'text/html');
@@ -629,6 +634,11 @@ class AdminSaleController extends BaseController
         $this->authorizeSaleView($request, $sale);
 
         $format = $request->get('format', 'a4');
+        $receiptCopy = $request->get('copy', 'customer');
+
+        if (! \in_array($receiptCopy, ['customer', 'company'], true)) {
+            return $this->error('Invalid copy. Use "customer" or "company"', 400);
+        }
 
         if (! \in_array($format, ['a4', 'thermal'], true)) {
             return $this->error('Invalid format. Use "a4" or "thermal"', 400);
@@ -637,7 +647,7 @@ class AdminSaleController extends BaseController
         // Generate signed URL valid for 15 minutes
         $signedUrl = URL::signedRoute(
             'sales.public-receipt',
-            ['sale' => $sale->id, 'format' => $format],
+            ['sale' => $sale->id, 'format' => $format, 'copy' => $receiptCopy],
             now()->addMinutes(15)
         );
 
@@ -659,13 +669,18 @@ class AdminSaleController extends BaseController
 
         $receiptService = new ReceiptService;
         $format = $request->get('format', 'a4');
+        $receiptCopy = $request->get('copy', 'customer');
+
+        if (! \in_array($receiptCopy, ['customer', 'company'], true)) {
+            abort(400, 'Invalid copy');
+        }
 
         if (! \in_array($format, ['a4', 'thermal'], true)) {
             abort(400, 'Invalid format');
         }
 
         // Return HTML view
-        $html = $receiptService->generateHtml($sale, $format);
+        $html = $receiptService->generateHtml($sale, $format, $receiptCopy);
 
         return response($html)
             ->header('Content-Type', 'text/html');

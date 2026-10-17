@@ -1,10 +1,11 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Search, ShoppingCart, Eye, XCircle, RotateCcw, Printer, Loader2, CheckCircle, Clock, Plus, Check } from 'lucide-react'
+import { Search, ShoppingCart, Eye, XCircle, RotateCcw, Loader2, CheckCircle, Clock, Plus, Check } from 'lucide-react'
 import apiClient from '@/api/client'
 import type { Sale } from '@/types'
 import ReceiptModal from '@/components/sales/ReceiptModal'
+import ReceiptPrintButton from '@/components/sales/ReceiptPrintButton'
 import CompleteSaleModal from '@/components/sales/CompleteSaleModal'
 import { toast } from 'sonner'
 
@@ -307,7 +308,7 @@ export default function CustomerServiceSalesPage() {
                               <Check className="h-4 w-4" />
                             </button>
                           )}
-                          <button
+                          <ReceiptPrintButton
                             onClick={async () => {
                               try {
                                 const response = await apiClient.get<{ success: boolean; data: Sale }>(
@@ -319,11 +320,8 @@ export default function CustomerServiceSalesPage() {
                                 toast.error('Failed to load receipt')
                               }
                             }}
-                            className="text-teal-600 hover:text-teal-800"
-                            title="Print Receipt"
-                          >
-                            <Printer className="h-4 w-4" />
-                          </button>
+                            saleNumber={sale.sale_number}
+                          />
                           <button
                             onClick={() => navigate(`/customer-service/sales/${sale.id}`)}
                             className="text-blue-600 hover:text-blue-800"

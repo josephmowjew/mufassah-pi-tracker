@@ -13,8 +13,8 @@ use App\Models\InventoryMovement;
 use App\Models\Sale;
 use App\Models\User;
 use App\Notifications\NewSaleNotification;
-use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Notification;
 
 beforeEach(function () {
     $this->seed(\Database\Seeders\RolesAndPermissionsSeeder::class);
@@ -888,6 +888,64 @@ describe('Admin Sales', function () {
                 ->assertSeeText('Mufasah Electronics')
                 ->assertSeeText('T-PIN: 70474293');
         }
+    });
+
+    it('supports labelled copies and guided printing on direct and signed receipt pages', function () {
+        config(['receipt.logo' => null]);
+        $sale = Sale::create([
+            'sale_number' => 'SALE-2026-COPIES-01',
+            'customer_id' => $this->customer->id,
+            'branch_id' => $this->branch->id,
+            'sold_by_id' => $this->admin->id,
+            'payment_method' => PaymentMethod::Cash,
+            'payment_status' => PaymentStatus::Completed,
+            'status' => SaleStatus::COMPLETED,
+            'sale_date' => now(),
+            'subtotal' => 100,
+            'tax_amount' => 0,
+            'discount_amount' => 0,
+            'total_amount' => 100,
+        ]);
+
+        foreach (['a4', 'thermal'] as $format) {
+            foreach (['customer', 'company'] as $copy) {
+                $query = "format={$format}&copy={$copy}";
+                $this->actingAs($this->admin)
+                    ->get("/api/v1/admin/sales/{$sale->id}/receipt?{$query}")
+                    ->assertOk()
+                    ->assertSeeText(ucfirst($copy).' copy')
+                    ->assertSee('id="receipt-print-controls"', false);
+
+                $url = $this->actingAs($this->admin)
+                    ->getJson("/api/v1/admin/sales/{$sale->id}/receipt-url?{$query}")
+                    ->assertOk()
+                    ->json('data.signed_url');
+
+                $this->get($url)
+                    ->assertOk()
+                    ->assertSeeText(ucfirst($copy).' copy')
+                    ->assertSee('id="receipt-print-controls"', false);
+
+                $otherCopy = $copy === 'customer' ? 'company' : 'customer';
+                $this->get(str_replace("copy={$copy}", "copy={$otherCopy}", $url))
+                    ->assertForbidden();
+
+                $pdf = $this->actingAs($this->admin)
+                    ->get("/api/v1/admin/sales/{$sale->id}/receipt?{$query}&output=pdf")
+                    ->assertOk()
+                    ->assertHeader('Content-Type', 'application/pdf');
+
+                expect($pdf->headers->get('Content-Disposition'))->toContain("_{$copy}.pdf")
+                    ->and($pdf->getContent())->toStartWith('%PDF-');
+            }
+        }
+
+        $this->actingAs($this->admin)
+            ->get("/api/v1/admin/sales/{$sale->id}/receipt?copy=invalid")
+            ->assertStatus(400);
+        $this->actingAs($this->admin)
+            ->getJson("/api/v1/admin/sales/{$sale->id}/receipt-url?copy=invalid")
+            ->assertStatus(400);
     });
 
     it('allocates product-spec sales only from the seller branch', function () {

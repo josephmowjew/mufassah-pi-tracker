@@ -10,15 +10,16 @@ class ReceiptService
     /**
      * Generate receipt as PDF.
      */
-    public function generatePdf(Sale $sale, string $format = 'a4'): \Illuminate\Http\Response
+    public function generatePdf(Sale $sale, string $format = 'a4', string $receiptCopy = 'customer'): \Illuminate\Http\Response
     {
         $sale->load(['customer', 'soldBy', 'items.device.category', 'items.subscriptionPlan']);
 
-        $data = $this->prepareReceiptData($sale);
+        $data = $this->prepareReceiptData($sale, $receiptCopy);
+        $data['interactive'] = false;
 
         $pdf = PDF::loadView("receipts.{$format}_receipt", $data);
 
-        $filename = "receipt_{$sale->sale_number}.pdf";
+        $filename = "receipt_{$sale->sale_number}_{$receiptCopy}.pdf";
 
         return $pdf->download($filename);
     }
@@ -26,11 +27,12 @@ class ReceiptService
     /**
      * Generate receipt as HTML for printing.
      */
-    public function generateHtml(Sale $sale, string $format = 'a4'): string
+    public function generateHtml(Sale $sale, string $format = 'a4', string $receiptCopy = 'customer'): string
     {
         $sale->load(['customer', 'soldBy', 'items.device.category', 'items.subscriptionPlan']);
 
-        $data = $this->prepareReceiptData($sale);
+        $data = $this->prepareReceiptData($sale, $receiptCopy);
+        $data['interactive'] = true;
 
         return view("receipts.{$format}_receipt", $data)->render();
     }
@@ -53,7 +55,7 @@ class ReceiptService
     /**
      * Prepare receipt data.
      */
-    protected function prepareReceiptData(Sale $sale): array
+    protected function prepareReceiptData(Sale $sale, string $receiptCopy = 'customer'): array
     {
         $company = $this->getCompanyInfo();
 
@@ -64,6 +66,7 @@ class ReceiptService
             'customer' => $sale->customer,
             'soldBy' => $sale->soldBy,
             'barcode' => $this->generateBarcode($sale),
+            'receiptCopy' => $receiptCopy,
         ];
     }
 

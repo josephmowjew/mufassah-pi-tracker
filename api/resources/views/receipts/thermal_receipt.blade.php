@@ -26,6 +26,11 @@
             width: 100%;
         }
 
+        @media screen {
+            body.receipt-interactive { width: auto; padding: 16px; background: #f1f5f9; }
+            body.receipt-interactive .receipt { width: 80mm; max-width: 100%; margin: 0 auto; padding: 3mm; background: #fff; }
+        }
+
         .header {
             text-align: center;
             border-bottom: 1px dashed #000;
@@ -144,7 +149,8 @@
         }
     </style>
 </head>
-<body>
+<body class="{{ ($interactive ?? false) ? 'receipt-interactive' : '' }}">
+    @include('receipts.partials.print_controls')
     <div class="receipt">
         <!-- Header -->
         <div class="header">
@@ -158,6 +164,7 @@
             @if($company['tpin'])
                 <div class="company-info">T-PIN: {{ $company['tpin'] }}</div>
             @endif
+            <div class="company-info" data-receipt-copy>{{ ($receiptCopy ?? 'customer') === 'company' ? 'Company copy' : 'Customer copy' }}</div>
         </div>
 
         <!-- Receipt Info -->
@@ -254,9 +261,5 @@
         </div>
     </div>
 
-    <script>
-        // Auto print when page loads
-        window.onload = function() { window.print(); };
-    </script>
 </body>
 </html>

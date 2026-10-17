@@ -320,6 +320,7 @@
     </style>
 </head>
 <body>
+    @include('receipts.partials.print_controls')
     <div class="receipt-container">
         <!-- Header -->
         <div class="header">
@@ -346,6 +347,7 @@
             <div class="receipt-title">
                 <h1>RECEIPT</h1>
                 <div class="receipt-number">#{{ $sale->sale_number }}</div>
+                <div data-receipt-copy>{{ ($receiptCopy ?? 'customer') === 'company' ? 'Company copy' : 'Customer copy' }}</div>
             </div>
         </div>
 
@@ -490,9 +492,5 @@
         </div>
     </div>
 
-    <script>
-        // Auto print when page loads (remove if not desired)
-        // window.onload = function() { window.print(); };
-    </script>
 </body>
 </html>

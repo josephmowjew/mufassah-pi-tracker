@@ -1,9 +1,10 @@
 import { useParams, Link } from 'react-router-dom'
-import { ArrowLeft, Printer } from 'lucide-react'
+import { ArrowLeft } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import apiClient from '@/api/client'
 import type { Sale } from '@/types'
 import ReceiptModal from '@/components/sales/ReceiptModal'
+import ReceiptPrintButton from '@/components/sales/ReceiptPrintButton'
 import { useState } from 'react'
 
 export default function SaleDetailPage() {
@@ -71,18 +72,15 @@ export default function SaleDetailPage() {
           <ArrowLeft className="h-5 w-5" />
         </Link>
         <div className="flex-1">
-          <div className="flex items-start justify-between">
+          <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <h1 className="text-2xl font-bold text-slate-900">Sale Details</h1>
               <p className="text-sm text-slate-500 mt-1">{sale.sale_number}</p>
             </div>
-            <button
+            <ReceiptPrintButton
               onClick={() => setShowReceiptModal(true)}
-              className="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-colors flex items-center gap-2"
-            >
-              <Printer className="h-4 w-4" />
-              Print Receipt
-            </button>
+              saleNumber={sale.sale_number}
+            />
           </div>
         </div>
       </div>

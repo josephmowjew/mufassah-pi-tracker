@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Search, ShoppingCart, Plus, Loader2, User, Eye, CheckCircle, XCircle, RotateCcw, Clock, CalendarDays, Receipt, Smartphone, Trash2, Package, UserPlus, X, Minus, Printer, DollarSign, TrendingUp } from 'lucide-react'
+import { Search, ShoppingCart, Plus, Loader2, User, Eye, CheckCircle, XCircle, RotateCcw, Clock, CalendarDays, Receipt, Smartphone, Trash2, Package, UserPlus, X, Minus, DollarSign, TrendingUp } from 'lucide-react'
 import apiClient from '@/api/client'
 import { devicesApi } from '@/api/devices'
 import { toast } from 'sonner'
@@ -9,6 +9,7 @@ import { Authorize } from '@/components/auth/Authorize'
 import BranchScopeFilter from '@/components/admin/BranchScopeFilter'
 import { PERMISSIONS } from '@/stores/auth-store'
 import ReceiptModal from '@/components/sales/ReceiptModal'
+import ReceiptPrintButton from '@/components/sales/ReceiptPrintButton'
 import { appendBranchScope } from '@/lib/branch-scope'
 
 interface NewCustomerFormData {
@@ -964,13 +965,10 @@ export default function SalesPage() {
                       </td>
                       <td className="px-6 py-4 text-right">
                         <div className="flex items-center justify-end gap-2">
-                          <button
+                          <ReceiptPrintButton
                             onClick={() => handlePrintReceipt(sale)}
-                            className="text-emerald-600 hover:text-emerald-800"
-                            title="Print Receipt"
-                          >
-                            <Printer className="h-4 w-4" />
-                          </button>
+                            saleNumber={sale.sale_number}
+                          />
                           {sale.status.value === 'draft' && (
                             <Authorize permission={PERMISSIONS.MANAGE_SALES}>
                               <button
@@ -1696,13 +1694,10 @@ export default function SalesPage() {
               {/* Actions */}
               <div className="p-6 border-t border-slate-200 flex justify-between">
                 <div className="flex gap-2">
-                  <button
+                  <ReceiptPrintButton
                     onClick={() => handlePrintReceipt(selectedSale)}
-                    className="inline-flex items-center gap-2 px-4 py-2 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
-                  >
-                    <Printer className="h-4 w-4" />
-                    Print Receipt
-                  </button>
+                    saleNumber={selectedSale.sale_number}
+                  />
                   <button
                     onClick={() => {
                       setShowDetailsModal(false)
