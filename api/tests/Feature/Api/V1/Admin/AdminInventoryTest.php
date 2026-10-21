@@ -667,8 +667,11 @@ describe('Bulk Store Devices', function () {
         $response = $this->actingAs($this->admin)
             ->postJson('/api/v1/admin/inventory/bulk', []);
 
+        // target_selling_price is deliberately absent: a line without one
+        // inherits the price already in use for the product. See
+        // AdminInventoryPricingTest.
         $response->assertUnprocessable()
-            ->assertJsonValidationErrors(['category_id', 'branch_id', 'brand', 'model', 'quantity', 'buying_price', 'target_selling_price']);
+            ->assertJsonValidationErrors(['category_id', 'branch_id', 'brand', 'model', 'quantity', 'buying_price']);
     });
 
     it('validates quantity limits', function () {

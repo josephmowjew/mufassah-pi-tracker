@@ -16,6 +16,7 @@ use App\Models\InventoryBatch;
 use App\Models\InventoryReceipt;
 use App\Services\InventoryCatalogResolver;
 use App\Services\InventoryMovementService;
+use App\Services\InventoryPriceResolver;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -29,6 +30,7 @@ class AdminInventoryController extends BaseController
     public function __construct(
         private readonly InventoryMovementService $movementService,
         private readonly InventoryCatalogResolver $catalogResolver,
+        private readonly InventoryPriceResolver $priceResolver,
     ) {}
 
     /**
@@ -324,6 +326,33 @@ class AdminInventoryController extends BaseController
         ]);
     }
 
+    /**
+     * Prices a new intake would inherit for a product.
+     *
+     * Read-only helper for the receiving screen: it shows the price already in
+     * use so the operator does not have to retype it for every delivery. The
+     * same resolver runs server-side on intake, so a client that skips this
+     * call still gets the inherited price.
+     */
+    public function priceSuggestion(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'category_id' => ['required', Rule::exists('device_categories', 'id')->whereNull('deleted_at')],
+            'brand' => ['required', 'string', 'max:100'],
+            'model' => ['required', 'string', 'max:100'],
+            'branch_id' => ['nullable', Rule::exists('branches', 'id')->whereNull('deleted_at')],
+        ]);
+
+        $branchId = $this->resolveInventoryBranchId($request, $validated['branch_id'] ?? null);
+
+        return $this->success($this->priceResolver->resolve(
+            (int) $validated['category_id'],
+            $validated['brand'],
+            $validated['model'],
+            $branchId,
+        ));
+    }
+
     public function batches(Request $request): JsonResponse
     {
         $branchId = $this->resolveInventoryBranchId($request, $request->filled('branch_id') ? $request->integer('branch_id') : null);
@@ -518,7 +547,9 @@ class AdminInventoryController extends BaseController
         $this->logActivity($batch, $request->user(), 'inventory_intake', 'Inventory batch received', [
             'quantity_received' => $validated['quantity'],
             'buying_price' => $validated['buying_price'],
-            'target_selling_price' => $validated['target_selling_price'],
+            // Log what the batch actually carries: the caller may have omitted
+            // the selling price and had one inherited for them.
+            'target_selling_price' => $batch->target_selling_price,
         ]);
 
         return $this->success([
@@ -550,7 +581,7 @@ class AdminInventoryController extends BaseController
                 'received_at' => now(),
             ]);
 
-            foreach ($validated['lines'] as $line) {
+            foreach ($validated['lines'] as $index => $line) {
                 [$batch, $devices] = $this->createInventoryBatchDevices(
                     $validated['branch_id'],
                     [
@@ -558,7 +589,8 @@ class AdminInventoryController extends BaseController
                         'purchase_date' => $validated['purchase_date'] ?? null,
                         'purchase_location' => $validated['purchase_location'] ?? null,
                     ],
-                    $receipt
+                    $receipt,
+                    "lines.{$index}.target_selling_price",
                 );
 
                 $batches->push($batch);
@@ -837,7 +869,7 @@ class AdminInventoryController extends BaseController
     /**
      * @return array{0: InventoryBatch, 1: array<int, Device>}
      */
-    private function createInventoryBatchDevices(int $branchId, array $line, ?InventoryReceipt $receipt = null): array
+    private function createInventoryBatchDevices(int $branchId, array $line, ?InventoryReceipt $receipt = null, string $sellingPriceErrorKey = 'target_selling_price'): array
     {
         $catalog = $this->catalogResolver->resolve(
             (int) $line['category_id'],
@@ -845,6 +877,26 @@ class AdminInventoryController extends BaseController
             $line['model'],
         );
         $line = array_merge($line, $catalog);
+
+        // Intake may omit the selling price so that stock received today keeps
+        // the price already in use for this product. The buying price is never
+        // inferred — it is real cost data for this specific delivery.
+        $targetSellingPrice = $line['target_selling_price'] ?? null;
+
+        if ($targetSellingPrice === null) {
+            $targetSellingPrice = $this->priceResolver->fallbackSellingPrice(
+                (int) $line['category_id'],
+                $line['brand'],
+                $line['model'],
+                $branchId,
+            );
+
+            if ($targetSellingPrice === null) {
+                throw ValidationException::withMessages([
+                    $sellingPriceErrorKey => "No selling price was given for {$line['brand']} {$line['model']} and none could be inherited from earlier stock. Enter a target selling price for this line.",
+                ]);
+            }
+        }
 
         $quantity = (int) $line['quantity'];
         $autoGenerate = $line['auto_generate_serials'] ?? true;
@@ -854,12 +906,15 @@ class AdminInventoryController extends BaseController
             'inventory_receipt_id' => $receipt?->id,
             'branch_id' => $branchId,
             'category_id' => $line['category_id'],
+            // Keep the catalog link alongside the text fields: price lookups
+            // and the catalog reprice cascade match on this id, not on text.
+            'product_model_id' => $line['product_model_id'] ?? null,
             'brand' => $line['brand'],
             'model' => $line['model'],
             'color' => $line['color'] ?? null,
             'quantity_received' => $quantity,
             'buying_price' => $line['buying_price'],
-            'target_selling_price' => $line['target_selling_price'],
+            'target_selling_price' => $targetSellingPrice,
             'purchase_date' => $line['purchase_date'] ?? null,
             'purchase_location' => $line['purchase_location'] ?? null,
             'notes' => $line['notes'] ?? null,

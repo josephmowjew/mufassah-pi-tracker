@@ -511,6 +511,7 @@ Route::middleware(['auth:sanctum', 'not.suspended'])->group(function () {
             Route::get('/stats', [AdminInventoryController::class, 'stats'])->name('stats');
             Route::get('/grouped', [AdminInventoryController::class, 'grouped'])->name('grouped');
             Route::get('/product-options', [AdminInventoryController::class, 'productOptions'])->name('product-options');
+            Route::get('/price-suggestion', [AdminInventoryController::class, 'priceSuggestion'])->name('price-suggestion');
             Route::get('/receipts', [AdminInventoryController::class, 'receipts'])->name('receipts');
             Route::get('/receipts/{receipt}', [AdminInventoryController::class, 'showReceipt'])->name('receipts.show');
             Route::get('/batches', [AdminInventoryController::class, 'batches'])->name('batches');

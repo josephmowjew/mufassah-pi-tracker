@@ -19,6 +19,7 @@ class InventoryBatch extends Model
         'inventory_receipt_id',
         'branch_id',
         'category_id',
+        'product_model_id',
         'brand',
         'model',
         'color',
@@ -53,6 +54,17 @@ class InventoryBatch extends Model
     public function category(): BelongsTo
     {
         return $this->belongsTo(DeviceCategory::class, 'category_id');
+    }
+
+    /**
+     * The catalog model this batch belongs to.
+     *
+     * Nullable: rows written before the column existed, or whose catalog model
+     * could not be matched, still identify themselves by the text fields.
+     */
+    public function productModel(): BelongsTo
+    {
+        return $this->belongsTo(ProductModel::class);
     }
 
     public function devices(): HasMany

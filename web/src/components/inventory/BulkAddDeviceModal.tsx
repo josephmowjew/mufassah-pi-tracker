@@ -1,7 +1,7 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { DeviceCategory, InventoryReceiptData, InventoryReceiptLineData } from '@/types'
-import { AlertCircle, Loader2, PackageCheck, Plus, Trash2, X } from 'lucide-react'
+import { AlertCircle, History, Loader2, PackageCheck, Plus, Trash2, X } from 'lucide-react'
 import apiClient from '@/api/client'
 import { toast } from 'sonner'
 import { useAuthStore } from '@/stores/auth-store'
@@ -46,6 +46,144 @@ const emptyLine = (): InventoryReceiptLineData => ({
 
 const money = (value: number) => `MWK ${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 
+interface PriceSuggestion {
+  buying_price: number | null
+  target_selling_price: number | null
+  source: 'last_batch' | 'catalog_base_price' | null
+  batch_id: number | null
+  batch_number: string | null
+  received_at: string | null
+}
+
+interface ReceiptLinePriceFieldsProps {
+  branchId?: number
+  errors: Record<string, string>
+  index: number
+  line: InventoryReceiptLineData
+  updateLine: (index: number, patch: Partial<InventoryReceiptLineData>) => void
+}
+
+/**
+ * Price inputs for one receipt line.
+ *
+ * Stock received today should keep the price already in use for the product,
+ * so an empty field is filled from the last batch that carried a selling price
+ * (or the catalog base price). Anything the operator types is never
+ * overwritten, and the server re-resolves the same fallback if the field is
+ * submitted empty.
+ */
+function ReceiptLinePriceFields({ branchId, errors, index, line, updateLine }: ReceiptLinePriceFieldsProps) {
+  const appliedKeyRef = useRef<string | null>(null)
+  const hintKey = `${branchId ?? 0}|${line.category_id}|${line.brand.trim()}|${line.model.trim()}`
+  const canLookUp = !!branchId && branchId > 0 && line.category_id > 0 && line.brand.trim() !== '' && line.model.trim() !== ''
+
+  const { data: priceHint } = useQuery({
+    queryKey: ['inventory-price-suggestion', hintKey],
+    queryFn: async () => {
+      const response = await apiClient.get<{ success: boolean; data: PriceSuggestion }>(
+        '/admin/inventory/price-suggestion',
+        {
+          params: {
+            branch_id: branchId,
+            category_id: line.category_id,
+            brand: line.brand.trim(),
+            model: line.model.trim(),
+          },
+        }
+      )
+      return response.data.data
+    },
+    enabled: canLookUp,
+    staleTime: 5 * 60 * 1000,
+  })
+
+  useEffect(() => {
+    if (appliedKeyRef.current === hintKey) return
+
+    // Product changed but the lookup has not resolved yet: forget the previous
+    // application so this product's pricing can still fill the fields.
+    appliedKeyRef.current = priceHint ? hintKey : null
+    if (!priceHint) return
+
+    const patch: Partial<InventoryReceiptLineData> = {}
+    if (line.buying_price === undefined && priceHint.buying_price !== null) {
+      patch.buying_price = priceHint.buying_price
+    }
+    if (line.target_selling_price === undefined && priceHint.target_selling_price !== null) {
+      patch.target_selling_price = priceHint.target_selling_price
+    }
+    if (Object.keys(patch).length > 0) updateLine(index, patch)
+  }, [priceHint, hintKey, index, line.buying_price, line.target_selling_price, updateLine])
+
+  const buyingError = errors[`lines.${index}.buying_price`]
+  const sellingError = errors[`lines.${index}.target_selling_price`]
+
+  // A value counts as reused only while it still equals what the lookup
+  // returned. The moment the operator types something else the badge goes away,
+  // so the label never claims a number the operator chose themselves.
+  const buyingIsReused = priceHint?.buying_price != null && line.buying_price === priceHint.buying_price
+  const sellingIsReused = priceHint?.target_selling_price != null && line.target_selling_price === priceHint.target_selling_price
+
+  const sourceLabel = priceHint?.source === 'last_batch' && priceHint.batch_number
+    ? priceHint.batch_number
+    : priceHint?.source === 'catalog_base_price'
+    ? 'catalog price'
+    : null
+
+  const reusedBadge = (text: string) => (
+    <span className="mt-1 inline-flex items-center gap-1 rounded border border-sky-200 bg-sky-50 px-1.5 py-0.5 text-[11px] font-medium text-sky-700">
+      <History className="h-3 w-3" />
+      {text}
+    </span>
+  )
+
+  return (
+    <>
+      <div>
+        <label className="block text-xs font-medium text-slate-600 mb-1">Buying Price / Cost</label>
+        <input
+          type="number"
+          min="0"
+          step="0.01"
+          value={line.buying_price ?? ''}
+          onChange={(e) => updateLine(index, { buying_price: e.target.value === '' ? undefined : parseFloat(e.target.value) })}
+          placeholder="0.00"
+          className={`w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+            buyingError ? 'border-red-300' : 'border-slate-300'
+          }`}
+        />
+        {buyingError && <p className="mt-1 text-xs text-red-500">{buyingError}</p>}
+        {!buyingError && buyingIsReused && sourceLabel && (
+          <div>{reusedBadge(`Same as ${sourceLabel}`)}</div>
+        )}
+      </div>
+      <div>
+        <label className="block text-xs font-medium text-slate-600 mb-1">Target Selling Price</label>
+        <input
+          type="number"
+          min="0"
+          step="0.01"
+          value={line.target_selling_price ?? ''}
+          onChange={(e) => updateLine(index, { target_selling_price: e.target.value === '' ? undefined : parseFloat(e.target.value) })}
+          placeholder="0.00"
+          className={`w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+            sellingError ? 'border-red-300' : 'border-slate-300'
+          }`}
+        />
+        {sellingError && <p className="mt-1 text-xs text-red-500">{sellingError}</p>}
+        {!sellingError && sellingIsReused && sourceLabel && (
+          <div>{reusedBadge(`Reusing ${sourceLabel}`)}</div>
+        )}
+        {!sellingError && !sellingIsReused && priceHint && canLookUp && sourceLabel === null && (
+          <p className="mt-1 text-xs text-amber-600">
+            No previous price for this product — enter one.
+          </p>
+        )}
+      </div>
+    </>
+  )
+}
+
 interface ReceiptLineProductFieldsProps {
   categories?: DeviceCategory[]
   errors: Record<string, string>
@@ -89,23 +227,39 @@ function ReceiptLineProductFields({ categories, errors, index, line, updateLine 
   const handleCategoryChange = (categoryId: number) => {
     setSelectedBrandId(null)
     setSelectedModelId(null)
-    updateLine(index, { category_id: categoryId, brand: '', model: '', color: '', target_selling_price: undefined })
+    updateLine(index, {
+      category_id: categoryId,
+      brand: '',
+      model: '',
+      color: '',
+      buying_price: undefined,
+      target_selling_price: undefined,
+    })
   }
 
   const handleBrandChange = (brandId: number | null) => {
     setSelectedBrandId(brandId)
     setSelectedModelId(null)
     const brand = brands?.find(option => option.id === brandId)
-    updateLine(index, { brand: brand?.name || '', model: '', color: '', target_selling_price: undefined })
+    updateLine(index, {
+      brand: brand?.name || '',
+      model: '',
+      color: '',
+      buying_price: undefined,
+      target_selling_price: undefined,
+    })
   }
 
   const handleModelChange = (modelId: number | null) => {
     setSelectedModelId(modelId)
     const model = models?.find(option => option.id === modelId)
+    // Prices belong to the product, not the line: clear both so this model's
+    // existing pricing fills in instead of the previous model's carrying over.
     updateLine(index, {
       model: model?.name || '',
       color: '',
-      target_selling_price: model?.base_price || line.target_selling_price,
+      buying_price: undefined,
+      target_selling_price: undefined,
     })
   }
 
@@ -257,7 +411,13 @@ function ReceiptLineProductFields({ categories, errors, index, line, updateLine 
             setUseCustomProduct(checked)
             setSelectedBrandId(null)
             setSelectedModelId(null)
-            updateLine(index, { brand: '', model: '', color: '', target_selling_price: undefined })
+            updateLine(index, {
+              brand: '',
+              model: '',
+              color: '',
+              buying_price: undefined,
+              target_selling_price: undefined,
+            })
           }}
           className="h-4 w-4 text-blue-600 border-slate-300 rounded focus:ring-blue-500"
         />
@@ -401,8 +561,11 @@ export default function BulkAddDeviceModal({ onClose }: BulkAddDeviceModalProps)
       if (line.buying_price === undefined || line.buying_price < 0) {
         newErrors[`lines.${index}.buying_price`] = 'Please enter a valid buying price'
       }
-      if (line.target_selling_price === undefined || line.target_selling_price < 0) {
-        newErrors[`lines.${index}.target_selling_price`] = 'Please enter a valid target selling price'
+      // A blank target price is valid: the server inherits the price already in
+      // use for the product, and answers with a line-level error when there is
+      // nothing to inherit. Blocking it here would contradict that contract.
+      if (line.target_selling_price !== undefined && line.target_selling_price < 0) {
+        newErrors[`lines.${index}.target_selling_price`] = 'Target selling price cannot be negative'
       }
 
       if (!line.auto_generate_serials) {
@@ -529,6 +692,9 @@ export default function BulkAddDeviceModal({ onClose }: BulkAddDeviceModalProps)
                 <div>
                   <h4 className="text-sm font-semibold text-slate-800">Product Lines</h4>
                   <p className="text-xs text-slate-500">Each line becomes a trackable inventory batch</p>
+                  <p className="text-xs text-slate-500">
+                    Prices default to the last delivery of the same product — change them if this one differs.
+                  </p>
                 </div>
                 <button
                   type="button"
@@ -565,40 +731,13 @@ export default function BulkAddDeviceModal({ onClose }: BulkAddDeviceModalProps)
                     />
 
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-                      <div>
-                        <label className="block text-xs font-medium text-slate-600 mb-1">Buying Price / Cost</label>
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          value={line.buying_price ?? ''}
-                          onChange={(e) => updateLine(index, { buying_price: e.target.value === '' ? undefined : parseFloat(e.target.value) })}
-                          placeholder="0.00"
-                          className={`w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                            errors[`lines.${index}.buying_price`] ? 'border-red-300' : 'border-slate-300'
-                          }`}
-                        />
-                        {errors[`lines.${index}.buying_price`] && (
-                          <p className="mt-1 text-xs text-red-500">{errors[`lines.${index}.buying_price`]}</p>
-                        )}
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium text-slate-600 mb-1">Target Selling Price</label>
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          value={line.target_selling_price ?? ''}
-                          onChange={(e) => updateLine(index, { target_selling_price: e.target.value === '' ? undefined : parseFloat(e.target.value) })}
-                          placeholder="0.00"
-                          className={`w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                            errors[`lines.${index}.target_selling_price`] ? 'border-red-300' : 'border-slate-300'
-                          }`}
-                        />
-                        {errors[`lines.${index}.target_selling_price`] && (
-                          <p className="mt-1 text-xs text-red-500">{errors[`lines.${index}.target_selling_price`]}</p>
-                        )}
-                      </div>
+                      <ReceiptLinePriceFields
+                        branchId={receipt.branch_id}
+                        errors={errors}
+                        index={index}
+                        line={line}
+                        updateLine={updateLine}
+                      />
                       <div className="md:col-span-2">
                         <label className="block text-xs font-medium text-slate-600 mb-1">Line Notes</label>
                         <input

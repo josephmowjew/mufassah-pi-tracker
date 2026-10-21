@@ -25,7 +25,9 @@ class BulkStoreDeviceRequest extends FormRequest
             'quantity' => ['required', 'integer', 'min:1', 'max:100'],
             'purchase_date' => ['nullable', 'date', 'before_or_equal:today'],
             'buying_price' => ['required', 'numeric', 'min:0'],
-            'target_selling_price' => ['required', 'numeric', 'min:0'],
+            // Optional on purpose: omitting it inherits the price already in
+            // use for this product. See InventoryPriceResolver.
+            'target_selling_price' => ['nullable', 'numeric', 'min:0'],
             'purchase_price' => ['nullable', 'numeric', 'min:0'],
             'purchase_location' => ['nullable', 'string', 'max:255'],
             'notes' => ['nullable', 'string', 'max:1000'],
@@ -48,7 +50,7 @@ class BulkStoreDeviceRequest extends FormRequest
             'purchase_date.before_or_equal' => 'Purchase date cannot be in the future.',
             'buying_price.required' => 'Please enter the buying price for this batch.',
             'buying_price.min' => 'Buying price cannot be negative.',
-            'target_selling_price.required' => 'Please enter the target selling price for this batch.',
+            'target_selling_price.numeric' => 'The target selling price must be a number. Leave it blank to reuse the price already in use for this product.',
             'target_selling_price.min' => 'Target selling price cannot be negative.',
             'purchase_price.min' => 'Purchase price cannot be negative.',
             'serial_numbers.*.distinct' => 'Serial numbers must be unique within the batch.',

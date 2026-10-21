@@ -17,6 +17,7 @@ class InventoryBatchResource extends JsonResource
             'inventory_receipt_id' => $this->inventory_receipt_id,
             'branch_id' => $this->branch_id,
             'category_id' => $this->category_id,
+            'product_model_id' => $this->product_model_id,
             'brand' => $this->brand,
             'model' => $this->model,
             'color' => $this->color,

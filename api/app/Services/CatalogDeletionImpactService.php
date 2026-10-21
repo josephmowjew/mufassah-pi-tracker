@@ -47,7 +47,7 @@ class CatalogDeletionImpactService
             textMatchCount: $this->textMatchedDeviceCount($brand?->name, $model->name),
             related: [
                 'product_models' => 0,
-                'inventory_batches' => $this->batchQuery($brand?->name, $model->name)->count(),
+                'inventory_batches' => $this->batchQuery($brand, $model)->count(),
                 'inventory_movements' => $this->movementQuery($brand?->name, $model->name)->count(),
             ],
         );
@@ -72,7 +72,7 @@ class CatalogDeletionImpactService
             textMatchCount: $this->textMatchedDeviceCount($brand->name, null),
             related: [
                 'product_models' => $brand->productModels()->count(),
-                'inventory_batches' => $this->batchQuery($brand->name, null)->count(),
+                'inventory_batches' => $this->batchQuery($brand)->count(),
                 'inventory_movements' => $this->movementQuery($brand->name, null)->count(),
             ],
         );
@@ -290,14 +290,36 @@ class CatalogDeletionImpactService
         return $query->count();
     }
 
-    private function batchQuery(?string $brandName, ?string $modelName)
+    private function batchQuery(?Brand $brand, ?ProductModel $model = null)
     {
         $query = InventoryBatch::query();
-        if ($brandName) {
-            $query->where('brand', $brandName);
+
+        if ($model) {
+            // Same predicate the catalog reprice cascade uses: the catalog id
+            // survives a rename, the text fields do not. Reporting fewer
+            // batches here than the cascade would touch is a false all-clear.
+            $query->where(function ($scoped) use ($brand, $model) {
+                $scoped->where('product_model_id', $model->id)
+                    ->orWhere(function ($legacy) use ($brand, $model) {
+                        $legacy->whereNull('product_model_id')
+                            ->where('brand', $brand?->name)
+                            ->where('model', $model->name);
+                    });
+            });
+
+            return $query;
         }
-        if ($modelName !== null) {
-            $query->where('model', $modelName);
+
+        if ($brand) {
+            // A brand delete takes its models with it, so batches linked to any
+            // of those models belong to the blast radius even when the stored
+            // text is stale.
+            $modelIds = $brand->productModels()->select('id');
+
+            $query->where(function ($scoped) use ($brand, $modelIds) {
+                $scoped->where('brand', $brand->name)
+                    ->orWhereIn('product_model_id', $modelIds);
+            });
         }
 
         return $query;

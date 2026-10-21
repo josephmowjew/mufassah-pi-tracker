@@ -29,7 +29,10 @@ class StoreInventoryReceiptRequest extends FormRequest
             'lines.*.description' => ['nullable', 'string', 'max:1000'],
             'lines.*.quantity' => ['required', 'integer', 'min:1', 'max:100'],
             'lines.*.buying_price' => ['required', 'numeric', 'min:0'],
-            'lines.*.target_selling_price' => ['required', 'numeric', 'min:0'],
+            // Optional on purpose: a line with no selling price inherits the
+            // price already in use for this product (latest batch, then the
+            // catalog base price). See InventoryPriceResolver.
+            'lines.*.target_selling_price' => ['nullable', 'numeric', 'min:0'],
             'lines.*.notes' => ['nullable', 'string', 'max:1000'],
             'lines.*.auto_generate_serials' => ['boolean'],
             'lines.*.serial_numbers' => ['nullable', 'array'],
@@ -52,7 +55,8 @@ class StoreInventoryReceiptRequest extends FormRequest
             'lines.*.quantity.min' => 'Each product line must receive at least 1 unit.',
             'lines.*.quantity.max' => 'Each product line can receive a maximum of 100 units.',
             'lines.*.buying_price.required' => 'Each product line needs a buying price.',
-            'lines.*.target_selling_price.required' => 'Each product line needs a target selling price.',
+            'lines.*.target_selling_price.numeric' => 'The target selling price must be a number. Leave it blank to reuse the price already in use for this product.',
+            'lines.*.target_selling_price.min' => 'Target selling price cannot be negative.',
             'lines.*.serial_numbers.*.distinct' => 'Serial numbers must be unique within the product line.',
             'lines.*.serial_numbers.*.unique' => 'One or more serial numbers already exist in the system.',
         ];
