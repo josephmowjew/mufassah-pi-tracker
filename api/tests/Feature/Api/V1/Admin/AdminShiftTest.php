@@ -55,3 +55,25 @@ it('keeps global shift access available to super admins', function () {
         ->assertSuccessful()
         ->assertJsonPath('meta.total', 1);
 });
+
+it('renders the real staff name in the shift summary notification', function () {
+    $staff = User::factory()->create([
+        'branch_id' => $this->branch->id,
+        'name' => 'Chisomo Banda',
+    ]);
+
+    $shift = Shift::create([
+        'user_id' => $staff->id,
+        'branch_id' => $this->branch->id,
+        'started_at' => now()->subHours(8),
+        'ended_at' => now(),
+        'status' => 'completed',
+    ]);
+
+    $mail = (new \App\Notifications\ShiftEndSummaryNotification($shift))->toMail($staff);
+    $body = implode("\n", $mail->introLines);
+
+    expect($body)
+        ->toContain('- Staff: Chisomo Banda')
+        ->not->toContain('Unknown Staff');
+});

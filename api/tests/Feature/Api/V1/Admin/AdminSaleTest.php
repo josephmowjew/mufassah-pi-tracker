@@ -83,6 +83,32 @@ describe('Admin Sales', function () {
         });
     });
 
+    it('renders the real staff and customer names in the sale notification mail', function () {
+        $sale = Sale::create([
+            'sale_number' => 'SALE-2026-09999',
+            'customer_id' => $this->customer->id,
+            'branch_id' => $this->branch->id,
+            'sold_by_id' => $this->admin->id,
+            'payment_method' => PaymentMethod::Cash,
+            'payment_status' => PaymentStatus::Completed,
+            'status' => SaleStatus::COMPLETED,
+            'subtotal' => 1000,
+            'tax_amount' => 175,
+            'discount_amount' => 0,
+            'total_amount' => 1175,
+            'sale_date' => now(),
+        ]);
+
+        $mail = (new NewSaleNotification($sale))->toMail($this->admin);
+        $body = implode("\n", $mail->introLines);
+
+        expect($body)
+            ->toContain("- Staff: {$this->admin->name}")
+            ->toContain("- Customer: {$this->customer->name}")
+            ->not->toContain('Unknown Staff')
+            ->not->toContain('Customer: Guest');
+    });
+
     it('stores an in-app notification for super admins when a store admin makes a sale', function () {
         config(['inventory.approval_email' => 'approval@example.test']);
         CommunicationSettings::current()->update([

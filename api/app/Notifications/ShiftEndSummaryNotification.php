@@ -34,8 +34,10 @@ class ShiftEndSummaryNotification extends Notification implements ShouldQueue
      */
     public function toMail(object $notifiable): MailMessage
     {
+        $this->shift->loadMissing(['user', 'branch']);
+
         $frontendUrl = config('app.frontend_url', 'http://localhost:3000');
-        $staffName = $this->shift->staff?->name ?? 'Unknown Staff';
+        $staffName = $this->shift->user?->name ?? 'Unknown Staff';
         $branchName = $this->shift->branch?->name ?? 'Unknown Branch';
 
         // Calculate shift duration
@@ -71,7 +73,7 @@ class ShiftEndSummaryNotification extends Notification implements ShouldQueue
     {
         return [
             'shift_id' => $this->shift->id,
-            'staff_name' => $this->shift->staff?->name,
+            'staff_name' => $this->shift->user?->name,
             'revenue' => $this->shift->revenue,
             'sales_count' => $this->shift->sales_count,
         ];

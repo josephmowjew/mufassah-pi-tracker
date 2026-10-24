@@ -34,10 +34,12 @@ class NewSaleNotification extends Notification implements ShouldQueue
      */
     public function toMail(object $notifiable): MailMessage
     {
+        $this->sale->loadMissing(['soldBy', 'branch', 'customer', 'items']);
+
         $frontendUrl = config('app.frontend_url', 'http://localhost:3000');
-        $staffName = $this->sale->staff?->name ?? 'Unknown Staff';
+        $staffName = $this->sale->soldBy?->name ?? 'Unknown Staff';
         $branchName = $this->sale->branch?->name ?? 'Unknown Branch';
-        $customerName = $this->sale->customer_name ?? 'Guest';
+        $customerName = $this->sale->customer?->name ?? 'Guest';
 
         return (new MailMessage)
             ->subject("New Sale: {$this->sale->sale_number}")
