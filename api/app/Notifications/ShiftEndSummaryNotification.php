@@ -15,9 +15,7 @@ class ShiftEndSummaryNotification extends Notification implements ShouldQueue
     /**
      * Create a new notification instance.
      */
-    public function __construct(public Shift $shift)
-    {
-    }
+    public function __construct(public Shift $shift) {}
 
     /**
      * Get the notification's delivery channels.
@@ -46,7 +44,7 @@ class ShiftEndSummaryNotification extends Notification implements ShouldQueue
         $duration = $endTime->diffAsCarbonInterval($startTime);
 
         return (new MailMessage)
-            ->subject('Shift Ended: ' . $staffName)
+            ->subject('Shift Ended: '.$staffName)
             ->greeting('Hello Admin,')
             ->line('A customer service staff member has ended their shift.')
             ->line('**Shift Summary:**')
@@ -58,9 +56,9 @@ class ShiftEndSummaryNotification extends Notification implements ShouldQueue
             ->line('')
             ->line('**Performance:**')
             ->line("- Total Sales: {$this->shift->sales_count}")
-            ->line("- Revenue: MWK " . number_format($this->shift->revenue, 2))
-            ->line("- Cash Sales: MWK " . number_format($this->shift->cash_sales, 2))
-            ->action('View Shift Details', $frontendUrl . "/admin/shifts/{$this->shift->id}")
+            ->line('- Revenue: MWK '.number_format($this->shift->revenue, 2))
+            ->line('- Cash Sales: MWK '.number_format($this->shift->cash_sales, 2))
+            ->action('View Shift Details', $frontendUrl."/admin/shifts/{$this->shift->id}")
             ->line('Thank you for using Mufasah Device Tracking!');
     }
 

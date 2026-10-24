@@ -15,9 +15,7 @@ class NewSaleNotification extends Notification implements ShouldQueue
     /**
      * Create a new notification instance.
      */
-    public function __construct(public Sale $sale)
-    {
-    }
+    public function __construct(public Sale $sale) {}
 
     /**
      * Get the notification's delivery channels.
@@ -50,11 +48,11 @@ class NewSaleNotification extends Notification implements ShouldQueue
             ->line("- Customer: {$customerName}")
             ->line("- Staff: {$staffName}")
             ->line("- Branch: {$branchName}")
-            ->line("- Total Amount: MWK " . number_format($this->sale->total_amount, 2))
-            ->line("- Payment Method: " . str_replace('_', ' ', ucfirst($this->sale->payment_method->value)))
+            ->line('- Total Amount: MWK '.number_format($this->sale->total_amount, 2))
+            ->line('- Payment Method: '.str_replace('_', ' ', ucfirst($this->sale->payment_method->value)))
             ->line("- Items Sold: {$this->sale->items->count()}")
             ->line("- Date: {$this->sale->created_at->format('Y-m-d H:i')}")
-            ->action('View Sale Details', $frontendUrl . "/admin/sales/{$this->sale->id}")
+            ->action('View Sale Details', $frontendUrl."/admin/sales/{$this->sale->id}")
             ->line('Thank you for using Mufasah Device Tracking!');
     }
 
