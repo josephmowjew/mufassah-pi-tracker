@@ -77,3 +77,29 @@ it('renders the real staff name in the shift summary notification', function () 
         ->toContain('- Staff: Chisomo Banda')
         ->not->toContain('Unknown Staff');
 });
+
+it('keeps the recorded start time when a shift is completed', function () {
+    $staff = User::factory()->create(['branch_id' => $this->branch->id]);
+
+    $startedAt = now()->subHours(8)->startOfSecond();
+
+    $shift = Shift::create([
+        'user_id' => $staff->id,
+        'branch_id' => $this->branch->id,
+        'started_at' => $startedAt,
+        'status' => 'active',
+    ]);
+
+    $shift->complete(['closing_cash' => 500]);
+
+    $shift->refresh();
+
+    // Completing a shift is an UPDATE. Before the ON UPDATE timestamp clause was
+    // removed, MariaDB rewrote started_at to now() during that UPDATE, so started_at
+    // and ended_at landed on the same second and every shift reported 0 seconds.
+    expect($shift->started_at->toDateTimeString())
+        ->toBe($startedAt->toDateTimeString())
+        ->and($shift->ended_at)->not->toBeNull()
+        ->and($shift->ended_at->greaterThan($shift->started_at))->toBeTrue()
+        ->and($shift->duration)->toBeGreaterThan(0);
+});

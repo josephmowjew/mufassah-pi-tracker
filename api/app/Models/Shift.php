@@ -121,6 +121,10 @@ class Shift extends Model
 
     /**
      * Get the duration of the shift in minutes.
+     *
+     * Carbon 3 returns a signed difference, so the arguments must run
+     * start -> end. Calling it the other way round made every completed
+     * shift report a negative duration.
      */
     public function getDurationAttribute()
     {
@@ -128,7 +132,7 @@ class Shift extends Model
             return null;
         }
 
-        return $this->ended_at->diffInMinutes($this->started_at);
+        return $this->started_at->diffInMinutes($this->ended_at);
     }
 
     /**
