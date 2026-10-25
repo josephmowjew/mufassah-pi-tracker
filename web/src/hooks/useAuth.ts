@@ -61,19 +61,16 @@ export function useRegister() {
 export function useLogout() {
   const { logout } = useAuthStore()
   const navigate = useNavigate()
-  const queryClient = useQueryClient()
 
   return useMutation({
     mutationFn: () => authApi.logout(),
     onSuccess: () => {
       logout()
-      queryClient.clear()
       navigate('/login')
     },
     onError: () => {
       // Even if the API call fails, log out locally
       logout()
-      queryClient.clear()
       navigate('/login')
     },
   })
@@ -110,36 +107,31 @@ export function useResendVerification() {
 }
 
 export function useUser() {
-  const { isAuthenticated, setUser, logout, user } = useAuthStore()
+  const { isAuthenticated, setUser, user } = useAuthStore()
 
   return useQuery({
     queryKey: ['user'],
     queryFn: async () => {
-      try {
-        const freshUser = await authApi.getUser()
+      const token = useAuthStore.getState().token
+      const freshUser = await authApi.getUser()
 
-        // Merge with existing user data to preserve roles/permissions if they're missing in the response
-        // This prevents overwriting complete login data with incomplete data from /user endpoint
-        if (user && user.roles && user.roles.length > 0) {
-          const mergedUser = {
-            ...freshUser,
-            roles: freshUser.roles && freshUser.roles.length > 0 ? freshUser.roles : user.roles,
-            permissions: freshUser.permissions && freshUser.permissions.length > 0 ? freshUser.permissions : user.permissions,
-          }
-          setUser(mergedUser)
-        } else {
-          setUser(freshUser)
-        }
+      // A cancelled query may finish after another account has signed in.
+      if (useAuthStore.getState().token !== token) return freshUser
 
-        return freshUser
-      } catch (error) {
-        // If fetching user fails (e.g., token expired), logout
-        const err = error as { response?: { status?: number } }
-        if (err.response?.status === 401) {
-          logout()
+      // Merge with existing user data to preserve roles/permissions if they're missing in the response
+      // This prevents overwriting complete login data with incomplete data from /user endpoint
+      if (user && user.roles && user.roles.length > 0) {
+        const mergedUser = {
+          ...freshUser,
+          roles: freshUser.roles && freshUser.roles.length > 0 ? freshUser.roles : user.roles,
+          permissions: freshUser.permissions && freshUser.permissions.length > 0 ? freshUser.permissions : user.permissions,
         }
-        throw error
+        setUser(mergedUser)
+      } else {
+        setUser(freshUser)
       }
+
+      return freshUser
     },
     enabled: isAuthenticated,
     staleTime: 1000 * 60 * 5, // 5 minutes

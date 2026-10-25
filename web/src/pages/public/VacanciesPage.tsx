@@ -7,6 +7,7 @@ export default function VacanciesPage() {
   const { data: openRoles = [], isLoading: vacanciesLoading } = useQuery({
     queryKey: ['public-vacancies'],
     queryFn: getPublicVacancies,
+    meta: { public: true },
   })
   const applicationEmail = publicContact.email
   const applicationHref = applicationEmail

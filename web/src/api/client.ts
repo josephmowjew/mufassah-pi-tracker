@@ -1,4 +1,5 @@
 import axios, { type AxiosError, type InternalAxiosRequestConfig } from 'axios'
+import { useAuthStore } from '@/stores/auth-store'
 
 const API_URL = import.meta.env.VITE_API_URL || '/api/v1'
 const API_BASE_URL = API_URL.replace('/api/v1', '') || ''
@@ -71,9 +72,25 @@ apiClient.interceptors.request.use(
 )
 
 // Response interceptor for error handling
+function belongsToPreviousSession(config?: InternalAxiosRequestConfig): boolean {
+  const authorization = config?.headers.Authorization
+  return typeof authorization === 'string'
+    && authorization !== `Bearer ${localStorage.getItem('auth_token')}`
+}
+
 apiClient.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    if (belongsToPreviousSession(response.config)) {
+      throw new axios.CanceledError('The request belongs to a previous session.')
+    }
+    return response
+  },
   async (error: AxiosError) => {
+    // Late responses must not update private caches or log out a new account.
+    if (belongsToPreviousSession(error.config)) {
+      return Promise.reject(new axios.CanceledError('The request belongs to a previous session.'))
+    }
+
     // Network errors and timeouts have no response object
     if (!error.response) {
       if (error.code === 'ECONNABORTED') {
@@ -84,15 +101,10 @@ apiClient.interceptors.response.use(
       return Promise.reject(error)
     }
 
-    // Handle 401 Unauthorized - redirect to login
+    // Clear expired sessions. ProtectedRoute handles login redirects while
+    // public pages remain accessible without authentication.
     if (error.response.status === 401) {
-      localStorage.removeItem('auth_token')
-      localStorage.removeItem('auth-storage')
-      // Only redirect if not already on auth pages
-      if (!window.location.pathname.startsWith('/login') &&
-          !window.location.pathname.startsWith('/register')) {
-        window.location.href = '/login'
-      }
+      useAuthStore.getState().logout()
     }
 
     // Handle 403 Forbidden

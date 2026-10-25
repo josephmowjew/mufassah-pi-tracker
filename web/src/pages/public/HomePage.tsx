@@ -8,6 +8,7 @@ export default function HomePage() {
   const { data: branches = [], isLoading } = useQuery({
     queryKey: ['public-branches'],
     queryFn: getPublicBranches,
+    meta: { public: true },
   })
 
   return (

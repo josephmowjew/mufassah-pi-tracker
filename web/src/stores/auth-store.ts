@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import { clearSessionCache } from '@/lib/query-client'
 import type { User } from '@/types'
 
 // Role constants
@@ -146,12 +147,14 @@ export const useAuthStore = create<AuthState>()(
       },
 
       login: (user, token) => {
+        clearSessionCache()
         localStorage.setItem('auth_token', token)
         set({ user, token, isAuthenticated: true, isLoading: false })
       },
 
       logout: () => {
         localStorage.removeItem('auth_token')
+        clearSessionCache()
         set({ user: null, token: null, isAuthenticated: false })
       },
 

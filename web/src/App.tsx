@@ -1,8 +1,8 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { QueryClientProvider } from '@tanstack/react-query'
 import { Suspense, lazy } from 'react'
-import { Toaster, toast } from 'sonner'
-import { getApiErrorMessage, requiresApiConfirmation } from '@/lib/utils'
+import { Toaster } from 'sonner'
+import { queryClient } from '@/lib/query-client'
 
 // Layouts
 import AuthLayout from '@/components/layout/AuthLayout'
@@ -93,24 +93,6 @@ const CustomerServiceCustomersPage = lazy(() => import('@/pages/customer-service
 const CustomerServiceWarrantiesPage = lazy(() => import('@/pages/customer-service/CustomerServiceWarrantiesPage'))
 const ShiftHistoryPage = lazy(() => import('@/pages/customer-service/ShiftHistoryPage'))
 const ShiftDetailPage = lazy(() => import('@/pages/customer-service/ShiftDetailPage'))
-
-// Create query client
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      staleTime: 1000 * 60 * 5, // 5 minutes
-      retry: 1,
-      refetchOnWindowFocus: false,
-    },
-    mutations: {
-      onError: (error) => {
-        if (requiresApiConfirmation(error)) return
-        const message = getApiErrorMessage(error, 'Something went wrong. Please try again.')
-        toast.error(message)
-      },
-    },
-  },
-})
 
 // Component for role-based 404 redirect
 function NotFoundRedirect() {

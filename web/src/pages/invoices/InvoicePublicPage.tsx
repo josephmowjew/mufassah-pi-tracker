@@ -11,6 +11,7 @@ export default function InvoicePublicPage() {
   const { token } = useParams<{ token: string }>()
   const { data, isLoading, error } = useQuery({
     queryKey: ['public-invoice', token],
+    meta: { public: true },
     queryFn: async () => {
       const response = await apiClient.get<{ data: Invoice }>(`/invoices/public/${token}`)
       return response.data.data
