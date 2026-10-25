@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
 import { ArrowUpRight, Mail, Menu, Phone, X } from 'lucide-react'
 import { publicContact } from '@/pages/public/content'
+import { useAuthStore } from '@/stores/auth-store'
+import { getDefaultRedirectPath } from '@/hooks/useAuth'
 
 const links = [
   { to: '/', label: 'Home' },
@@ -26,12 +28,14 @@ const routeMetadata: Record<string, { title: string; description: string }> = {
 }
 
 export default function PublicLayout() {
+  const { isAuthenticated, user } = useAuthStore()
+  const portalPath = isAuthenticated && user ? getDefaultRedirectPath(user) : '/login'
+  const portalLabel = isAuthenticated && user ? 'My dashboard' : 'Portal login'
   const [menuOpen, setMenuOpen] = useState(false)
   const [headerScrolled, setHeaderScrolled] = useState(false)
   const headerRef = useRef<HTMLElement>(null)
   const location = useLocation()
   useEffect(() => {
-    setMenuOpen(false)
     const metadata = routeMetadata[location.pathname] ?? routeMetadata['/']
     document.title = metadata.title
     document.querySelector('meta[name="description"]')?.setAttribute('content', metadata.description)
@@ -40,6 +44,7 @@ export default function PublicLayout() {
 
     const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
     const scrollTimer = window.setTimeout(() => {
+      setMenuOpen(false)
       if (location.hash) {
         document.getElementById(location.hash.slice(1))?.scrollIntoView({
           behavior: prefersReducedMotion ? 'auto' : 'smooth',
@@ -141,7 +146,7 @@ export default function PublicLayout() {
           </nav>
 
           <div className="marketing-nav-actions">
-            <Link to="/login" className="marketing-login">Portal login</Link>
+            <Link to={portalPath} className="marketing-login">{portalLabel}</Link>
             <a
               href={`tel:${publicContact.phone}`}
               className="marketing-button marketing-button-small marketing-button-dark"
@@ -167,7 +172,7 @@ export default function PublicLayout() {
                 {link.label}
               </Link>
             ))}
-            <Link to="/login">Portal login</Link>
+            <Link to={portalPath}>{portalLabel}</Link>
             <a
               href={`tel:${publicContact.phone}`}
               className="marketing-mobile-contact"
@@ -207,7 +212,7 @@ export default function PublicLayout() {
                 <span>Connect</span>
                 <a href={`tel:${publicContact.phone}`}><Phone size={15} /> {publicContact.phone}</a>
                 <a href={`mailto:${publicContact.email}`}><Mail size={15} /> {publicContact.email}</a>
-                <Link to="/login">Customer portal</Link>
+                <Link to={portalPath}>{isAuthenticated && user ? 'My dashboard' : 'Customer portal'}</Link>
               </div>
             </div>
           </div>

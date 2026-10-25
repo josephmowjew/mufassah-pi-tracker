@@ -9,6 +9,7 @@ import {
   Menu,
   User,
   ReceiptText,
+  Globe,
 } from 'lucide-react'
 import { useAuthStore } from '@/stores/auth-store'
 import { useLogout } from '@/hooks/useAuth'
@@ -59,6 +60,11 @@ export default function CustomerServiceLayout() {
       path: '/customer-service/profile',
       icon: User,
     },
+    {
+      name: 'Visit website',
+      path: '/',
+      icon: Globe,
+    },
   ]
 
   return (
@@ -96,6 +102,8 @@ export default function CustomerServiceLayout() {
             <NavLink
               key={item.path}
               to={item.path}
+              aria-label={item.name}
+              title={!sidebarOpen ? item.name : undefined}
               end={item.path === '/customer-service'}
               className={({ isActive }) =>
                 `flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 ${

@@ -30,6 +30,7 @@ import {
   Building2,
   BriefcaseBusiness,
   ReceiptText,
+  Globe,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -63,6 +64,7 @@ const adminNavigation: NavItem[] = [
   { name: 'Community', href: '/admin/community', icon: Radio, allowedRoles: [ROLES.SUPER_ADMIN] },
   { name: 'Subscriptions', href: '/admin/subscriptions', icon: CreditCard },
   { name: 'Reports', href: '/admin/reports', icon: BarChart3, allowedRoles: [ROLES.SUPER_ADMIN, ROLES.STORE_ADMIN] },
+  { name: 'Visit website', href: '/', icon: Globe },
 ]
 
 export default function AdminLayout() {

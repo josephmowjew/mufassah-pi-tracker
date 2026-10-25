@@ -20,6 +20,7 @@ import {
   ChevronDown,
   Settings,
   Radio,
+  Globe,
 } from 'lucide-react'
 
 const navigation = [
@@ -32,6 +33,7 @@ const navigation = [
   { name: 'Theft Reports', href: '/theft-reports', icon: AlertTriangle },
   { name: 'Subscriptions', href: '/subscriptions', icon: CreditCard },
   { name: 'Warranties', href: '/warranties', icon: FileCheck },
+  { name: 'Visit website', href: '/', icon: Globe },
 ]
 
 export default function DashboardLayout() {

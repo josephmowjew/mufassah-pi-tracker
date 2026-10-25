@@ -2,9 +2,13 @@ import { useQuery } from '@tanstack/react-query'
 import { ArrowRight, ArrowUpRight, Check, MapPin, ShieldCheck } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { getPublicBranches } from '@/api/public'
+import { useAuthStore } from '@/stores/auth-store'
+import { getDefaultRedirectPath } from '@/hooks/useAuth'
 import { productHighlights, publicContact, values } from './content'
 
 export default function HomePage() {
+  const { isAuthenticated, user } = useAuthStore()
+  const portalPath = isAuthenticated && user ? getDefaultRedirectPath(user) : '/login'
   const { data: branches = [], isLoading } = useQuery({
     queryKey: ['public-branches'],
     queryFn: getPublicBranches,
@@ -135,7 +139,9 @@ export default function HomePage() {
       <section className="marketing-cta-strip">
         <div className="marketing-container">
           <div><p>Already part of Mufasah?</p><h2>Your electronics, protected and connected.</h2></div>
-          <Link to="/login" className="marketing-button marketing-button-light">Open customer portal <ArrowRight size={18} /></Link>
+          <Link to={portalPath} className="marketing-button marketing-button-light">
+            {isAuthenticated && user ? 'Open my dashboard' : 'Open customer portal'} <ArrowRight size={18} />
+          </Link>
         </div>
       </section>
     </>
