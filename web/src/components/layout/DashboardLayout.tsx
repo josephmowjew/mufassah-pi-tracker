@@ -62,12 +62,12 @@ export default function DashboardLayout() {
       {/* Sidebar */}
       <aside
         className={cn(
-          'fixed inset-y-0 left-0 z-50 w-[260px] bg-slate-900 transform transition-transform lg:translate-x-0',
+          'fixed inset-y-0 left-0 z-50 flex w-[260px] flex-col overflow-hidden bg-slate-900 transform transition-transform lg:translate-x-0',
           sidebarOpen ? 'translate-x-0' : '-translate-x-full'
         )}
       >
         {/* Logo */}
-        <div className="flex h-16 items-center justify-between px-5">
+        <div className="flex h-16 shrink-0 items-center justify-between px-5">
           <NavLink to="/dashboard" className="flex items-center gap-3">
             <div className="h-9 w-9 rounded-xl bg-teal-500 flex items-center justify-center p-1.5">
               <img src="/logo_transparent.png" alt="Mufasah" className="h-full w-full object-contain" />
@@ -82,7 +82,7 @@ export default function DashboardLayout() {
         </div>
 
         {/* Navigation */}
-        <nav className="px-3 py-4">
+        <nav className="min-h-0 flex-1 overflow-y-auto px-3 py-4">
           <p className="px-3 mb-2 text-xs font-medium text-slate-500 uppercase tracking-wider">
             Main Menu
           </p>
@@ -133,7 +133,7 @@ export default function DashboardLayout() {
         </nav>
 
         {/* User card at bottom */}
-        <div className="absolute bottom-0 left-0 right-0 p-4">
+        <div className="shrink-0 p-4">
           <div className="rounded-xl bg-slate-800/50 p-3">
             <div className="flex items-center gap-3">
               <div className="h-10 w-10 rounded-full bg-gradient-to-br from-teal-400 to-emerald-500 flex items-center justify-center text-white font-semibold">
