@@ -632,6 +632,32 @@ describe('Import sample file', function () {
         @unlink($path);
     });
 
+    it('builds the sample from the catalog that actually exists', function () {
+        // The seeders create "Smartphone", "Lilongwe Branch" and "Blantyre
+        // Branch" — not the plural "Smartphones" and bare city names a fixture
+        // can accidentally invent. A hardcoded sample failed 4/4 rows on a real
+        // installation, so the sample must read the catalog at download time.
+        $this->lilongwe->update(['name' => 'Lilongwe Branch']);
+        $this->blantyre->update(['name' => 'Blantyre Limbe']);
+        $this->phones->update(['name' => 'Smartphone']);
+        $this->accessories->update(['name' => 'Home Appliance']);
+
+        $csv = $this->actingAs($this->admin)
+            ->get('/api/v1/admin/inventory/import/template?format=csv')
+            ->streamedContent();
+
+        expect($csv)->toContain('Lilongwe Branch')
+            ->and($csv)->toContain('Blantyre Limbe')
+            ->and($csv)->toContain('Smartphone')
+            ->and($csv)->not->toContain('Smartphones');
+
+        previewCsv($csv, 'sample.csv')
+            ->assertOk()
+            ->assertJsonPath('data.can_import', true)
+            ->assertJsonPath('data.summary.valid_rows', 4)
+            ->assertJsonPath('data.summary.units', 20);
+    });
+
     it('puts the instructions on the second sheet so the first sheet is the stock', function () {
         $response = $this->actingAs($this->admin)->get('/api/v1/admin/inventory/import/template');
 

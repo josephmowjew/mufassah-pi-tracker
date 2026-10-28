@@ -8,6 +8,10 @@ The same instructions are built into the app (the upload window) and into the
 sample workbook (its **Instructions** sheet), so nobody has to hunt for this
 document.
 
+The downloadable sample is generated from **your** branch and category names, so
+it previews cleanly without editing. The names in the examples below are
+illustrative; yours will differ.
+
 ---
 
 ## 1. The short version
@@ -33,8 +37,8 @@ wrong money.
 
 | Column | Required | Format | Example | Notes |
 |---|---|---|---|---|
-| `Branch` | Recommended | Branch name or code | `Lilongwe` / `LLW` | Must exist in the system. Leave blank only if you choose a default branch in the upload window. |
-| `Category` | **Yes** | Existing category name | `Smartphones` | Must already exist — see [Categories are never created by an upload](#5-rules-worth-knowing). |
+| `Branch` | Recommended | Branch name or code | `Lilongwe Branch` / `LLW` | Must exist in the system. Leave blank only if you choose a default branch in the upload window. |
+| `Category` | **Yes** | Existing category name | `Smartphone` | Must already exist — see [Categories are never created by an upload](#5-rules-worth-knowing). |
 | `Brand` | **Yes** | Text | `Samsung` | A new brand is added to the catalog automatically. |
 | `Model` | **Yes** | Text | `Galaxy A15` | A new model is added to the catalog automatically. |
 | `Color` | No | Text | `Blue` | Optional; used for display and grouping. |
@@ -61,14 +65,14 @@ Two branches, one file, three products:
 
 ```csv
 Branch,Category,Brand,Model,Color,Quantity,Buying Price,Target Selling Price,Serial Numbers,Supplier,Reference Number,Purchase Date
-Lilongwe,Smartphones,Samsung,Galaxy A15,Blue,5,320000,395000,,Mufasah Imports,INV-2026-0104,2026-10-20
-Lilongwe,Smartphones,Tecno,Spark 20,Black,3,185000,235000,,Mufasah Imports,INV-2026-0104,2026-10-20
-Blantyre,Smartphones,Samsung,Galaxy A15,Blue,2,325000,400000,"SM-A155-0001, SM-A155-0002",Mufasah Imports,INV-2026-0105,2026-10-22
+Lilongwe Branch,Smartphone,Samsung,Galaxy A15,Blue,5,320000,395000,,Mufasah Imports,INV-2026-0104,2026-10-20
+Lilongwe Branch,Smartphone,Tecno,Spark 20,Black,3,185000,235000,,Mufasah Imports,INV-2026-0104,2026-10-20
+Blantyre Branch,Smartphone,Samsung,Galaxy A15,Blue,2,325000,400000,"SM-A155-0001, SM-A155-0002",Mufasah Imports,INV-2026-0105,2026-10-22
 ```
 
 Uploading this produces:
 
-- **2 receipts** — `REC-2026-00001` for Lilongwe, `REC-2026-00002` for Blantyre.
+- **2 receipts** — one for Lilongwe Branch, one for Blantyre Branch.
 - **3 batches** — one per product line, each carrying its own cost and target
   price. Lilongwe's Galaxy A15 batch costs 320,000 and sells at 395,000;
   Blantyre's costs 325,000 and sells at 400,000. That is the point of a batch:

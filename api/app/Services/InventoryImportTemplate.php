@@ -2,8 +2,11 @@
 
 namespace App\Services;
 
+use App\Models\Branch;
+use App\Models\DeviceCategory;
 use App\Support\Spreadsheet\Cell;
 use App\Support\Spreadsheet\XlsxWorkbook;
+use Illuminate\Support\Str;
 
 /**
  * Builds the downloadable stock-import sample.
@@ -17,10 +20,13 @@ use App\Support\Spreadsheet\XlsxWorkbook;
  *
  * The example rows are deliberately valid stock data rather than placeholders
  * like "e.g. Samsung": a sample that cannot be imported cannot prove the format
- * works. The trade-off is that an operator who uploads the file untouched would
- * create three example batches, so the preview step in the UI exists precisely
- * to show that before anything is written, and the instructions say to delete
- * the examples first.
+ * works. Branch and category names are therefore read from this installation
+ * rather than hardcoded — a sample naming a category the seeders do not create
+ * ("Smartphones" beside "Smartphone") would fail its own first row. The
+ * trade-off is that an operator who uploads the file untouched would create
+ * four example batches, so the preview step in the UI exists precisely to show
+ * that before anything is written, and the instructions say to delete the
+ * examples first.
  */
 class InventoryImportTemplate
 {
@@ -44,14 +50,68 @@ class InventoryImportTemplate
     ];
 
     /**
-     * Example rows covering both branches named in the requirement, one row with
-     * explicit serial numbers and one with the price left blank to show
-     * inheritance.
+     * Branch names that exist in this installation, so the sample imports
+     * without editing.
+     *
+     * A super admin uploads without picking a default branch, so the rows must
+     * name one. Falls back to a label the importer will reject with a list of
+     * the real branches when none exist yet.
+     *
+     * @return array{0: string, 1: string}
+     */
+    private function sampleBranches(): array
+    {
+        $names = Branch::query()
+            ->where('is_active', true)
+            ->orderBy('id')
+            ->limit(2)
+            ->pluck('name')
+            ->all();
+
+        $first = $names[0] ?? 'Branch name';
+
+        return [$first, $names[1] ?? $first];
+    }
+
+    /**
+     * Two category names that exist in this installation.
+     *
+     * The second prefers an accessories-style category so the example power
+     * bank does not land under "Television" on a different seed.
+     *
+     * @return array{phone: string, other: string}
+     */
+    private function sampleCategories(): array
+    {
+        $names = DeviceCategory::query()
+            ->where('is_active', true)
+            ->orderBy('id')
+            ->pluck('name')
+            ->filter()
+            ->values();
+
+        $phone = $names->first(fn (string $name) => Str::contains(Str::lower($name), ['phone', 'mobile']))
+            ?? $names->first()
+            ?? 'Category name';
+
+        $other = $names->first(fn (string $name) => $name !== $phone && preg_match('/accessor|other/i', $name))
+            ?? $names->first(fn (string $name) => $name !== $phone)
+            ?? $phone;
+
+        return ['phone' => $phone, 'other' => $other];
+    }
+
+    /**
+     * Example rows covering two branches, one row with explicit serial numbers
+     * and one with a second category.
      *
      * @return list<list<string|int|null>>
      */
-    public static function exampleRows(): array
+    public function exampleRows(): array
     {
+        [$firstBranch, $secondBranch] = $this->sampleBranches();
+        ['phone' => $phoneCategory, 'other' => $otherCategory] = $this->sampleCategories();
+
         // Relative dates, not fixed ones: a sample dated in the past would fail
         // its own future-date rule the moment an operator downloads it months
         // later.
@@ -59,16 +119,16 @@ class InventoryImportTemplate
         $secondDelivery = now()->subDays(6)->toDateString();
 
         return [
-            ['Lilongwe', 'Smartphones', 'Samsung', 'Galaxy A15', 'Blue', 5, 320000, 395000, '', 'Mufasah Imports', 'INV-2026-0104', $firstDelivery, 'Lilongwe Warehouse', 'Dual SIM', 'Opening stock'],
-            ['Lilongwe', 'Smartphones', 'Tecno', 'Spark 20', 'Black', 3, 185000, 235000, '', 'Mufasah Imports', 'INV-2026-0104', $firstDelivery, 'Lilongwe Warehouse', '', ''],
+            [$firstBranch, $phoneCategory, 'Samsung', 'Galaxy A15', 'Blue', 5, 320000, 395000, '', 'Mufasah Imports', 'INV-2026-0104', $firstDelivery, 'Lilongwe Warehouse', 'Dual SIM', 'Opening stock'],
+            [$firstBranch, $phoneCategory, 'Tecno', 'Spark 20', 'Black', 3, 185000, 235000, '', 'Mufasah Imports', 'INV-2026-0104', $firstDelivery, 'Lilongwe Warehouse', '', ''],
             // Two units, two serials: shows that a serialised line lists one
             // serial per unit.
-            ['Blantyre', 'Smartphones', 'Samsung', 'Galaxy A15', 'Blue', 2, 325000, 400000, 'SM-A155-0001, SM-A155-0002', 'Mufasah Imports', 'INV-2026-0105', $secondDelivery, 'Blantyre Warehouse', '', 'Serialised delivery'],
+            [$secondBranch, $phoneCategory, 'Samsung', 'Galaxy A15', 'Blue', 2, 325000, 400000, 'SM-A155-0001, SM-A155-0002', 'Mufasah Imports', 'INV-2026-0105', $secondDelivery, 'Blantyre Warehouse', '', 'Serialised delivery'],
             // Every row carries a selling price so the sample imports cleanly on
             // a brand-new installation; leaving the column blank is documented in
             // the Instructions sheet instead of demonstrated here, because
             // inheritance needs earlier stock to inherit *from*.
-            ['Blantyre', 'Accessories', 'Anker', 'PowerCore 10000', 'Black', 10, 42000, 58000, '', 'Mufasah Imports', 'INV-2026-0105', $secondDelivery, 'Blantyre Warehouse', 'Power bank', 'Bulk accessories'],
+            [$secondBranch, $otherCategory, 'Anker', 'PowerCore 10000', 'Black', 10, 42000, 58000, '', 'Mufasah Imports', 'INV-2026-0105', $secondDelivery, 'Blantyre Warehouse', 'Power bank', 'Bulk accessories'],
         ];
     }
 
@@ -77,11 +137,14 @@ class InventoryImportTemplate
      *
      * @return list<list<string>>
      */
-    public static function columnGuide(): array
+    public function columnGuide(): array
     {
+        [$firstBranch] = $this->sampleBranches();
+        ['phone' => $phoneCategory] = $this->sampleCategories();
+
         return [
-            ['Branch', 'Recommended', 'Branch name or code', 'Lilongwe', 'Must match a branch in the system. Leave blank only if you pick a default branch in the upload form.'],
-            ['Category', 'Yes', 'Existing category name', 'Smartphones', 'Must already exist. New categories are created in Product Catalog, never by an upload.'],
+            ['Branch', 'Recommended', 'Branch name or code', $firstBranch, 'Must match a branch in the system. Leave blank only if you pick a default branch in the upload form.'],
+            ['Category', 'Yes', 'Existing category name', $phoneCategory, 'Must already exist. New categories are created in Product Catalog, never by an upload.'],
             ['Brand', 'Yes', 'Text', 'Samsung', 'A new brand is added to the catalog automatically.'],
             ['Model', 'Yes', 'Text', 'Galaxy A15', 'A new model is added to the catalog automatically.'],
             ['Color', 'No', 'Text', 'Blue', 'Optional. Used for display and grouping.'],
@@ -112,7 +175,7 @@ class InventoryImportTemplate
         fwrite($stream, "\xEF\xBB\xBF");
         fputcsv($stream, self::HEADERS, ',', '"', '');
 
-        foreach (self::exampleRows() as $row) {
+        foreach ($this->exampleRows() as $row) {
             fputcsv($stream, $row, ',', '"', '');
         }
 
@@ -135,7 +198,7 @@ class InventoryImportTemplate
 
         $stock = $workbook->addSheet('Stock');
         $stock->addHeaderRow(self::HEADERS);
-        $stock->addRows(self::exampleRows());
+        $stock->addRows($this->exampleRows());
         $stock->setColumnWidths([14, 16, 14, 22, 10, 10, 14, 20, 26, 18, 18, 14, 20, 16, 26]);
 
         $instructions = $workbook->addSheet('Instructions');
@@ -161,7 +224,7 @@ class InventoryImportTemplate
             Cell::bold('Example'),
             Cell::bold('Notes'),
         ]);
-        $instructions->addRows(self::columnGuide());
+        $instructions->addRows($this->columnGuide());
         $instructions->setColumnWidths([20, 12, 24, 26, 70]);
 
         return $workbook->toString();
