@@ -185,6 +185,7 @@ export type ReportType =
   | 'theft'
   | 'subscriptions'
   | 'users'
+  | 'staff_time'
 
 export function reportQuery(filters: ReportFilters = {}): string {
   const params = new URLSearchParams()

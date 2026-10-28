@@ -211,7 +211,7 @@ describe('Report scoping', function () {
         ($this->makeSale)($this->lilongwe, '2026-09-10 10:00:00', 150000);
         ($this->makeSale)($this->blantyre, '2026-09-10 10:00:00', 250000);
 
-        foreach (['sales', 'stock', 'devices', 'theft', 'subscriptions', 'users', 'revenue'] as $report) {
+        foreach (['sales', 'stock', 'devices', 'theft', 'subscriptions', 'users', 'revenue', 'staff-time'] as $report) {
             $this->actingAs($this->admin)
                 ->getJson("/api/v1/admin/reports/{$report}?branch_id={$this->lilongwe->id}")
                 ->assertSuccessful()

@@ -134,6 +134,12 @@ export default function ShiftHistoryPage() {
                       Duration
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">
+                      Breaks
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">
+                      Worked
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">
                       Status
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">
@@ -171,6 +177,18 @@ export default function ShiftHistoryPage() {
                       <td className="px-6 py-4">
                         <span className="text-sm text-slate-700">
                           {formatDuration(shift.duration_minutes)}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className="text-sm text-amber-700">
+                          {shift.break_minutes > 0
+                            ? `${formatDuration(shift.break_minutes)} (${shift.break_count})`
+                            : '—'}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className="text-sm font-medium text-slate-900">
+                          {formatDuration(shift.worked_minutes)}
                         </span>
                       </td>
                       <td className="px-6 py-4">{getStatusBadge(shift.status)}</td>

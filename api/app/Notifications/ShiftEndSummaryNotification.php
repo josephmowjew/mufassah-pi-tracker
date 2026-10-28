@@ -32,7 +32,10 @@ class ShiftEndSummaryNotification extends Notification implements ShouldQueue
      */
     public function toMail(object $notifiable): MailMessage
     {
-        $this->shift->loadMissing(['user', 'branch']);
+        // `breaks` is loaded so the break totals do not issue a query per
+        // accessor — break_count, break_minutes and worked_minutes each read
+        // the same collection.
+        $this->shift->loadMissing(['user', 'branch', 'breaks']);
 
         $frontendUrl = config('app.frontend_url', 'http://localhost:3000');
         $staffName = $this->shift->user?->name ?? 'Unknown Staff';
@@ -54,6 +57,10 @@ class ShiftEndSummaryNotification extends Notification implements ShouldQueue
             ->line("- Ended: {$endTime->format('Y-m-d H:i')}")
             ->line("- Duration: {$duration->forHumans()}")
             ->line('')
+            ->line('**Time on the clock:**')
+            ->line('- Breaks: '.$this->shift->break_count.' ('.$this->formatMinutes($this->shift->break_minutes).')')
+            ->line('- Time worked: '.$this->formatMinutes($this->shift->worked_minutes))
+            ->line('')
             ->line('**Performance:**')
             ->line("- Total Sales: {$this->shift->sales_count}")
             ->line('- Revenue: MWK '.number_format($this->shift->revenue, 2))
@@ -74,6 +81,29 @@ class ShiftEndSummaryNotification extends Notification implements ShouldQueue
             'staff_name' => $this->shift->user?->name,
             'revenue' => $this->shift->revenue,
             'sales_count' => $this->shift->sales_count,
+            'break_count' => $this->shift->break_count,
+            'break_minutes' => $this->shift->break_minutes,
+            'worked_minutes' => $this->shift->worked_minutes,
         ];
+    }
+
+    /**
+     * Render a minute count as `8h 30m` for the email body.
+     */
+    private function formatMinutes(?float $minutes): string
+    {
+        if ($minutes === null) {
+            return '—';
+        }
+
+        $total = (int) round($minutes);
+        $hours = intdiv($total, 60);
+        $remaining = $total % 60;
+
+        if ($hours === 0) {
+            return "{$remaining}m";
+        }
+
+        return "{$hours}h {$remaining}m";
     }
 }

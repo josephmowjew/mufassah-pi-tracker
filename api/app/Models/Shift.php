@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use Carbon\CarbonInterface;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
@@ -62,6 +64,26 @@ class Shift extends Model
     public function sales()
     {
         return $this->hasMany(Sale::class);
+    }
+
+    /**
+     * Get every break taken during the shift, oldest first.
+     *
+     * Breaks are a child record rather than columns on the shift: an employee
+     * may take several in one day, and the parent `status` must stay `active`
+     * while they are away.
+     */
+    public function breaks()
+    {
+        return $this->hasMany(ShiftBreak::class)->orderBy('started_at');
+    }
+
+    /**
+     * Get the break that is currently running, if any.
+     */
+    public function openBreak()
+    {
+        return $this->hasOne(ShiftBreak::class)->whereNull('ended_at');
     }
 
     /**
@@ -136,6 +158,62 @@ class Shift extends Model
     }
 
     /**
+     * Get the total break time in minutes.
+     *
+     * A running break is counted up to now, so the live "worked so far" figure
+     * on the dashboard does not understate time spent away from the counter.
+     * A finished shift never has a running break — {@see self::complete()}
+     * closes any that is still open.
+     */
+    public function getBreakMinutesAttribute(): float
+    {
+        return round((float) $this->breaksForAggregate()->sum(function (ShiftBreak $break) {
+            return $break->durationMinutes
+                ?? max(0, (float) $break->started_at->diffInMinutes(now()));
+        }), 2);
+    }
+
+    /**
+     * Get how many breaks were taken during the shift.
+     */
+    public function getBreakCountAttribute(): int
+    {
+        return $this->breaksForAggregate()->count();
+    }
+
+    /**
+     * Get the time actually spent working, in minutes.
+     *
+     * Gross time minus break time. For an active shift the gross side is
+     * measured against the clock, since `ended_at` is still null.
+     */
+    public function getWorkedMinutesAttribute(): ?float
+    {
+        $gross = $this->ended_at !== null
+            ? (float) $this->duration
+            : max(0, (float) $this->started_at->diffInMinutes(now()));
+
+        return round(max(0, $gross - $this->break_minutes), 2);
+    }
+
+    /**
+     * Whether the employee is currently on a break.
+     *
+     * This is derived from an open break row, never from `status`. Setting a
+     * status of `on_break` would break `User::activeShift()`, which is scoped
+     * to `status = 'active'` — `current` would report no shift, `end` would
+     * 404, and `start` would allow a second concurrent shift.
+     */
+    public function getOnBreakAttribute(): bool
+    {
+        if ($this->relationLoaded('breaks')) {
+            return $this->breaks->contains(fn (ShiftBreak $break) => $break->ended_at === null);
+        }
+
+        return $this->breaks()->whereNull('ended_at')->exists();
+    }
+
+    /**
      * Scope to filter active shifts.
      */
     public function scopeActive($query)
@@ -188,9 +266,17 @@ class Shift extends Model
      */
     public function complete(array $data = []): void
     {
+        $endedAt = $data['ended_at'] ?? now();
+
+        // Closed before the status flips, so the invariant "a completed shift
+        // has no open break" holds for every caller, not just the controller.
+        // Without this, ending a shift mid-break leaves a break with no end,
+        // which every report would read as an unbounded break.
+        $this->closeOpenBreaks($endedAt);
+
         $this->update(array_merge([
             'status' => 'completed',
-            'ended_at' => now(),
+            'ended_at' => $endedAt,
         ], $data));
     }
 
@@ -199,9 +285,50 @@ class Shift extends Model
      */
     public function cancel(): void
     {
+        $endedAt = now();
+
+        // Same reasoning as {@see self::complete()}: a cancelled shift must not
+        // leave a break running forever.
+        $this->closeOpenBreaks($endedAt);
+
         $this->update([
             'status' => 'cancelled',
-            'ended_at' => now(),
+            'ended_at' => $endedAt,
         ]);
+    }
+
+    /**
+     * Close any break that is still running.
+     *
+     * Returns the number of rows closed, which lets a caller tell "there was an
+     * open break" from "there was not" without a second query.
+     */
+    public function closeOpenBreaks(?CarbonInterface $at = null): int
+    {
+        $closed = $this->breaks()->whereNull('ended_at')->update([
+            'ended_at' => $at ?? now(),
+        ]);
+
+        if ($closed > 0) {
+            $this->unsetRelation('breaks');
+        }
+
+        return $closed;
+    }
+
+    /**
+     * @return Collection<int, ShiftBreak>
+     */
+    private function breaksForAggregate(): Collection
+    {
+        // Loaded rather than queried directly so the four break-related
+        // accessors share one fetch: a resource that reads break_count,
+        // break_minutes and worked_minutes would otherwise issue three
+        // identical queries per shift row.
+        if (! $this->relationLoaded('breaks')) {
+            $this->load('breaks');
+        }
+
+        return $this->breaks;
     }
 }

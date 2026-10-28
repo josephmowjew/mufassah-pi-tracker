@@ -14,6 +14,8 @@ use App\Models\InventoryBatch;
 use App\Models\InventoryMovement;
 use App\Models\Payment;
 use App\Models\Sale;
+use App\Models\Shift;
+use App\Models\ShiftBreak;
 use App\Models\Subscription;
 use App\Models\TheftReport;
 use App\Models\User;
@@ -520,6 +522,173 @@ class ReportDataService
             'by_role' => $byRole,
             'registration_trend' => $registrationTrend,
         ];
+    }
+
+    /**
+     * Staff time report: how long each employee was on the clock, how much of
+     * that was break, and how much was actual work.
+     *
+     * Completed shifts only. An active shift has no end, so counting it would
+     * inflate the period's worked total with time that has not finished
+     * happening; a cancelled shift is not time at work at all.
+     *
+     * Durations are summed in PHP from the models rather than with a
+     * `TIMESTAMPDIFF` aggregate: the suite runs on SQLite, where that function
+     * does not exist, and a MySQL-only expression would ship untested.
+     */
+    public function staffTime(ReportFilters $filters): array
+    {
+        $data = $this->shiftTimeData($filters);
+        $shifts = $data['shifts'];
+
+        $scheduled = round((float) $shifts->sum(fn (Shift $shift) => (float) $shift->duration), 2);
+        $breakMinutes = round((float) $shifts->sum(fn (Shift $shift) => $shift->break_minutes), 2);
+        $worked = round(max(0, $scheduled - $breakMinutes), 2);
+        $shiftCount = $shifts->count();
+
+        $byStaff = $shifts
+            ->groupBy('user_id')
+            ->map(function (Collection $group) {
+                $scheduled = round((float) $group->sum(fn (Shift $shift) => (float) $shift->duration), 2);
+                $breakMinutes = round((float) $group->sum(fn (Shift $shift) => $shift->break_minutes), 2);
+                $worked = round(max(0, $scheduled - $breakMinutes), 2);
+                $shiftCount = $group->count();
+                $first = $group->first();
+
+                return [
+                    'user_id' => $first->user_id,
+                    'staff_name' => $first->user?->name ?? 'Unknown staff',
+                    // A staff member can work more than one branch in a period,
+                    // so this is a list rather than whichever branch came first.
+                    'branch_name' => $group->pluck('branch.name')->filter()->unique()->implode(', ') ?: 'Unassigned',
+                    'shifts' => $shiftCount,
+                    'break_count' => (int) $group->sum(fn (Shift $shift) => $shift->break_count),
+                    'scheduled_minutes' => $scheduled,
+                    'break_minutes' => $breakMinutes,
+                    'worked_minutes' => $worked,
+                    'average_shift_minutes' => $shiftCount > 0 ? round($scheduled / $shiftCount, 2) : 0,
+                    'average_break_minutes' => $shiftCount > 0 ? round($breakMinutes / $shiftCount, 2) : 0,
+                    'break_percentage' => $scheduled > 0 ? round(($breakMinutes / $scheduled) * 100, 2) : 0,
+                ];
+            })
+            ->sortByDesc('worked_minutes')
+            ->values()
+            ->all();
+
+        $byDay = $shifts
+            ->groupBy(fn (Shift $shift) => $shift->started_at?->toDateString() ?? 'undated')
+            ->map(function (Collection $group, string $date) {
+                $scheduled = round((float) $group->sum(fn (Shift $shift) => (float) $shift->duration), 2);
+                $breakMinutes = round((float) $group->sum(fn (Shift $shift) => $shift->break_minutes), 2);
+
+                return [
+                    'date' => $date,
+                    'shifts' => $group->count(),
+                    'staff' => $group->pluck('user_id')->unique()->count(),
+                    'scheduled_minutes' => $scheduled,
+                    'break_minutes' => $breakMinutes,
+                    'worked_minutes' => round(max(0, $scheduled - $breakMinutes), 2),
+                ];
+            })
+            ->sortKeys()
+            ->values()
+            ->all();
+
+        return [
+            'filters' => $this->filtersMeta($filters),
+            'summary' => [
+                'total_shifts' => $shiftCount,
+                'staff_count' => $shifts->pluck('user_id')->unique()->count(),
+                'total_break_count' => (int) $shifts->sum(fn (Shift $shift) => $shift->break_count),
+                'total_scheduled_minutes' => $scheduled,
+                'total_break_minutes' => $breakMinutes,
+                'total_worked_minutes' => $worked,
+                'break_percentage' => $scheduled > 0 ? round(($breakMinutes / $scheduled) * 100, 2) : 0,
+                'average_shift_minutes' => $shiftCount > 0 ? round($scheduled / $shiftCount, 2) : 0,
+                'average_break_minutes' => $shiftCount > 0 ? round($breakMinutes / $shiftCount, 2) : 0,
+                'longest_break_minutes' => $this->longestBreakMinutes($data['break_rows']),
+            ],
+            'by_staff' => $byStaff,
+            'by_day' => $byDay,
+            'breaks' => array_slice($data['break_rows'], 0, self::INLINE_ROW_LIMIT),
+            'recent_shifts' => array_slice($data['shift_rows'], 0, self::INLINE_ROW_LIMIT),
+        ];
+    }
+
+    /**
+     * Full, uncapped shift and break rows for the exporter.
+     *
+     * @return array{shift_rows: list<array<string, mixed>>, break_rows: list<array<string, mixed>>}
+     */
+    public function staffTimeDetail(ReportFilters $filters): array
+    {
+        $data = $this->shiftTimeData($filters);
+
+        return [
+            'shift_rows' => $data['shift_rows'],
+            'break_rows' => $data['break_rows'],
+        ];
+    }
+
+    /**
+     * Load the completed shifts in scope once, and derive both the per-shift
+     * and per-break row sets from that single eager-loaded collection.
+     *
+     * @return array{shifts: Collection<int, Shift>, shift_rows: list<array<string, mixed>>, break_rows: list<array<string, mixed>>}
+     */
+    private function shiftTimeData(ReportFilters $filters): array
+    {
+        $shifts = Shift::query()
+            ->where('status', 'completed')
+            ->when($filters->branchId, fn ($q) => $q->where('branch_id', $filters->branchId))
+            ->when($filters->from, fn ($q) => $q->where('started_at', '>=', $filters->from))
+            ->when($filters->to, fn ($q) => $q->where('started_at', '<=', $filters->to))
+            ->with(['user:id,name', 'branch:id,name,code', 'breaks'])
+            ->orderBy('started_at')
+            ->get();
+
+        $shiftRows = $shifts->map(fn (Shift $shift) => [
+            'shift_id' => $shift->id,
+            'date' => $shift->started_at?->toDateString(),
+            'staff_name' => $shift->user?->name ?? 'Unknown staff',
+            'branch_name' => $shift->branch?->name ?? 'Unassigned',
+            'started_at' => $shift->started_at?->toDateTimeString(),
+            'ended_at' => $shift->ended_at?->toDateTimeString(),
+            'break_count' => $shift->break_count,
+            'scheduled_minutes' => round((float) $shift->duration, 2),
+            'break_minutes' => $shift->break_minutes,
+            'worked_minutes' => $shift->worked_minutes,
+        ])->values()->all();
+
+        $breakRows = $shifts->flatMap(fn (Shift $shift) => $shift->breaks->map(fn (ShiftBreak $break) => [
+            'shift_id' => $shift->id,
+            'date' => $shift->started_at?->toDateString(),
+            'staff_name' => $shift->user?->name ?? 'Unknown staff',
+            'branch_name' => $shift->branch?->name ?? 'Unassigned',
+            'type' => $break->type?->label() ?? 'Break',
+            'started_at' => $break->started_at?->toDateTimeString(),
+            'ended_at' => $break->ended_at?->toDateTimeString(),
+            'minutes' => round((float) ($break->duration_minutes ?? 0), 2),
+            'notes' => $break->notes,
+        ]))->values()->all();
+
+        return [
+            'shifts' => $shifts,
+            'shift_rows' => $shiftRows,
+            'break_rows' => $breakRows,
+        ];
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $breakRows
+     */
+    private function longestBreakMinutes(array $breakRows): float
+    {
+        if ($breakRows === []) {
+            return 0;
+        }
+
+        return round((float) max(array_column($breakRows, 'minutes')), 2);
     }
 
     /**

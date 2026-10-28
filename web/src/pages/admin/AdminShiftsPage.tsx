@@ -25,6 +25,17 @@ interface ShiftStats {
 }
 
 // Helper functions
+/** Render a minute count from the API as `7h 15m`. */
+const formatMinutes = (minutes: number | null | undefined) => {
+  if (minutes === null || minutes === undefined) return '-'
+
+  const total = Math.round(minutes)
+  const hours = Math.floor(total / 60)
+  const mins = total % 60
+
+  return hours > 0 ? `${hours}h ${mins}m` : `${mins}m`
+}
+
 const formatDuration = (startedAt: string, endedAt: string | null | undefined) => {
   if (!endedAt) return '-'
 
@@ -319,6 +330,8 @@ export default function AdminShiftsPage() {
                     <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Branch</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Date & Time</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Duration</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Breaks</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Worked</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Status</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Revenue</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Sales</th>
@@ -355,6 +368,18 @@ export default function AdminShiftsPage() {
                       </td>
                       <td className="px-6 py-4">
                         <span className="text-slate-700">{formatDuration(shift.started_at, shift.ended_at)}</span>
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className="text-amber-700">
+                          {shift.break_minutes > 0
+                            ? `${formatMinutes(shift.break_minutes)} (${shift.break_count})`
+                            : '-'}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className="font-medium text-slate-900">
+                          {formatMinutes(shift.worked_minutes)}
+                        </span>
                       </td>
                       <td className="px-6 py-4">
                         {getStatusBadge(shift.status)}
@@ -492,7 +517,52 @@ function ShiftDetailModal({ shift, onClose }: ShiftDetailModalProps) {
                   <p className="text-xs text-slate-500 mb-1">Status</p>
                   <div>{getStatusBadge(shiftDetail.status)}</div>
                 </div>
+                <div className="bg-amber-50 rounded-lg p-4">
+                  <p className="text-xs text-amber-600 mb-1 font-medium">
+                    Break time ({shiftDetail.break_count ?? 0})
+                  </p>
+                  <p className="font-medium text-amber-700">{formatMinutes(shiftDetail.break_minutes)}</p>
+                </div>
+                <div className="bg-teal-50 rounded-lg p-4">
+                  <p className="text-xs text-teal-600 mb-1 font-medium">Time worked</p>
+                  <p className="font-medium text-teal-700">{formatMinutes(shiftDetail.worked_minutes)}</p>
+                </div>
               </div>
+
+              {/* Breaks taken */}
+              {shiftDetail.breaks && shiftDetail.breaks.length > 0 && (
+                <div>
+                  <h3 className="text-sm font-semibold text-slate-700 mb-2">Breaks taken</h3>
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead>
+                        <tr className="bg-slate-50 border-b border-slate-200">
+                          <th className="px-4 py-2 text-left text-xs font-medium text-slate-500 uppercase">Type</th>
+                          <th className="px-4 py-2 text-left text-xs font-medium text-slate-500 uppercase">Started</th>
+                          <th className="px-4 py-2 text-left text-xs font-medium text-slate-500 uppercase">Ended</th>
+                          <th className="px-4 py-2 text-right text-xs font-medium text-slate-500 uppercase">Minutes</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-200">
+                        {shiftDetail.breaks.map((entry) => (
+                          <tr key={entry.id}>
+                            <td className="px-4 py-2 text-sm text-slate-700">{entry.type_label}</td>
+                            <td className="px-4 py-2 text-sm text-slate-700">
+                              {new Date(entry.started_at).toLocaleString()}
+                            </td>
+                            <td className="px-4 py-2 text-sm text-slate-700">
+                              {entry.ended_at ? new Date(entry.ended_at).toLocaleString() : 'In progress'}
+                            </td>
+                            <td className="px-4 py-2 text-sm text-slate-700 text-right">
+                              {entry.duration_minutes === null ? '-' : Math.round(entry.duration_minutes)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
 
               {/* Financial Summary */}
               <div className="grid grid-cols-3 gap-4">

@@ -6,6 +6,7 @@ import {
 } from 'lucide-react'
 import apiClient from '@/api/client'
 import { adminApi, reportQuery, type ReportFilters, type ReportType } from '@/api/admin'
+import { StaffTimeReportSection } from '@/components/reports/StaffTimeReportSection'
 import { useAuthStore } from '@/stores/auth-store'
 
 interface ReportMeta {
@@ -200,6 +201,7 @@ const EXPORT_OPTIONS: Array<{ value: ReportType; label: string }> = [
   { value: 'theft', label: 'Theft report' },
   { value: 'subscriptions', label: 'Subscription report' },
   { value: 'users', label: 'User report' },
+  { value: 'staff_time', label: 'Staff time report' },
 ]
 
 /** Local-time `YYYY-MM-DD`; `toISOString()` would shift the day across UTC. */
@@ -1077,6 +1079,9 @@ export default function AdminReportsPage() {
                 </div>
               </div>
             </div>
+
+            {/* Staff Time */}
+            <StaffTimeReportSection query={query} />
           </div>
         </>
       )}

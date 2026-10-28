@@ -1206,6 +1206,26 @@ export interface AlertSubscription {
 // Shift types
 export type ShiftStatus = 'active' | 'completed' | 'cancelled'
 
+export type ShiftBreakType = 'lunch' | 'tea' | 'comfort' | 'prayer' | 'other'
+
+/**
+ * A break taken inside a shift. `is_open` means the employee is currently away
+ * — the parent shift stays `active` throughout, so `status` never encodes this.
+ */
+export interface ShiftBreak {
+  id: number
+  shift_id: number
+  type: ShiftBreakType
+  type_label: string
+  started_at: string
+  ended_at: string | null
+  duration_minutes: number | null
+  is_open: boolean
+  notes: string | null
+  created_at: string
+  updated_at: string
+}
+
 export interface Shift {
   id: number
   user_id: number
@@ -1218,6 +1238,11 @@ export interface Shift {
   opening_cash: number
   closing_cash: number | null
   duration_minutes: number | null
+  break_count: number
+  break_minutes: number
+  worked_minutes: number | null
+  on_break: boolean
+  breaks?: ShiftBreak[]
   revenue: number
   sales_count: number
   cash_sales: number

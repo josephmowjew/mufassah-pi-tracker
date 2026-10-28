@@ -499,6 +499,7 @@ Route::middleware(['auth:sanctum', 'not.suspended'])->group(function () {
             Route::get('/stock', [AdminReportController::class, 'stock'])->name('stock');
             Route::get('/subscriptions', [AdminReportController::class, 'subscriptions'])->name('subscriptions');
             Route::get('/users', [AdminReportController::class, 'users'])->name('users');
+            Route::get('/staff-time', [AdminReportController::class, 'staffTime'])->name('staff-time');
 
             // Excel export — same scope parameters as the endpoints above.
             Route::get('/export', AdminReportExportController::class)->name('export');
@@ -653,6 +654,12 @@ Route::middleware(['auth:sanctum', 'not.suspended'])->group(function () {
             Route::post('/start', [ShiftController::class, 'start'])->name('start');
             Route::post('/end', [ShiftController::class, 'end'])->name('end');
             Route::post('/cancel', [ShiftController::class, 'cancel'])->name('cancel');
+
+            // Breaks run inside the active shift, so they never carry a shift
+            // id: the actor is always acting on their own current shift.
+            Route::post('/breaks/start', [ShiftController::class, 'startBreak'])->name('breaks.start');
+            Route::post('/breaks/end', [ShiftController::class, 'endBreak'])->name('breaks.end');
+
             Route::get('/history', [ShiftController::class, 'history'])->name('history');
             Route::get('/{shift}', [ShiftController::class, 'show'])->name('show');
         });

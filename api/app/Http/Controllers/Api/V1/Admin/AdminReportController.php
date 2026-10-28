@@ -85,6 +85,14 @@ class AdminReportController extends Controller
         return $this->respond($this->reports->users(ReportFilters::fromRequest($request)));
     }
 
+    /**
+     * Staff time report — scheduled, break and worked minutes per employee.
+     */
+    public function staffTime(Request $request): JsonResponse
+    {
+        return $this->respond($this->reports->staffTime(ReportFilters::fromRequest($request)));
+    }
+
     private function respond(array $data): JsonResponse
     {
         return response()->json([

@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import apiClient from '@/api/client'
-import type { Shift } from '@/types'
+import type { Shift, ShiftBreakType } from '@/types'
 
 interface ShiftResponse {
   success: boolean
@@ -111,6 +111,41 @@ export function useCancelShift() {
       queryClient.invalidateQueries({ queryKey: ['current-shift'] })
       queryClient.invalidateQueries({ queryKey: ['shifts-history'] })
       queryClient.invalidateQueries({ queryKey: ['customer-service-dashboard'] })
+    },
+  })
+}
+
+/**
+ * Breaks act on the caller's own active shift, so no shift id is sent. The
+ * server rejects a second concurrent break with 409 rather than silently
+ * opening one.
+ */
+export function useStartBreak() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (data: { type?: ShiftBreakType; notes?: string }) => {
+      const response = await apiClient.post<ShiftResponse>('/customer-service/shifts/breaks/start', data)
+      return response.data.data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['current-shift'] })
+      queryClient.invalidateQueries({ queryKey: ['shifts-history'] })
+    },
+  })
+}
+
+export function useEndBreak() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (data: { notes?: string } = {}) => {
+      const response = await apiClient.post<ShiftResponse>('/customer-service/shifts/breaks/end', data)
+      return response.data.data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['current-shift'] })
+      queryClient.invalidateQueries({ queryKey: ['shifts-history'] })
     },
   })
 }

@@ -141,6 +141,78 @@ export default function ShiftDetailPage() {
         </div>
       </div>
 
+      {/* Time on the clock */}
+      <div className="bg-white rounded-xl border border-slate-200 p-6">
+        <h2 className="text-lg font-semibold text-slate-900 mb-4">Time on the clock</h2>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div>
+            <p className="text-sm text-slate-500 mb-1">Scheduled</p>
+            <p className="text-xl font-bold text-slate-900">{formatDuration(shift.duration_minutes)}</p>
+          </div>
+          <div>
+            <p className="text-sm text-slate-500 mb-1">
+              Breaks ({shift.break_count ?? 0})
+            </p>
+            <p className="text-xl font-bold text-amber-600">
+              {shift.break_minutes > 0 ? formatDuration(shift.break_minutes) : '0m'}
+            </p>
+          </div>
+          <div>
+            <p className="text-sm text-slate-500 mb-1">Worked</p>
+            <p className="text-xl font-bold text-teal-700">{formatDuration(shift.worked_minutes)}</p>
+          </div>
+        </div>
+
+        {shift.breaks && shift.breaks.length > 0 && (
+          <div className="mt-6 overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="bg-slate-50 border-b border-slate-200">
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">
+                    Break
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">
+                    Started
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">
+                    Ended
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">
+                    Duration
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">
+                    Notes
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200">
+                {shift.breaks.map((entry) => (
+                  <tr key={entry.id} className="hover:bg-slate-50">
+                    <td className="px-4 py-3 text-sm font-medium text-slate-900">
+                      {entry.type_label}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-slate-700">
+                      {formatTime(entry.started_at)}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-slate-700">
+                      {entry.ended_at ? formatTime(entry.ended_at) : (
+                        <span className="text-amber-600">In progress</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-slate-700">
+                      {entry.duration_minutes === null
+                        ? '—'
+                        : formatDuration(entry.duration_minutes)}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-slate-500">{entry.notes || '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
       {/* Sales */}
       {shift.sales && shift.sales.length > 0 && (
         <div className="bg-white rounded-xl border border-slate-200 p-6">

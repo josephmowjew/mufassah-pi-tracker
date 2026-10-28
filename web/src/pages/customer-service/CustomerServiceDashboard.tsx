@@ -15,6 +15,7 @@ import {
 import { useQuery } from '@tanstack/react-query'
 import apiClient from '@/api/client'
 import { useCurrentShift, useStartShift, useEndShift, useCancelShift } from '@/hooks/useShifts'
+import { ShiftBreakControl } from '@/components/shifts/ShiftBreakControl'
 import { differenceInSeconds } from 'date-fns'
 
 interface Branch {
@@ -217,7 +218,7 @@ export default function CustomerServiceDashboard() {
   const [showStartModal, setShowStartModal] = useState(false)
   const [showEndModal, setShowEndModal] = useState(false)
   const [showCancelModal, setShowCancelModal] = useState(false)
-  const [elapsedSeconds, setElapsedSeconds] = useState(0)
+  const [clock, setClock] = useState(() => new Date())
 
   const { data: stats, isLoading } = useQuery({
     queryKey: ['customer-service-dashboard'],
@@ -234,24 +235,20 @@ export default function CustomerServiceDashboard() {
   const endShift = useEndShift()
   const cancelShift = useCancelShift()
 
-  // Live shift counter
+  // Live shift counter. The interval only runs while a shift is active, and the
+  // elapsed value is derived during render rather than set from the effect body.
   useEffect(() => {
-    if (!currentShift || currentShift.status !== 'active') {
-      setElapsedSeconds(0)
-      return
-    }
+    if (!currentShift || currentShift.status !== 'active') return
 
-    const startTime = new Date(currentShift.started_at)
-    const updateElapsed = () => {
-      const now = new Date()
-      setElapsedSeconds(differenceInSeconds(now, startTime))
-    }
-
-    updateElapsed() // Initial update
-    const interval = setInterval(updateElapsed, 1000) // Update every second
+    const interval = setInterval(() => setClock(new Date()), 1000)
 
     return () => clearInterval(interval)
   }, [currentShift])
+
+  const elapsedSeconds =
+    currentShift?.status === 'active'
+      ? Math.max(0, differenceInSeconds(clock, new Date(currentShift.started_at)))
+      : 0
 
   const formatElapsedTime = (seconds: number) => {
     const hours = Math.floor(seconds / 3600)
@@ -405,6 +402,7 @@ export default function CustomerServiceDashboard() {
                   </button>
                 </div>
               </div>
+              <ShiftBreakControl shift={currentShift} />
               <div className="grid grid-cols-3 gap-4 text-sm">
                 <div>
                   <p className="text-teal-100">Sales</p>

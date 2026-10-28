@@ -16,7 +16,10 @@ class AdminShiftController extends BaseController
     public function index(Request $request): JsonResponse
     {
         $branchId = $this->resolveBranchId($request);
-        $query = Shift::with(['user', 'branch', 'sales'])
+        // `breaks` is eager-loaded because ShiftResource reads break_count,
+        // break_minutes and worked_minutes for every row; without it the list
+        // issues one break query per shift.
+        $query = Shift::with(['user', 'branch', 'sales', 'breaks'])
             ->when($branchId, fn ($query) => $query->where('branch_id', $branchId));
 
         // Filter by status
@@ -77,6 +80,7 @@ class AdminShiftController extends BaseController
         $shift->load([
             'user',
             'branch',
+            'breaks',
             'sales.customer',
             'sales.items.device.category',
             'sales.soldBy',

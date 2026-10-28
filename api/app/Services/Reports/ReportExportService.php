@@ -31,6 +31,8 @@ class ReportExportService
 
     public const REPORT_USERS = 'users';
 
+    public const REPORT_STAFF_TIME = 'staff_time';
+
     private const CURRENCY = 'MWK';
 
     public function __construct(
@@ -50,6 +52,7 @@ class ReportExportService
             self::REPORT_THEFT,
             self::REPORT_SUBSCRIPTIONS,
             self::REPORT_USERS,
+            self::REPORT_STAFF_TIME,
         ];
     }
 
@@ -70,6 +73,7 @@ class ReportExportService
             self::REPORT_THEFT => $this->buildTheft($book, $filters),
             self::REPORT_SUBSCRIPTIONS => $this->buildSubscriptions($book, $filters),
             self::REPORT_USERS => $this->buildUsers($book, $filters),
+            self::REPORT_STAFF_TIME => $this->buildStaffTime($book, $filters),
         };
     }
 
@@ -481,6 +485,119 @@ class ReportExportService
         $trend->addHeaderRow(['Month', 'New users']);
         foreach ($data['registration_trend'] as $month => $count) {
             $trend->addRow([Cell::text($month), Cell::number($count)]);
+        }
+
+        return $book;
+    }
+
+    /**
+     * Staff time: scheduled, break and worked minutes per employee and per day.
+     *
+     * Durations are written as plain numbers of minutes, not as "8h 30m"
+     * strings, for the same reason money is written as numbers — so the sheets
+     * stay summable and pivotable after export.
+     */
+    private function buildStaffTime(XlsxWorkbook $book, ReportFilters $filters): XlsxWorkbook
+    {
+        $data = $this->reports->staffTime($filters);
+        $summary = $data['summary'];
+
+        $this->summarySheet($book, 'Staff time report', $filters, [
+            'Shifts recorded' => Cell::number($summary['total_shifts']),
+            'Staff' => Cell::number($summary['staff_count']),
+            'Breaks taken' => Cell::number($summary['total_break_count']),
+            'Scheduled time (minutes)' => Cell::bold($summary['total_scheduled_minutes']),
+            'Break time (minutes)' => Cell::number($summary['total_break_minutes']),
+            'Worked time (minutes)' => Cell::bold($summary['total_worked_minutes']),
+            'Break share of scheduled time' => Cell::percent($summary['break_percentage']),
+            'Average shift (minutes)' => Cell::number($summary['average_shift_minutes']),
+            'Average break per shift (minutes)' => Cell::number($summary['average_break_minutes']),
+            'Longest single break (minutes)' => Cell::number($summary['longest_break_minutes']),
+        ]);
+
+        $byStaff = $book->addSheet('By staff');
+        $byStaff->setColumnWidths([28, 26, 10, 12, 16, 14, 14, 18, 18]);
+        $byStaff->addHeaderRow([
+            'Staff', 'Branch', 'Shifts', 'Breaks', 'Scheduled (min)',
+            'Break (min)', 'Worked (min)', 'Avg shift (min)', 'Break share',
+        ]);
+        foreach ($data['by_staff'] as $row) {
+            $byStaff->addRow([
+                Cell::text($row['staff_name']),
+                Cell::text($row['branch_name']),
+                Cell::number($row['shifts']),
+                Cell::number($row['break_count']),
+                Cell::number($row['scheduled_minutes']),
+                Cell::number($row['break_minutes']),
+                Cell::number($row['worked_minutes']),
+                Cell::number($row['average_shift_minutes']),
+                Cell::percent($row['break_percentage']),
+            ]);
+        }
+        $byStaff->addRow([
+            Cell::bold('Total'), null,
+            Cell::bold(collect($data['by_staff'])->sum('shifts')),
+            Cell::bold(collect($data['by_staff'])->sum('break_count')),
+            Cell::bold(collect($data['by_staff'])->sum('scheduled_minutes')),
+            Cell::bold(collect($data['by_staff'])->sum('break_minutes')),
+            Cell::bold(collect($data['by_staff'])->sum('worked_minutes')),
+            null, null,
+        ]);
+
+        $byDay = $book->addSheet('By day');
+        $byDay->setColumnWidths([14, 12, 12, 18, 14, 16]);
+        $byDay->addHeaderRow(['Date', 'Shifts', 'Staff', 'Scheduled (min)', 'Break (min)', 'Worked (min)']);
+        foreach ($data['by_day'] as $row) {
+            $byDay->addRow([
+                Cell::date($row['date']),
+                Cell::number($row['shifts']),
+                Cell::number($row['staff']),
+                Cell::number($row['scheduled_minutes']),
+                Cell::number($row['break_minutes']),
+                Cell::number($row['worked_minutes']),
+            ]);
+        }
+
+        $detail = $this->reports->staffTimeDetail($filters);
+
+        $shiftDetail = $book->addSheet('Shift detail');
+        $shiftDetail->setColumnWidths([12, 13, 26, 24, 20, 20, 10, 16, 14, 14]);
+        $shiftDetail->addHeaderRow([
+            'Shift #', 'Date', 'Staff', 'Branch', 'Started', 'Ended',
+            'Breaks', 'Scheduled (min)', 'Break (min)', 'Worked (min)',
+        ]);
+        foreach ($detail['shift_rows'] as $row) {
+            $shiftDetail->addRow([
+                Cell::number($row['shift_id']),
+                Cell::date($row['date']),
+                Cell::text($row['staff_name']),
+                Cell::text($row['branch_name']),
+                Cell::text($row['started_at']),
+                Cell::text($row['ended_at']),
+                Cell::number($row['break_count']),
+                Cell::number($row['scheduled_minutes']),
+                Cell::number($row['break_minutes']),
+                Cell::number($row['worked_minutes']),
+            ]);
+        }
+
+        $breaks = $book->addSheet('Breaks');
+        $breaks->setColumnWidths([12, 13, 26, 24, 14, 20, 20, 14, 30]);
+        $breaks->addHeaderRow([
+            'Shift #', 'Date', 'Staff', 'Branch', 'Type', 'Started', 'Ended', 'Minutes', 'Notes',
+        ]);
+        foreach ($detail['break_rows'] as $row) {
+            $breaks->addRow([
+                Cell::number($row['shift_id']),
+                Cell::date($row['date']),
+                Cell::text($row['staff_name']),
+                Cell::text($row['branch_name']),
+                Cell::text($row['type']),
+                Cell::text($row['started_at']),
+                Cell::text($row['ended_at']),
+                Cell::number($row['minutes']),
+                Cell::text($row['notes']),
+            ]);
         }
 
         return $book;
