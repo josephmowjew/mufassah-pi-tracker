@@ -91,7 +91,11 @@ class AdminUserController extends Controller
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'email' => [Rule::requiredIf(fn () => $request->input('role') !== 'customer'), 'nullable', 'string', 'email', 'max:255', 'unique:users'],
-            'phone_number' => ['nullable', 'string', 'max:20'],
+            // users.phone_number carries a unique index, so without this rule a
+            // duplicate reaches MySQL and surfaces as a 500 instead of telling
+            // the operator which field is wrong. Two walk-in customers sharing
+            // a phone number is a common front-desk mistake.
+            'phone_number' => ['nullable', 'string', 'max:20', Rule::unique('users', 'phone_number')],
             'password' => [Rule::requiredIf(fn () => $request->input('role') !== 'customer'), 'nullable', Password::defaults()],
             'role' => ['required', 'string', Rule::exists('roles', 'name')->where('guard_name', 'api')],
             'branch_id' => ['nullable', 'integer', Rule::exists('branches', 'id')->whereNull('deleted_at')],
@@ -115,7 +119,7 @@ class AdminUserController extends Controller
         $user = User::create([
             'name' => $validated['name'],
             'email' => $validated['email'] ?? null,
-            'phone_number' => $validated['phone_number'] ?? null,
+            'phone_number' => filled($validated['phone_number'] ?? null) ? $validated['phone_number'] : null,
             'password' => Hash::make($validated['password'] ?? Str::random(32)),
             'branch_id' => $branchId,
             'address' => $validated['address'] ?? null,
@@ -168,7 +172,10 @@ class AdminUserController extends Controller
         $validated = $request->validate([
             'name' => ['sometimes', 'string', 'max:255'],
             'email' => ['sometimes', 'nullable', 'string', 'email', 'max:255', Rule::unique('users')->ignore($user->id)],
-            'phone_number' => ['nullable', 'string', 'max:20'],
+            // The unique index is on the column, not the form. Editing a user
+            // must ignore their own row, and must still refuse a number that
+            // belongs to someone else.
+            'phone_number' => ['nullable', 'string', 'max:20', Rule::unique('users', 'phone_number')->ignore($user->id)],
             'password' => ['sometimes', Password::defaults()],
             'branch_id' => ['nullable', 'integer', Rule::exists('branches', 'id')->whereNull('deleted_at')],
             'address' => ['nullable', 'string', 'max:500'],
@@ -181,6 +188,12 @@ class AdminUserController extends Controller
         // the account holder - applyPasswordChange owns all three.
         $newPassword = $validated['password'] ?? null;
         unset($validated['password']);
+
+        // Blank means "no phone number", not the empty string: two blanks would
+        // otherwise collide on the unique index the moment a second one is saved.
+        if (array_key_exists('phone_number', $validated) && blank($validated['phone_number'])) {
+            $validated['phone_number'] = null;
+        }
 
         if (! $request->user()->hasRole('super_admin')) {
             $validated['branch_id'] = $request->user()->requiredBranchScopeId();

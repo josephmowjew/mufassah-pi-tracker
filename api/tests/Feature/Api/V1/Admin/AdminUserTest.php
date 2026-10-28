@@ -217,6 +217,46 @@ describe('User Creation', function () {
         $response->assertUnprocessable()
             ->assertJsonValidationErrors(['email']);
     });
+
+    it('refuses a phone number that already belongs to another account', function () {
+        // The column has a unique index. Without a validation rule the insert
+        // reached MySQL and came back as a 500, which front-desk staff saw as
+        // "something went wrong" rather than "this number is already in use".
+        $existing = User::factory()->create([
+            'branch_id' => $this->branch->id,
+            'phone_number' => '0891488676',
+        ]);
+
+        $response = $this->actingAs($this->admin)
+            ->postJson('/api/v1/admin/users', [
+                'name' => 'Second Customer',
+                'phone_number' => '0891488676',
+                'role' => 'customer',
+            ]);
+
+        $response->assertUnprocessable()
+            ->assertJsonValidationErrors(['phone_number']);
+
+        expect(User::where('phone_number', '0891488676')->count())->toBe(1)
+            ->and($existing->phone_number)->toBe('0891488676');
+    });
+
+    it('stores a blank phone number as null so two walk-ins do not collide', function () {
+        // An empty string would occupy the unique index once; the second blank
+        // walk-in would then fail even though neither has a number.
+        foreach (['Walk In One', 'Walk In Two'] as $name) {
+            $this->actingAs($this->admin)
+                ->postJson('/api/v1/admin/users', [
+                    'name' => $name,
+                    'phone_number' => '',
+                    'role' => 'customer',
+                ])
+                ->assertCreated();
+        }
+
+        expect(User::where('name', 'Walk In One')->first()?->phone_number)->toBeNull()
+            ->and(User::where('name', 'Walk In Two')->first()?->phone_number)->toBeNull();
+    });
 });
 
 describe('User View', function () {
@@ -261,6 +301,33 @@ describe('User Update', function () {
 
         $response->assertSuccessful();
         expect($this->customer->fresh()->password)->not->toBe($oldPassword);
+    });
+
+    it('rejects another account\'s phone number but accepts its own', function () {
+        $this->customer->update(['phone_number' => '0999116161']);
+        $other = User::factory()->create([
+            'branch_id' => $this->branch->id,
+            'phone_number' => '0882913032',
+        ]);
+
+        $this->actingAs($this->admin)
+            ->putJson("/api/v1/admin/users/{$this->customer->id}", [
+                'phone_number' => '0882913032',
+            ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['phone_number']);
+
+        // Saving the form again without changing the number must not trip the
+        // unique rule on the user's own row.
+        $this->actingAs($this->admin)
+            ->putJson("/api/v1/admin/users/{$this->customer->id}", [
+                'name' => 'Same Number',
+                'phone_number' => '0999116161',
+            ])
+            ->assertSuccessful();
+
+        expect($this->customer->fresh()->phone_number)->toBe('0999116161')
+            ->and($other->fresh()->phone_number)->toBe('0882913032');
     });
 });
 
