@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Notifications\ResetPasswordNotification;
 use App\Notifications\VerifyEmailNotification;
 use Illuminate\Contracts\Auth\MustVerifyEmail;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Foundation\Auth\User as Authenticatable;
@@ -164,6 +165,21 @@ class User extends Authenticatable implements MustVerifyEmail
         'store_admin',
         'customer_service',
         'customer',
+    ];
+
+    /**
+     * Roles that mark an account as internal staff rather than a customer.
+     *
+     * "Customer" is deliberately defined as the absence of all of these rather
+     * than the presence of the customer role: accounts created before roles
+     * were backfilled carry no role at all, and the admin UI has always
+     * rendered those as customers. Filtering on `has role customer` would make
+     * them disappear from both sides of the toggle.
+     */
+    public const STAFF_ROLES = [
+        'super_admin',
+        'store_admin',
+        'customer_service',
     ];
 
     /**
@@ -371,6 +387,25 @@ class User extends Authenticatable implements MustVerifyEmail
     public function scopeWithBranch($query)
     {
         return $query->with('branch');
+    }
+
+    /**
+     * Limit the query to staff accounts (any role in STAFF_ROLES).
+     */
+    public function scopeStaff(Builder $query): void
+    {
+        $query->whereHas('roles', fn (Builder $q) => $q->whereIn('name', self::STAFF_ROLES));
+    }
+
+    /**
+     * Limit the query to non-staff accounts.
+     *
+     * Uses whereDoesntHave rather than `whereHas roles name = customer` so that
+     * role-less legacy accounts are included - see STAFF_ROLES.
+     */
+    public function scopeCustomers(Builder $query): void
+    {
+        $query->whereDoesntHave('roles', fn (Builder $q) => $q->whereIn('name', self::STAFF_ROLES));
     }
 
     /**

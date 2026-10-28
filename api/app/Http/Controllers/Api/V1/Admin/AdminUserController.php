@@ -3,13 +3,16 @@
 namespace App\Http\Controllers\Api\V1\Admin;
 
 use App\Http\Controllers\Controller;
-use App\Http\Resources\UserResource;
+use App\Http\Resources\AdminUserResource;
 use App\Models\Branch;
 use App\Models\User;
+use App\Notifications\PasswordChangedNotification;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Password as PasswordBroker;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Password;
@@ -24,9 +27,16 @@ class AdminUserController extends Controller
 {
     /**
      * List all users with filtering and pagination.
+     *
+     * Supported filters: `search`, `role`, `type` (staff|customer),
+     * `verified`, `sort`/`direction`.
      */
     public function index(Request $request): AnonymousResourceCollection
     {
+        $request->validate([
+            'type' => ['nullable', Rule::in(['staff', 'customer'])],
+        ]);
+
         $branchId = $request->user()->hasRole('super_admin')
             ? null
             : $request->user()->requiredBranchScopeId();
@@ -47,6 +57,13 @@ class AdminUserController extends Controller
                     $q->where('name', $request->input('role'));
                 });
             })
+            ->when($request->filled('type'), function ($query) use ($request) {
+                // staff / customer is a coarse split of the role filter above:
+                // staff = any internal role, customer = everything else.
+                $request->input('type') === 'staff'
+                    ? $query->staff()
+                    : $query->customers();
+            })
             ->when($request->has('verified'), function ($query) use ($request) {
                 if ($request->boolean('verified')) {
                     $query->whereNotNull('email_verified_at');
@@ -63,7 +80,7 @@ class AdminUserController extends Controller
             })
             ->paginate($request->input('per_page', 15));
 
-        return UserResource::collection($users);
+        return AdminUserResource::collection($users);
     }
 
     /**
@@ -113,7 +130,7 @@ class AdminUserController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'User created successfully.',
-            'data' => new UserResource($user),
+            'data' => new AdminUserResource($user),
         ], 201);
     }
 
@@ -128,7 +145,7 @@ class AdminUserController extends Controller
 
         return response()->json([
             'success' => true,
-            'data' => new UserResource($user),
+            'data' => new AdminUserResource($user),
             'statistics' => [
                 'devices_count' => $user->devices_count,
                 'subscriptions_count' => $user->subscriptions_count,
@@ -159,21 +176,28 @@ class AdminUserController extends Controller
             'national_id' => ['nullable', 'string', 'max:50', Rule::unique('users')->ignore($user->id)],
         ]);
 
-        if (isset($validated['password'])) {
-            $validated['password'] = Hash::make($validated['password']);
-        }
+        // A password is never written as a plain attribute update. Changing one
+        // has to revoke live tokens, invalidate outstanding reset links and tell
+        // the account holder - applyPasswordChange owns all three.
+        $newPassword = $validated['password'] ?? null;
+        unset($validated['password']);
 
         if (! $request->user()->hasRole('super_admin')) {
             $validated['branch_id'] = $request->user()->requiredBranchScopeId();
         }
 
         $user->update($validated);
+
+        if ($newPassword !== null) {
+            $this->applyPasswordChange($user, $newPassword, $request->user()->name);
+        }
+
         $user->load('roles');
 
         return response()->json([
             'success' => true,
             'message' => 'User updated successfully.',
-            'data' => new UserResource($user),
+            'data' => new AdminUserResource($user),
         ]);
     }
 
@@ -238,7 +262,7 @@ class AdminUserController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Role assigned successfully.',
-            'data' => new UserResource($user),
+            'data' => new AdminUserResource($user),
         ]);
     }
 
@@ -328,6 +352,170 @@ class AdminUserController extends Controller
             'success' => true,
             'message' => 'Email verified successfully.',
         ]);
+    }
+
+    /**
+     * Email the user a password reset link.
+     *
+     * Uses the same broker as the public "forgot password" flow, so the token
+     * lifetime, single-use semantics and throttle all match what a user would
+     * get if they asked for it themselves.
+     */
+    public function sendPasswordReset(Request $request, User $user): JsonResponse
+    {
+        $this->authorizeUserBranch($request, $user);
+        $this->authorize('manage', $user);
+
+        if (blank($user->email)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'This user has no email address on file, so a reset link cannot be sent. Set a password manually instead.',
+            ], 422);
+        }
+
+        if ($user->isSuspended()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'This account is suspended. Unsuspend it before sending a password reset.',
+            ], 422);
+        }
+
+        try {
+            $status = PasswordBroker::sendResetLink(['email' => $user->email]);
+        } catch (\Throwable $e) {
+            // Transport failures surface here as exceptions, not statuses.
+            // Report the real cause but answer with something actionable.
+            report($e);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'The reset link could not be emailed right now. Try again, or set a password directly.',
+            ], 500);
+        }
+
+        return match ($status) {
+            PasswordBroker::RESET_LINK_SENT => response()->json([
+                'success' => true,
+                'message' => "Password reset link sent to {$user->email}.",
+                'data' => ['emailed' => true],
+            ]),
+            PasswordBroker::RESET_THROTTLED => response()->json([
+                'success' => false,
+                'message' => 'A reset link was sent recently. Please wait a minute before sending another.',
+            ], 429),
+            default => response()->json([
+                'success' => false,
+                'message' => 'Unable to send the password reset link. Please try again.',
+            ], 500),
+        };
+    }
+
+    /**
+     * Set a new password on a user's behalf.
+     *
+     * This is the "admin knows the password" path: the administrator chooses
+     * the password and the account holder is emailed it as confirmation. It
+     * therefore also revokes every live session, because the whole point is
+     * that the previous credentials - and whoever was holding them - are out.
+     */
+    public function resetPassword(Request $request, User $user): JsonResponse
+    {
+        $this->authorizeUserBranch($request, $user);
+        $this->authorize('manage', $user);
+
+        // UserPolicy::manage returns true for self so that profile edits keep
+        // working; here self-service would bypass the current-password check on
+        // the profile page, so it is refused explicitly.
+        if ($user->id === $request->user()->id) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Use your profile page to change your own password.',
+            ], 403);
+        }
+
+        $validated = $request->validate([
+            'password' => ['required', 'confirmed', Password::min(8)],
+            'revoke_sessions' => ['sometimes', 'boolean'],
+            'notify' => ['sometimes', 'boolean'],
+        ]);
+
+        $notify = $request->boolean('notify', true);
+
+        $emailed = $this->applyPasswordChange(
+            $user,
+            $validated['password'],
+            $request->user()->name,
+            $notify,
+            $request->boolean('revoke_sessions', true),
+        );
+
+        // Three outcomes, three different messages. Collapsing "admin opted out"
+        // into "no email address" sends the admin hunting for a missing email
+        // that is actually there.
+        $message = match (true) {
+            $emailed => "Password updated. The new password was emailed to {$user->email}.",
+            ! $notify => 'Password updated. No notification was sent.',
+            default => 'Password updated. This account has no email address, so no notification was sent.',
+        };
+
+        return response()->json([
+            'success' => true,
+            'message' => $message,
+            'data' => ['emailed' => $emailed],
+        ]);
+    }
+
+    /**
+     * Apply a password change and everything that must accompany it.
+     *
+     * Ordering matters: the password is written first, then live tokens and
+     * outstanding reset tokens are invalidated, then the notification goes out.
+     * If the notification is the last step, a mail failure cannot leave the
+     * account in a half-changed state.
+     *
+     * @return bool Whether the account holder was emailed the new password.
+     */
+    private function applyPasswordChange(
+        User $user,
+        string $plainPassword,
+        ?string $changedBy = null,
+        bool $notify = true,
+        bool $revokeSessions = true,
+    ): bool {
+        $user->forceFill([
+            'password' => Hash::make($plainPassword),
+            'remember_token' => Str::random(60),
+        ])->save();
+
+        if ($revokeSessions) {
+            $user->tokens()->delete();
+        }
+
+        // A link emailed before this change would still be live, and following
+        // it would silently overwrite the password the admin just set. Drop the
+        // token so the only working credential is the new one.
+        if (filled($user->email)) {
+            DB::table(config('auth.passwords.users.table', 'password_reset_tokens'))
+                ->where('email', $user->email)
+                ->delete();
+        }
+
+        $emailed = $notify && filled($user->email);
+
+        if ($emailed) {
+            try {
+                $user->notify(new PasswordChangedNotification($plainPassword, $changedBy));
+            } catch (\Throwable $e) {
+                // The password is already changed and the old sessions are
+                // already dead - a mail failure must not turn that into a 500
+                // that tells the admin nothing happened. With QUEUE_CONNECTION
+                // set to sync the send happens inline, so this path is real.
+                report($e);
+                $emailed = false;
+            }
+        }
+
+        return $emailed;
     }
 
     private function authorizeUserBranch(Request $request, User $target): void

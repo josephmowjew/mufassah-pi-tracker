@@ -403,6 +403,10 @@ Route::middleware(['auth:sanctum', 'not.suspended'])->group(function () {
             Route::post('/suspend', [AdminUserController::class, 'suspend'])->name('suspend');
             Route::post('/unsuspend', [AdminUserController::class, 'unsuspend'])->name('unsuspend');
             Route::post('/verify-email', [AdminUserController::class, 'verifyEmail'])->name('verify-email');
+            // Two ways for an administrator to regain control of an account:
+            // email a reset link, or set the password directly.
+            Route::post('/send-password-reset', [AdminUserController::class, 'sendPasswordReset'])->name('send-password-reset');
+            Route::post('/reset-password', [AdminUserController::class, 'resetPassword'])->name('reset-password');
         });
         Route::get('/roles', [AdminUserController::class, 'roles'])->name('roles');
 

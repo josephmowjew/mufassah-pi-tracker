@@ -1,9 +1,10 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Search, Edit, Trash2, Shield, Ban, Mail, Loader2, CheckCircle, XCircle, Users, Eye, RefreshCw, MailCheck, X } from 'lucide-react'
+import { Plus, Search, Edit, Trash2, Shield, Ban, Mail, Loader2, CheckCircle, XCircle, Users, Eye, RefreshCw, MailCheck, X, KeyRound, SlidersHorizontal } from 'lucide-react'
 import { Authorize } from '@/components/auth/Authorize'
 import { PERMISSIONS } from '@/hooks/usePermission'
 import apiClient from '@/api/client'
+import PasswordResetModal from '@/features/users/PasswordResetModal'
 import type { User as UserType } from '@/types'
 import { toast } from 'sonner'
 
@@ -53,25 +54,44 @@ const initialFormData: UserFormData = {
 const userContactLabel = (user: Pick<UserType, 'email' | 'phone_number'>) =>
   user.email || user.phone_number || 'No contact details'
 
+/** Mirrors App\Models\User::STAFF_ROLES - keep the two lists in step. */
+const STAFF_ROLES = ['super_admin', 'store_admin', 'customer_service']
+
+const ROLE_LABELS: Record<string, string> = {
+  super_admin: 'Super admin',
+  store_admin: 'Store admin',
+  customer_service: 'Customer service',
+  customer: 'Customer',
+}
+
+const roleLabel = (role: string) => ROLE_LABELS[role] ?? role.replace(/_/g, ' ')
+
 export default function AdminUsersPage() {
   const queryClient = useQueryClient()
   const [search, setSearch] = useState('')
+  const [roleFilter, setRoleFilter] = useState('')
+  const [typeFilter, setTypeFilter] = useState('')
   const [page, setPage] = useState(1)
   const [selectedUser, setSelectedUser] = useState<UserType | null>(null)
   const [roleModalUser, setRoleModalUser] = useState<UserType | null>(null)
+  const [passwordResetUser, setPasswordResetUser] = useState<UserType | null>(null)
   const [confirmAction, setConfirmAction] = useState<{ type: 'suspend' | 'unsuspend' | 'delete' | 'verify'; user: UserType } | null>(null)
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [editingUser, setEditingUser] = useState<UserType | null>(null)
   const [formData, setFormData] = useState<UserFormData>(initialFormData)
   const [formErrors, setFormErrors] = useState<Partial<Record<keyof UserFormData, string>>>({})
 
+  const hasActiveFilters = Boolean(search || roleFilter || typeFilter)
+
   const { data, isLoading } = useQuery({
-    queryKey: ['admin-users', search, page],
+    queryKey: ['admin-users', search, roleFilter, typeFilter, page],
     queryFn: async () => {
       const params = new URLSearchParams()
       params.append('page', page.toString())
       params.append('per_page', '15')
       if (search) params.append('search', search)
+      if (roleFilter) params.append('role', roleFilter)
+      if (typeFilter) params.append('type', typeFilter)
 
       const response = await apiClient.get<{ success: boolean; data: UserType[]; meta: UsersResponse['meta'] }>(
         `/admin/users?${params.toString()}`
@@ -241,7 +261,8 @@ export default function AdminUsersPage() {
     e.preventDefault()
     if (!editingUser) return
 
-    // Only send fields that have values (don't send empty password)
+    // No password here by design - the edit form does not expose one, so a
+    // PUT can never silently change credentials. See the Reset password action.
     const updateData: Partial<UserFormData> = {
       name: formData.name,
       email: formData.email,
@@ -249,10 +270,6 @@ export default function AdminUsersPage() {
       national_id: formData.national_id,
       role: formData.role,
       branch_id: formData.branch_id,
-    }
-    if (formData.password) {
-      updateData.password = formData.password
-      updateData.password_confirmation = formData.password_confirmation
     }
     updateUserMutation.mutate({ userId: editingUser.id, data: updateData })
   }
@@ -266,6 +283,9 @@ export default function AdminUsersPage() {
     return typeof roles[0] === 'string' ? roles[0] : roles[0].name
   }
 
+  const isStaffUser = (user: UserType): boolean =>
+    user.is_staff ?? STAFF_ROLES.includes(getUserRole(user))
+
   const getRoleBadge = (user: UserType) => {
     const role = getUserRole(user)
     const roleConfig: Record<string, { bg: string; text: string }> = {
@@ -277,15 +297,21 @@ export default function AdminUsersPage() {
     const config = roleConfig[role] || roleConfig.customer
     return (
       <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${config.bg} ${config.text}`}>
-        {role.replace('_', ' ')}
+        {roleLabel(role)}
       </span>
     )
   }
 
-  const isUserSuspended = (user: UserType): boolean => {
-    // Check if user has a suspended_at field or similar indicator
-    return !!(user as UserType & { suspended_at?: string }).suspended_at
-  }
+  /** Staff / customer split - the coarse grouping the type filter works on. */
+  const getAccountTypeChip = (user: UserType) =>
+    isStaffUser(user) ? (
+      <span className="text-[10px] font-semibold uppercase tracking-wider text-indigo-500">Staff</span>
+    ) : (
+      <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Customer</span>
+    )
+
+  const isUserSuspended = (user: UserType): boolean =>
+    user.is_suspended ?? Boolean(user.suspended_at)
 
   const handleConfirmAction = () => {
     if (!confirmAction) return
@@ -336,20 +362,91 @@ export default function AdminUsersPage() {
 
       {/* Main Card */}
       <div className="bg-white rounded-xl border border-slate-200/60 shadow-sm">
-        {/* Search Bar */}
+        {/* Filters */}
         <div className="p-4 border-b border-slate-200/60">
-          <div className="relative max-w-md">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-            <input
-              type="text"
-              placeholder="Search by name or email..."
-              className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-slate-200 bg-slate-50/50 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-colors"
-              value={search}
-              onChange={(e) => {
-                setSearch(e.target.value)
-                setPage(1)
-              }}
-            />
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+            <div className="relative flex-1 max-w-md">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+              <input
+                type="text"
+                placeholder="Search by name, email or phone..."
+                className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-slate-200 bg-slate-50/50 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-colors"
+                value={search}
+                onChange={(e) => {
+                  setSearch(e.target.value)
+                  setPage(1)
+                }}
+              />
+            </div>
+
+            <div className="flex items-center gap-2 flex-wrap">
+              <div className="inline-flex items-center gap-1.5 text-slate-400 pl-1">
+                <SlidersHorizontal className="h-4 w-4" />
+              </div>
+
+              <select
+                value={typeFilter}
+                onChange={(e) => {
+                  const nextType = e.target.value
+                  setTypeFilter(nextType)
+                  // Only drop the role when the new type contradicts it, so
+                  // switching staff -> customer keeps a customer role selected
+                  // instead of silently resetting the whole filter row.
+                  if (roleFilter && nextType && STAFF_ROLES.includes(roleFilter) !== (nextType === 'staff')) {
+                    setRoleFilter('')
+                  }
+                  setPage(1)
+                }}
+                aria-label="Filter by account type"
+                className="px-3 py-2.5 rounded-lg border border-slate-200 bg-slate-50/50 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-colors"
+              >
+                <option value="">All account types</option>
+                <option value="staff">Staff</option>
+                <option value="customer">Customers</option>
+              </select>
+
+              <select
+                value={roleFilter}
+                onChange={(e) => {
+                  setRoleFilter(e.target.value)
+                  setPage(1)
+                }}
+                aria-label="Filter by role"
+                className="px-3 py-2.5 rounded-lg border border-slate-200 bg-slate-50/50 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-colors"
+              >
+                <option value="">All roles</option>
+                {/* Only roles that can match the chosen type: offering
+                    "Customer" under "Staff" builds a filter that can never
+                    return a row. */}
+                {(rolesData || [])
+                  .filter(
+                    (role) =>
+                      !typeFilter ||
+                      STAFF_ROLES.includes(role.name) === (typeFilter === 'staff')
+                  )
+                  .map((role) => (
+                    <option key={role.id} value={role.name}>
+                      {roleLabel(role.name)}
+                    </option>
+                  ))}
+              </select>
+
+              {hasActiveFilters && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearch('')
+                    setRoleFilter('')
+                    setTypeFilter('')
+                    setPage(1)
+                  }}
+                  className="inline-flex items-center gap-1 px-2.5 py-2.5 text-sm font-medium text-slate-500 hover:text-slate-700 transition-colors"
+                >
+                  <X className="h-3.5 w-3.5" />
+                  Clear
+                </button>
+              )}
+            </div>
           </div>
         </div>
 
@@ -406,7 +503,12 @@ export default function AdminUsersPage() {
                             </div>
                           </div>
                         </td>
-                        <td className="py-3 px-4">{getRoleBadge(user)}</td>
+                        <td className="py-3 px-4">
+                          <div className="flex flex-col items-start gap-1">
+                            {getRoleBadge(user)}
+                            {getAccountTypeChip(user)}
+                          </div>
+                        </td>
                         <td className="py-3 px-4">
                           {user.email ? user.email_verified_at ? (
                             <div className="flex items-center gap-1.5 text-emerald-600">
@@ -450,6 +552,15 @@ export default function AdminUsersPage() {
                                 title="Manage roles"
                               >
                                 <Shield className="h-4 w-4" />
+                              </button>
+                            </Authorize>
+                            <Authorize permission={PERMISSIONS.UPDATE_USERS}>
+                              <button
+                                onClick={() => setPasswordResetUser(user)}
+                                className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+                                title="Reset password"
+                              >
+                                <KeyRound className="h-4 w-4" />
                               </button>
                             </Authorize>
                             {user.email && !user.email_verified_at && (
@@ -552,7 +663,10 @@ export default function AdminUsersPage() {
               <div className="grid grid-cols-2 gap-4 pt-2">
                 <div className="p-3 bg-slate-50 rounded-lg">
                   <p className="text-xs text-slate-500 mb-1">Role</p>
-                  {getRoleBadge(selectedUser)}
+                  <div className="flex flex-col items-start gap-1">
+                    {getRoleBadge(selectedUser)}
+                    {getAccountTypeChip(selectedUser)}
+                  </div>
                 </div>
                 <div className="p-3 bg-slate-50 rounded-lg">
                   <p className="text-xs text-slate-500 mb-1">Email Status</p>
@@ -578,9 +692,23 @@ export default function AdminUsersPage() {
                   )}
                 </div>
               </div>
-              <button onClick={() => setSelectedUser(null)} className="w-full px-4 py-2.5 bg-slate-100 text-slate-600 text-sm font-medium rounded-lg hover:bg-slate-200 transition-colors">
-                Close
-              </button>
+              <div className="flex gap-2">
+                <button onClick={() => setSelectedUser(null)} className="flex-1 px-4 py-2.5 bg-slate-100 text-slate-600 text-sm font-medium rounded-lg hover:bg-slate-200 transition-colors">
+                  Close
+                </button>
+                <Authorize permission={PERMISSIONS.UPDATE_USERS}>
+                  <button
+                    onClick={() => {
+                      setPasswordResetUser(selectedUser)
+                      setSelectedUser(null)
+                    }}
+                    className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
+                  >
+                    <KeyRound className="h-4 w-4" />
+                    Reset password
+                  </button>
+                </Authorize>
+              </div>
             </div>
           </div>
         </>
@@ -713,6 +841,16 @@ export default function AdminUsersPage() {
                 <span className="text-red-500">*</span> indicates required fields
               </p>
 
+              {editingUser && (
+                <div className="flex items-start gap-2 p-3 rounded-lg bg-blue-50 border border-blue-100">
+                  <KeyRound className="h-4 w-4 text-blue-600 flex-shrink-0 mt-0.5" />
+                  <p className="text-xs text-blue-800">
+                    Passwords are not changed here. Use <strong>Reset password</strong> in the actions column — it can
+                    email a reset link or set a new password and notify the user.
+                  </p>
+                </div>
+              )}
+
               {/* Name */}
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1.5">
@@ -838,48 +976,57 @@ export default function AdminUsersPage() {
                 {formErrors.branch_id && <p className="mt-1 text-xs text-red-600">{formErrors.branch_id}</p>}
               </div>
 
-              {/* Password */}
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1.5">
-                  Password {!editingUser && formData.role !== 'customer' ? (
-                    <span className="text-red-500">*</span>
-                  ) : (
-                    <span className="text-slate-400 font-normal">
-                      {editingUser ? ' (leave blank to keep current)' : ' (optional for customers)'}
-                    </span>
-                  )}
-                </label>
-                <input
-                  type="password"
-                  value={formData.password}
-                  onChange={(e) => handleFormChange('password', e.target.value)}
-                  className={`w-full px-3.5 py-2.5 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-colors ${
-                    formErrors.password ? 'border-red-300 bg-red-50' : 'border-slate-200 bg-slate-50/50'
-                  }`}
-                  placeholder={editingUser ? 'Enter new password' : 'Minimum 8 characters'}
-                  required={!editingUser && formData.role !== 'customer'}
-                  minLength={8}
-                />
-                {formErrors.password && <p className="mt-1 text-xs text-red-600">{formErrors.password}</p>}
-              </div>
+              {/*
+                Passwords are only set at creation time. Changing an existing
+                password has side effects the form cannot carry - session
+                revocation, stale reset-token invalidation and a confirmation
+                email - so it goes through the Reset password action instead of
+                a silent field on this form.
+              */}
+              {!editingUser && (
+                <>
+                  {/* Password */}
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1.5">
+                      Password {formData.role !== 'customer' ? (
+                        <span className="text-red-500">*</span>
+                      ) : (
+                        <span className="text-slate-400 font-normal"> (optional for customers)</span>
+                      )}
+                    </label>
+                    <input
+                      type="password"
+                      value={formData.password}
+                      onChange={(e) => handleFormChange('password', e.target.value)}
+                      className={`w-full px-3.5 py-2.5 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-colors ${
+                        formErrors.password ? 'border-red-300 bg-red-50' : 'border-slate-200 bg-slate-50/50'
+                      }`}
+                      placeholder="Minimum 8 characters"
+                      required={formData.role !== 'customer'}
+                      minLength={8}
+                    />
+                    {formErrors.password && <p className="mt-1 text-xs text-red-600">{formErrors.password}</p>}
+                  </div>
 
-              {/* Confirm Password */}
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1.5">
-                  Confirm Password {(!editingUser && formData.role !== 'customer') || formData.password ? <span className="text-red-500">*</span> : null}
-                </label>
-                <input
-                  type="password"
-                  value={formData.password_confirmation}
-                  onChange={(e) => handleFormChange('password_confirmation', e.target.value)}
-                  className={`w-full px-3.5 py-2.5 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-colors ${
-                    formErrors.password_confirmation ? 'border-red-300 bg-red-50' : 'border-slate-200 bg-slate-50/50'
-                  }`}
-                  placeholder="Re-enter password"
-                  required={(!editingUser && formData.role !== 'customer') || formData.password.length > 0}
-                />
-                {formErrors.password_confirmation && <p className="mt-1 text-xs text-red-600">{formErrors.password_confirmation}</p>}
-              </div>
+                  {/* Confirm Password */}
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1.5">
+                      Confirm Password {formData.role !== 'customer' || formData.password ? <span className="text-red-500">*</span> : null}
+                    </label>
+                    <input
+                      type="password"
+                      value={formData.password_confirmation}
+                      onChange={(e) => handleFormChange('password_confirmation', e.target.value)}
+                      className={`w-full px-3.5 py-2.5 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-colors ${
+                        formErrors.password_confirmation ? 'border-red-300 bg-red-50' : 'border-slate-200 bg-slate-50/50'
+                      }`}
+                      placeholder="Re-enter password"
+                      required={formData.role !== 'customer' || formData.password.length > 0}
+                    />
+                    {formErrors.password_confirmation && <p className="mt-1 text-xs text-red-600">{formErrors.password_confirmation}</p>}
+                  </div>
+                </>
+              )}
 
               {/* Actions */}
               <div className="flex gap-3 pt-2">
@@ -904,6 +1051,14 @@ export default function AdminUsersPage() {
             </form>
           </div>
         </>
+      )}
+      {/* Password Reset Modal */}
+      {passwordResetUser && (
+        <PasswordResetModal
+          user={passwordResetUser}
+          onClose={() => setPasswordResetUser(null)}
+          onDone={() => queryClient.invalidateQueries({ queryKey: ['admin-users'] })}
+        />
       )}
     </div>
   )

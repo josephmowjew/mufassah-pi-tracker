@@ -7,9 +7,15 @@ export interface User {
   avatar: string | null
   address: string | null
   city: string | null
-  national_id: string | null
+  // Admin-only: only AdminUserResource emits these. Absent on the ~25
+  // embedded user payloads (device owner, sale customer, family member, ...),
+  // so treat them as optional rather than assuming presence.
+  national_id?: string | null
   branch_id: number | null
   email_verified_at: string | null
+  suspended_at?: string | null
+  is_suspended?: boolean
+  is_staff?: boolean
   created_at: string
   updated_at: string
   roles?: Role[] | string[]
