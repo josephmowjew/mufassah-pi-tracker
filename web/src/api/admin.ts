@@ -1,5 +1,12 @@
 import apiClient, { type ApiResponse, type PaginatedResponse } from './client'
-import type { Branch, User, Subscription, Payment } from '@/types'
+import type {
+  Branch,
+  Payment,
+  StockImportReport,
+  StockImportResult,
+  Subscription,
+  User,
+} from '@/types'
 
 export interface AdminDashboardFilters {
   branch_id?: string | number | null
@@ -369,6 +376,84 @@ export const adminApi = {
       blob: response.data as Blob,
       filename: filenameFromDisposition(response.headers['content-disposition'], report),
     }
+  },
+  /**
+   * Validate a stock spreadsheet without writing anything.
+   *
+   * The server re-parses the file on import, so this result is a preview only —
+   * it exists so the operator can see row-level problems before committing.
+   */
+  previewStockImport: async (
+    file: File,
+    branchId?: number | null
+  ): Promise<StockImportReport> => {
+    const formData = new FormData()
+    formData.append('file', file)
+    if (branchId) formData.append('branch_id', String(branchId))
+
+    const response = await apiClient.post<ApiResponse<StockImportReport>>(
+      '/admin/inventory/import/preview',
+      formData,
+      {
+        // The instance default is application/json, which makes axios convert a
+        // FormData body to JSON and lose the file. Override it explicitly.
+        headers: { 'Content-Type': 'multipart/form-data' },
+        // Parsing a few hundred rows takes longer than the 10s client default.
+        timeout: 120000,
+      }
+    )
+
+    return response.data.data
+  },
+
+  /**
+   * Receive the stock in a spreadsheet.
+   *
+   * A rejected file comes back as a 422 carrying the same report the preview
+   * returns; that is a normal outcome, not a failure, so it is resolved rather
+   * than thrown and the caller can render the reasons.
+   */
+  importStock: async (
+    file: File,
+    branchId?: number | null
+  ): Promise<{ status: 'imported'; result: StockImportResult } | { status: 'rejected'; report: StockImportReport }> => {
+    const formData = new FormData()
+    formData.append('file', file)
+    if (branchId) formData.append('branch_id', String(branchId))
+
+    try {
+      const response = await apiClient.post<ApiResponse<StockImportResult>>(
+        '/admin/inventory/import',
+        formData,
+        {
+          headers: { 'Content-Type': 'multipart/form-data' },
+          timeout: 120000,
+        }
+      )
+
+      return { status: 'imported', result: response.data.data }
+    } catch (error) {
+      const report = (error as { response?: { status?: number; data?: { data?: StockImportReport } } })
+        .response?.data?.data
+
+      if (report && typeof report.can_import === 'boolean') {
+        return { status: 'rejected', report }
+      }
+
+      throw error
+    }
+  },
+
+  /**
+   * Download the sample spreadsheet, including its instructions sheet.
+   */
+  downloadStockImportTemplate: async (format: 'csv' | 'xlsx' = 'xlsx'): Promise<Blob> => {
+    const response = await apiClient.get(`/admin/inventory/import/template?format=${format}`, {
+      responseType: 'blob',
+      timeout: 120000,
+    })
+
+    return response.data as Blob
   },
 }
 

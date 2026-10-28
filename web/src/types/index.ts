@@ -679,6 +679,73 @@ export type InventoryMovementType =
   | 'write_off'
   | 'administrative_sale'
 
+/** One parsed spreadsheet line, as reported by the stock-import preview. */
+export interface StockImportRow {
+  /** Spreadsheet row number, so an error can be found in Excel. */
+  row: number
+  status: 'ok' | 'error'
+  branch_id: number | null
+  branch: string | null
+  category_id: number | null
+  category: string | null
+  brand: string | null
+  model: string | null
+  product: string
+  color: string | null
+  quantity: number | null
+  buying_price: number | null
+  target_selling_price: number | null
+  /** `sheet` when the price came from the file, `inherited` when reused. */
+  price_source: 'sheet' | 'inherited' | null
+  serial_numbers: string[]
+  supplier: string | null
+  reference_number: string | null
+  purchase_date: string | null
+  purchase_location: string | null
+  description: string | null
+  notes: string | null
+  line_total: number | null
+  errors: string[]
+}
+
+export interface StockImportSummary {
+  rows: number
+  valid_rows: number
+  invalid_rows: number
+  units: number
+  total_cost: number
+  expected_revenue: number
+}
+
+export interface StockImportBranchGroup {
+  branch_id: number
+  branch: string
+  rows: number
+  units: number
+  total_cost: number
+}
+
+export interface StockImportReport {
+  filename: string
+  columns: {
+    recognised: Array<{ column: string; label: string }>
+    unknown: string[]
+  }
+  summary: StockImportSummary
+  branches: StockImportBranchGroup[]
+  rows: StockImportRow[]
+  warnings: string[]
+  errors: string[]
+  can_import: boolean
+}
+
+export interface StockImportResult {
+  units: number
+  batches: number
+  devices: number
+  branches: Array<{ branch_id: number; branch: string | null; receipt_number: string }>
+}
+
 export type StockTransferRequestStatus = 'pending' | 'approved' | 'rejected' | 'cancelled'
 export interface StockTransferRequest {
   id: number

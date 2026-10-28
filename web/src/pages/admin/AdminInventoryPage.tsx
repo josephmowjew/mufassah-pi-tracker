@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Search, Package, Plus, Loader2, LayoutGrid, List, Layers } from 'lucide-react'
+import { Search, Package, Plus, Loader2, LayoutGrid, List, Layers, Upload } from 'lucide-react'
 import { Authorize } from '@/components/auth/Authorize'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
 import { PERMISSIONS, ROLES, useAuthStore } from '@/stores/auth-store'
@@ -13,6 +13,7 @@ import StockViewTable from '@/components/inventory/StockViewTable'
 import SerialViewTable from '@/components/inventory/SerialViewTable'
 import ProductDetailsModal from '@/components/inventory/ProductDetailsModal'
 import BulkAddDeviceModal from '@/components/inventory/BulkAddDeviceModal'
+import ImportStockModal from '@/components/inventory/ImportStockModal'
 import { CheckCircle, Clock, Tag, RotateCcw, AlertTriangle } from 'lucide-react'
 import { appendBranchScope } from '@/lib/branch-scope'
 import { useInventoryPinStore } from '@/stores/inventory-pin-store'
@@ -85,6 +86,7 @@ export default function AdminInventoryPage() {
   const [selectedBranchId, setSelectedBranchId] = useState('')
   const [selectedDevice, setSelectedDevice] = useState<Device | null>(null)
   const [showBulkAddModal, setShowBulkAddModal] = useState(false)
+  const [showImportModal, setShowImportModal] = useState(false)
   const [showStatusModal, setShowStatusModal] = useState(false)
   const [selectedProduct, setSelectedProduct] = useState<GroupedInventoryItem | null>(null)
   const [selectedBatch, setSelectedBatch] = useState<InventoryBatch | null>(null)
@@ -569,13 +571,22 @@ export default function AdminInventoryPage() {
             <p className="text-slate-500 text-sm mt-1">Manage device stock and inventory</p>
           </div>
           <Authorize permission={PERMISSIONS.MANAGE_INVENTORY}>
-            <button
-              onClick={() => setShowBulkAddModal(true)}
-              className="inline-flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
-            >
-              <Plus className="h-4 w-4" />
-              Receive Stock
-            </button>
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => setShowImportModal(true)}
+                className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-700 transition-colors hover:bg-slate-50"
+              >
+                <Upload className="h-4 w-4" />
+                Import from Excel/CSV
+              </button>
+              <button
+                onClick={() => setShowBulkAddModal(true)}
+                className="inline-flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                <Plus className="h-4 w-4" />
+                Receive Stock
+              </button>
+            </div>
           </Authorize>
         </div>
 
@@ -832,6 +843,15 @@ export default function AdminInventoryPage() {
         {/* Bulk Add Device Modal */}
         {showBulkAddModal && (
           <BulkAddDeviceModal onClose={() => setShowBulkAddModal(false)} />
+        )}
+
+        {/* Spreadsheet import */}
+        {showImportModal && (
+          <ImportStockModal
+            branches={branches}
+            defaultBranchId={selectedBranchId}
+            onClose={() => setShowImportModal(false)}
+          />
         )}
 
         {/* Product Details Modal */}

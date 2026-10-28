@@ -4,6 +4,7 @@ use App\Http\Controllers\Api\V1\Admin\AdminDashboardController;
 use App\Http\Controllers\Api\V1\Admin\AdminDeviceController;
 use App\Http\Controllers\Api\V1\Admin\AdminFamilyController;
 use App\Http\Controllers\Api\V1\Admin\AdminInventoryController;
+use App\Http\Controllers\Api\V1\Admin\AdminInventoryImportController;
 use App\Http\Controllers\Api\V1\Admin\AdminInvoiceController;
 use App\Http\Controllers\Api\V1\Admin\AdminProductCatalogController;
 use App\Http\Controllers\Api\V1\Admin\AdminReportController;
@@ -523,6 +524,14 @@ Route::middleware(['auth:sanctum', 'not.suspended'])->group(function () {
                 Route::post('/', [AdminInventoryController::class, 'store'])->name('store');
                 Route::post('/bulk', [AdminInventoryController::class, 'bulkStore'])->name('bulk');
                 Route::post('/receipts', [AdminInventoryController::class, 'storeReceipt'])->name('receipts.store');
+
+                // Spreadsheet intake. Preview writes nothing; store re-parses the
+                // same upload and receives it, so a confirmation can never be
+                // applied to an analysis that has since gone stale.
+                Route::get('/import/template', [AdminInventoryImportController::class, 'template'])->name('import.template');
+                Route::post('/import/preview', [AdminInventoryImportController::class, 'preview'])->name('import.preview');
+                Route::post('/import', [AdminInventoryImportController::class, 'store'])->name('import.store');
+
                 Route::put('/batches/{batch}/selling-price', [AdminInventoryController::class, 'updateBatchSellingPrice'])->name('batches.selling-price');
                 Route::put('/{device}/status', [AdminInventoryController::class, 'updateStatus'])->name('status');
                 Route::post('/{device}/faulty', [AdminInventoryController::class, 'markFaulty'])->name('faulty');

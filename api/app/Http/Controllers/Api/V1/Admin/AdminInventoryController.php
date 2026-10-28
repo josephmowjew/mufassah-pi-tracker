@@ -15,9 +15,10 @@ use App\Models\Device;
 use App\Models\InventoryBatch;
 use App\Models\InventoryReceipt;
 use App\Services\InventoryCatalogResolver;
+use App\Services\InventoryIntakeService;
 use App\Services\InventoryMovementService;
 use App\Services\InventoryPriceResolver;
-use Illuminate\Database\QueryException;
+use App\Support\Inventory\InventoryBranchGuard;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -31,6 +32,10 @@ class AdminInventoryController extends BaseController
         private readonly InventoryMovementService $movementService,
         private readonly InventoryCatalogResolver $catalogResolver,
         private readonly InventoryPriceResolver $priceResolver,
+        // Batch, device and receipt creation live in the service so spreadsheet
+        // import produces exactly the same stock as this controller does.
+        private readonly InventoryIntakeService $intake,
+        private readonly InventoryBranchGuard $branchGuard,
     ) {}
 
     /**
@@ -481,7 +486,7 @@ class AdminInventoryController extends BaseController
             $device = Device::create([
                 ...$validated,
                 ...$catalog,
-                'unique_device_code' => $this->generateDeviceCode(),
+                'unique_device_code' => $this->intake->generateDeviceCode(),
                 'status' => DeviceStatus::INACTIVE,
                 'inventory_status' => InventoryStatus::IN_STOCK,
             ]);
@@ -512,23 +517,18 @@ class AdminInventoryController extends BaseController
         $validated = $request->validated();
         $validated['branch_id'] = $this->resolveInventoryWriteBranchId($request, (int) $validated['branch_id']);
 
-        DB::beginTransaction();
         try {
-            [$batch, $devices] = $this->createInventoryBatchDevices($validated['branch_id'], $validated);
-            foreach ($devices as $device) {
-                $this->movementService->recordReceipt($device, $batch, null, $request->user());
-            }
-
-            DB::commit();
+            [$batch, $devices] = $this->intake->receiveStandaloneBatch(
+                $validated['branch_id'],
+                $validated,
+                $request->user(),
+            );
         } catch (ValidationException $e) {
-            // A business-rule failure is not a server fault. Roll back and let the
-            // global handler render the documented 422 with its field errors —
-            // the \Exception arm below would flatten it into a generic 500.
-            DB::rollBack();
-
+            // A business-rule failure is not a server fault. Let the global
+            // handler render the documented 422 with its field errors — the
+            // \Exception arm below would flatten it into a generic 500.
             throw $e;
         } catch (\Exception $e) {
-            DB::rollBack();
             Log::error('Bulk inventory creation failed', [
                 'error' => $e->getMessage(),
                 'category_id' => $validated['category_id'] ?? null,
@@ -563,52 +563,34 @@ class AdminInventoryController extends BaseController
     {
         $validated = $request->validated();
         $validated['branch_id'] = $this->resolveInventoryWriteBranchId($request, (int) $validated['branch_id']);
-        $receipt = null;
-        $batches = collect();
-        $deviceIds = [];
 
-        DB::beginTransaction();
+        // Delivery-level fields apply to every line; the form only asks for them
+        // once, so they are copied down before intake sees the lines.
+        $lines = array_map(fn (array $line): array => [
+            ...$line,
+            'purchase_date' => $validated['purchase_date'] ?? null,
+            'purchase_location' => $validated['purchase_location'] ?? null,
+        ], $validated['lines']);
+
         try {
-            $receipt = $this->createReceiptWithRetry([
-                'branch_id' => $validated['branch_id'],
-                'supplier' => $validated['supplier'] ?? null,
-                'reference_number' => $validated['reference_number'] ?? null,
-                'purchase_date' => $validated['purchase_date'] ?? null,
-                'purchase_location' => $validated['purchase_location'] ?? null,
-                'status' => 'received',
-                'notes' => $validated['notes'] ?? null,
-                'received_by_id' => $request->user()?->id,
-                'received_at' => now(),
-            ]);
-
-            foreach ($validated['lines'] as $index => $line) {
-                [$batch, $devices] = $this->createInventoryBatchDevices(
-                    $validated['branch_id'],
-                    [
-                        ...$line,
-                        'purchase_date' => $validated['purchase_date'] ?? null,
-                        'purchase_location' => $validated['purchase_location'] ?? null,
-                    ],
-                    $receipt,
-                    "lines.{$index}.target_selling_price",
-                );
-
-                $batches->push($batch);
-                array_push($deviceIds, ...array_map(fn (Device $device) => $device->id, $devices));
-                foreach ($devices as $device) {
-                    $this->movementService->recordReceipt($device, $batch, $receipt, $request->user());
-                }
-            }
-
-            DB::commit();
+            ['receipt' => $receipt, 'batches' => $batches, 'devices' => $devices] = $this->intake->receiveReceipt(
+                [
+                    'branch_id' => $validated['branch_id'],
+                    'supplier' => $validated['supplier'] ?? null,
+                    'reference_number' => $validated['reference_number'] ?? null,
+                    'purchase_date' => $validated['purchase_date'] ?? null,
+                    'purchase_location' => $validated['purchase_location'] ?? null,
+                    'status' => 'received',
+                    'notes' => $validated['notes'] ?? null,
+                ],
+                $lines,
+                $request->user(),
+            );
         } catch (ValidationException $e) {
             // Same reasoning as bulkStore(): keep validation failures out of the
             // 500 path so the operator sees which line was rejected.
-            DB::rollBack();
-
             throw $e;
         } catch (\Exception $e) {
-            DB::rollBack();
             Log::error('Inventory receipt creation failed', [
                 'error' => $e->getMessage(),
                 'branch_id' => $validated['branch_id'] ?? null,
@@ -621,15 +603,15 @@ class AdminInventoryController extends BaseController
         $receipt->load(['branch', 'receivedBy', 'batches.branch', 'batches.category', 'batches.devices.sale.items']);
 
         $this->logActivity($receipt, $request->user(), 'inventory_receipt', 'Inventory receipt received', [
-            'lines' => $batches->count(),
+            'lines' => count($batches),
             'units' => $receipt->summary()['units'],
         ]);
 
         return $this->success([
             'receipt' => new InventoryReceiptResource($receipt),
             'batches' => InventoryBatchResource::collection($receipt->batches),
-            'count' => count($deviceIds),
-        ], "{$receipt->summary()['units']} devices received across {$batches->count()} product lines", 201);
+            'count' => count($devices),
+        ], "{$receipt->summary()['units']} devices received across ".count($batches).' product lines', 201);
     }
 
     /**
@@ -717,37 +699,6 @@ class AdminInventoryController extends BaseController
         return $this->success(new DeviceResource($device), 'Device marked as faulty');
     }
 
-    /**
-     * Generate a unique device code.
-     */
-    private function generateDeviceCode(): string
-    {
-        do {
-            $code = 'DEV-'.strtoupper(bin2hex(random_bytes(4)));
-        } while (Device::where('unique_device_code', $code)->exists());
-
-        return $code;
-    }
-
-    /**
-     * Generate a unique serial number based on brand and model.
-     */
-    private function generateSerialNumber(string $brand, string $model): string
-    {
-        // Create prefix from brand and model initials
-        $brandPrefix = strtoupper(substr($brand, 0, 3));
-        $modelPrefix = strtoupper(substr(preg_replace('/[^a-zA-Z0-9]/', '', $model), 0, 3));
-        $prefix = $brandPrefix.$modelPrefix;
-
-        // Generate unique serial with prefix
-        do {
-            $randomPart = strtoupper(bin2hex(random_bytes(3)));
-            $serial = $prefix.'-'.$randomPart;
-        } while (Device::where('serial_number', $serial)->exists());
-
-        return $serial;
-    }
-
     private function resolveInventoryBranchId(Request $request, ?int $requestedBranchId): ?int
     {
         $user = $request->user();
@@ -765,23 +716,9 @@ class AdminInventoryController extends BaseController
 
     private function resolveInventoryWriteBranchId(Request $request, int $requestedBranchId): int
     {
-        $user = $request->user();
-
-        if ($user?->hasRole('super_admin')) {
-            return $requestedBranchId;
-        }
-
-        $branchId = $user?->branchScopeId();
-
-        if (! $branchId) {
-            abort(403, 'Your account must be assigned to a branch before managing inventory.');
-        }
-
-        if ($branchId !== $requestedBranchId) {
-            abort(403, 'You cannot manage inventory for another branch.');
-        }
-
-        return $branchId;
+        // Shared with the spreadsheet importer so both entry points enforce one
+        // rule; see InventoryBranchGuard.
+        return (int) $this->branchGuard->writeBranchId($request->user(), $requestedBranchId);
     }
 
     private function authorizeInventoryBranch(Request $request, ?int $branchId): void
@@ -828,135 +765,6 @@ class AdminInventoryController extends BaseController
         }
 
         return [null, null];
-    }
-
-    private function createBatchWithRetry(array $attributes): InventoryBatch
-    {
-        for ($attempt = 0; $attempt < 5; $attempt++) {
-            try {
-                return InventoryBatch::create([
-                    ...$attributes,
-                    'batch_number' => InventoryBatch::generateBatchNumber(),
-                ]);
-            } catch (QueryException $e) {
-                if (! $this->isUniqueConstraintViolation($e) || $attempt === 4) {
-                    throw $e;
-                }
-            }
-        }
-
-        throw new \RuntimeException('Unable to allocate an inventory batch number.');
-    }
-
-    private function createReceiptWithRetry(array $attributes): InventoryReceipt
-    {
-        for ($attempt = 0; $attempt < 5; $attempt++) {
-            try {
-                return InventoryReceipt::create([
-                    ...$attributes,
-                    'receipt_number' => InventoryReceipt::generateReceiptNumber(),
-                ]);
-            } catch (QueryException $e) {
-                if (! $this->isUniqueConstraintViolation($e) || $attempt === 4) {
-                    throw $e;
-                }
-            }
-        }
-
-        throw new \RuntimeException('Unable to allocate an inventory receipt number.');
-    }
-
-    /**
-     * @return array{0: InventoryBatch, 1: array<int, Device>}
-     */
-    private function createInventoryBatchDevices(int $branchId, array $line, ?InventoryReceipt $receipt = null, string $sellingPriceErrorKey = 'target_selling_price'): array
-    {
-        $catalog = $this->catalogResolver->resolve(
-            (int) $line['category_id'],
-            $line['brand'],
-            $line['model'],
-        );
-        $line = array_merge($line, $catalog);
-
-        // Intake may omit the selling price so that stock received today keeps
-        // the price already in use for this product. The buying price is never
-        // inferred — it is real cost data for this specific delivery.
-        $targetSellingPrice = $line['target_selling_price'] ?? null;
-
-        if ($targetSellingPrice === null) {
-            $targetSellingPrice = $this->priceResolver->fallbackSellingPrice(
-                (int) $line['category_id'],
-                $line['brand'],
-                $line['model'],
-                $branchId,
-            );
-
-            if ($targetSellingPrice === null) {
-                throw ValidationException::withMessages([
-                    $sellingPriceErrorKey => "No selling price was given for {$line['brand']} {$line['model']} and none could be inherited from earlier stock. Enter a target selling price for this line.",
-                ]);
-            }
-        }
-
-        $quantity = (int) $line['quantity'];
-        $autoGenerate = $line['auto_generate_serials'] ?? true;
-        $providedSerials = $line['serial_numbers'] ?? [];
-
-        $batch = $this->createBatchWithRetry([
-            'inventory_receipt_id' => $receipt?->id,
-            'branch_id' => $branchId,
-            'category_id' => $line['category_id'],
-            // Keep the catalog link alongside the text fields: price lookups
-            // and the catalog reprice cascade match on this id, not on text.
-            'product_model_id' => $line['product_model_id'] ?? null,
-            'brand' => $line['brand'],
-            'model' => $line['model'],
-            'color' => $line['color'] ?? null,
-            'quantity_received' => $quantity,
-            'buying_price' => $line['buying_price'],
-            'target_selling_price' => $targetSellingPrice,
-            'purchase_date' => $line['purchase_date'] ?? null,
-            'purchase_location' => $line['purchase_location'] ?? null,
-            'notes' => $line['notes'] ?? null,
-        ]);
-
-        $devices = [];
-        for ($i = 0; $i < $quantity; $i++) {
-            $serialNumber = $autoGenerate
-                ? $this->generateSerialNumber($line['brand'], $line['model'])
-                : $providedSerials[$i];
-
-            $devices[] = Device::create([
-                'category_id' => $line['category_id'],
-                'brand_id' => $line['brand_id'],
-                'product_model_id' => $line['product_model_id'],
-                'branch_id' => $branchId,
-                'iot_module_id' => $line['iot_module_id'] ?? null,
-                'brand' => $line['brand'],
-                'model' => $line['model'],
-                'color' => $line['color'] ?? null,
-                'description' => $line['description'] ?? null,
-                'purchase_date' => $line['purchase_date'] ?? null,
-                'purchase_price' => $line['buying_price'],
-                'purchase_location' => $line['purchase_location'] ?? null,
-                'notes' => $line['notes'] ?? null,
-                'status' => DeviceStatus::INACTIVE,
-                'inventory_status' => InventoryStatus::IN_STOCK,
-                'inventory_batch_id' => $batch->id,
-                'serial_number' => $serialNumber,
-                'unique_device_code' => $this->generateDeviceCode(),
-            ]);
-        }
-
-        return [$batch, $devices];
-    }
-
-    private function isUniqueConstraintViolation(QueryException $e): bool
-    {
-        $sqlState = (string) ($e->errorInfo[0] ?? '');
-        $driverCode = (string) ($e->errorInfo[1] ?? '');
-
-        return in_array($sqlState, ['23000', '23505'], true) || $driverCode === '1062';
     }
 
     private function logActivity($subject, $user, string $event, string $description, array $properties = []): void
