@@ -38,8 +38,11 @@ export default function ShiftHistoryPage() {
 
   const formatDuration = (minutes: number | null) => {
     if (!minutes) return '—'
-    const hours = Math.floor(minutes / 60)
-    const mins = minutes % 60
+    // Truncate to whole minutes first: the API sends a fractional count, and
+    // `minutes % 60` on 593.68 rendered as "9h 53.68m".
+    const total = Math.floor(minutes)
+    const hours = Math.floor(total / 60)
+    const mins = total % 60
     return hours > 0 ? `${hours}h ${mins}m` : `${mins}m`
   }
 

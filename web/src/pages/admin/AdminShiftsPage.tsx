@@ -25,11 +25,18 @@ interface ShiftStats {
 }
 
 // Helper functions
-/** Render a minute count from the API as `7h 15m`. */
+/**
+ * Render a minute count from the API as `7h 15m`.
+ *
+ * Truncates rather than rounds so a zero-break shift reports the same worked
+ * time as its duration column: both derive from the same fractional minute
+ * count, and rounding one but not the other showed 9h 54m worked against a
+ * 9h 53m duration.
+ */
 const formatMinutes = (minutes: number | null | undefined) => {
   if (minutes === null || minutes === undefined) return '-'
 
-  const total = Math.round(minutes)
+  const total = Math.floor(minutes)
   const hours = Math.floor(total / 60)
   const mins = total % 60
 
@@ -554,7 +561,7 @@ function ShiftDetailModal({ shift, onClose }: ShiftDetailModalProps) {
                               {entry.ended_at ? new Date(entry.ended_at).toLocaleString() : 'In progress'}
                             </td>
                             <td className="px-4 py-2 text-sm text-slate-700 text-right">
-                              {entry.duration_minutes === null ? '-' : Math.round(entry.duration_minutes)}
+                              {entry.duration_minutes === null ? '-' : Math.floor(entry.duration_minutes)}
                             </td>
                           </tr>
                         ))}

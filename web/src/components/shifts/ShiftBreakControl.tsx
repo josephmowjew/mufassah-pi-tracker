@@ -32,7 +32,9 @@ function formatClock(seconds: number): string {
 function formatMinutes(minutes: number | null | undefined): string {
   if (minutes === null || minutes === undefined) return '—'
 
-  const total = Math.round(minutes)
+  // Truncate so the live figure agrees with the shift's duration, which is
+  // formatted the same way.
+  const total = Math.floor(minutes)
   const hours = Math.floor(total / 60)
   const mins = total % 60
 

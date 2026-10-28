@@ -53,7 +53,9 @@ interface StaffTimeData {
 function formatMinutes(minutes: number | null | undefined): string {
   if (minutes === null || minutes === undefined) return '—'
 
-  const total = Math.round(minutes)
+  // Truncate, matching the duration formatter used elsewhere: rounding made a
+  // row's worked minutes exceed its scheduled minutes when no break was taken.
+  const total = Math.floor(minutes)
   const hours = Math.floor(total / 60)
   const mins = total % 60
 
