@@ -2,13 +2,21 @@
 
 namespace App\Http\Requests;
 
+use App\Http\Requests\Concerns\NormalizesUtcDates;
 use Illuminate\Foundation\Http\FormRequest;
 
 class StoreCommunityTipRequest extends FormRequest
 {
+    use NormalizesUtcDates;
+
     public function authorize(): bool
     {
         return true;
+    }
+
+    protected function prepareForValidation(): void
+    {
+        $this->normalizeUtcDateInput('spotted_at');
     }
 
     public function rules(): array

@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\LocalTime;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 
@@ -33,6 +34,6 @@ class Vacancy extends Model
         return $query->where('is_published', true)
             ->where(fn (Builder $vacancies) => $vacancies
                 ->whereNull('closing_date')
-                ->orWhereDate('closing_date', '>=', today()));
+                ->orWhereDate('closing_date', '>=', LocalTime::now()->toDateString()));
     }
 }

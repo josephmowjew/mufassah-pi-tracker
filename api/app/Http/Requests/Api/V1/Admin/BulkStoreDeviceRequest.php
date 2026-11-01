@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Api\V1\Admin;
 
+use App\Support\LocalTime;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -23,7 +24,7 @@ class BulkStoreDeviceRequest extends FormRequest
             'color' => ['nullable', 'string', 'max:50'],
             'description' => ['nullable', 'string', 'max:1000'],
             'quantity' => ['required', 'integer', 'min:1', 'max:100'],
-            'purchase_date' => ['nullable', 'date', 'before_or_equal:today'],
+            'purchase_date' => ['nullable', 'date', 'before_or_equal:'.LocalTime::now()->toDateString()],
             'buying_price' => ['required', 'numeric', 'min:0'],
             // Optional on purpose: omitting it inherits the price already in
             // use for this product. See InventoryPriceResolver.

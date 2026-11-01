@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Api\V1\Device;
 
+use App\Support\LocalTime;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -21,7 +22,7 @@ class StoreDeviceRequest extends FormRequest
             'model' => ['required', 'string', 'max:100'],
             'description' => ['nullable', 'string', 'max:1000'],
             'color' => ['nullable', 'string', 'max:50'],
-            'purchase_date' => ['nullable', 'date', 'before_or_equal:today'],
+            'purchase_date' => ['nullable', 'date', 'before_or_equal:'.LocalTime::now()->toDateString()],
             'purchase_price' => ['nullable', 'numeric', 'min:0'],
             'purchase_location' => ['nullable', 'string', 'max:255'],
             'notes' => ['nullable', 'string', 'max:1000'],

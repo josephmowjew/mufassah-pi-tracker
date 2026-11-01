@@ -3,6 +3,7 @@
 namespace App\Support\Reports;
 
 use App\Models\User;
+use App\Support\LocalTime;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -52,8 +53,8 @@ final readonly class ReportFilters
         $branchId = self::resolveBranchScope($user, $requestedBranchId, $wantsGlobal);
 
         return new self(
-            from: isset($validated['from']) ? Carbon::parse($validated['from'])->startOfDay() : null,
-            to: isset($validated['to']) ? Carbon::parse($validated['to'])->endOfDay() : null,
+            from: isset($validated['from']) ? LocalTime::startOfDayUtc($validated['from']) : null,
+            to: isset($validated['to']) ? LocalTime::endOfDayUtc($validated['to']) : null,
             branchId: $branchId,
             allBranches: $branchId === null,
             groupBy: $validated['group_by'] ?? self::GROUP_BY_MONTH,
@@ -120,12 +121,12 @@ final readonly class ReportFilters
 
     public function fromDate(): ?string
     {
-        return $this->from?->toDateString();
+        return $this->from?->copy()->setTimezone(config('app.local_timezone'))->toDateString();
     }
 
     public function toDate(): ?string
     {
-        return $this->to?->toDateString();
+        return $this->to?->copy()->setTimezone(config('app.local_timezone'))->toDateString();
     }
 
     /**
@@ -135,7 +136,7 @@ final readonly class ReportFilters
     {
         return match ($this->groupBy) {
             self::GROUP_BY_DAY => 'Y-m-d',
-            self::GROUP_BY_WEEK => 'Y-\WW',
+            self::GROUP_BY_WEEK => 'o-\WW',
             self::GROUP_BY_YEAR => 'Y',
             default => 'Y-m',
         };

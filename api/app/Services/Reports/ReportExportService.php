@@ -2,6 +2,7 @@
 
 namespace App\Services\Reports;
 
+use App\Support\LocalTime;
 use App\Support\Reports\ReportFilters;
 use App\Support\Spreadsheet\Cell;
 use App\Support\Spreadsheet\XlsxSheet;
@@ -415,7 +416,7 @@ class ReportExportService
         foreach ($data['reports'] as $report) {
             $reports->addRow([
                 Cell::text($report->report_number ?? ('#'.$report->id)),
-                Cell::date($report->created_at?->toDateString()),
+                Cell::date($report->created_at?->toLocalDateString()),
                 Cell::text($report->device?->name ?? '—'),
                 Cell::text($report->reporter?->name ?? '—'),
                 Cell::text($report->status?->label() ?? $report->status?->value ?? '—'),
@@ -572,8 +573,8 @@ class ReportExportService
                 Cell::date($row['date']),
                 Cell::text($row['staff_name']),
                 Cell::text($row['branch_name']),
-                Cell::text($row['started_at']),
-                Cell::text($row['ended_at']),
+                Cell::text($row['started_at'] ? LocalTime::instantUtc($row['started_at'])->toLocalDateTimeString() : null),
+                Cell::text($row['ended_at'] ? LocalTime::instantUtc($row['ended_at'])->toLocalDateTimeString() : null),
                 Cell::number($row['break_count']),
                 Cell::number($row['scheduled_minutes']),
                 Cell::number($row['break_minutes']),
@@ -593,8 +594,8 @@ class ReportExportService
                 Cell::text($row['staff_name']),
                 Cell::text($row['branch_name']),
                 Cell::text($row['type']),
-                Cell::text($row['started_at']),
-                Cell::text($row['ended_at']),
+                Cell::text($row['started_at'] ? LocalTime::instantUtc($row['started_at'])->toLocalDateTimeString() : null),
+                Cell::text($row['ended_at'] ? LocalTime::instantUtc($row['ended_at'])->toLocalDateTimeString() : null),
                 Cell::number($row['minutes']),
                 Cell::text($row['notes']),
             ]);
@@ -622,7 +623,7 @@ class ReportExportService
             'Report' => Cell::text($title),
             'Branch scope' => Cell::text($meta['scope_label']),
             'Period' => Cell::text($meta['period_label']),
-            'Generated' => Cell::date(now()->toDateString()),
+            'Generated' => Cell::date(now()->toLocalDateString()),
         ]);
         $sheet->addBlankRow();
         $sheet->addPairRows($metrics);

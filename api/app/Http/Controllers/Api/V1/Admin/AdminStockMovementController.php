@@ -10,6 +10,7 @@ use App\Models\Branch;
 use App\Models\Device;
 use App\Models\InventoryMovement;
 use App\Services\InventoryMovementService;
+use App\Support\LocalTime;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -241,6 +242,11 @@ class AdminStockMovementController extends BaseController
 
     private function applyFilters($query, Request $request): void
     {
+        $request->validate([
+            'date_from' => ['nullable', 'date'],
+            'date_to' => ['nullable', 'date', 'after_or_equal:date_from'],
+        ]);
+
         $query
             ->when($request->filled('movement_type'), fn ($q) => $q->where('movement_type', $request->string('movement_type')))
             ->when($request->filled('category_id'), fn ($q) => $q->where('category_id', $request->integer('category_id')))
@@ -248,8 +254,8 @@ class AdminStockMovementController extends BaseController
             ->when($request->filled('inventory_receipt_id'), fn ($q) => $q->where('inventory_receipt_id', $request->integer('inventory_receipt_id')))
             ->when($request->filled('device_id'), fn ($q) => $q->where('device_id', $request->integer('device_id')))
             ->when($request->filled('sale_id'), fn ($q) => $q->where('sale_id', $request->integer('sale_id')))
-            ->when($request->filled('date_from'), fn ($q) => $q->whereDate('created_at', '>=', $request->date('date_from')))
-            ->when($request->filled('date_to'), fn ($q) => $q->whereDate('created_at', '<=', $request->date('date_to')));
+            ->when($request->filled('date_from'), fn ($q) => $q->where('created_at', '>=', LocalTime::startOfDayUtc($request->input('date_from'))))
+            ->when($request->filled('date_to'), fn ($q) => $q->where('created_at', '<=', LocalTime::endOfDayUtc($request->input('date_to'))));
 
         if ($request->filled('search')) {
             $search = $request->string('search')->toString();

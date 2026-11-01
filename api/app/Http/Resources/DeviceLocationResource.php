@@ -19,8 +19,8 @@ class DeviceLocationResource extends JsonResource
             'heading' => $this->heading ? (float) $this->heading : null,
             'address' => $this->address,
             'is_manual' => $this->is_manual,
-            'recorded_at' => $this->recorded_at?->toIso8601String(),
-            'created_at' => $this->created_at?->toIso8601String(),
+            'recorded_at' => $this->recorded_at?->toLocalIso8601String(),
+            'created_at' => $this->created_at?->toLocalIso8601String(),
 
             // Relationships
             'device' => new DeviceResource($this->whenLoaded('device')),

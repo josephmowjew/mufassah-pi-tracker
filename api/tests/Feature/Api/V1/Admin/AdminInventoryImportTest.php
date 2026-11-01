@@ -761,3 +761,16 @@ describe('Import row ceiling', function () {
         expect(Device::count())->toBe(SpreadsheetReader::MAX_DATA_ROWS);
     });
 });
+
+it('imports the current Malawi purchase date before UTC midnight and rejects tomorrow', function () {
+    config(['app.local_timezone' => 'Africa/Blantyre']);
+    $this->travelTo(\Carbon\Carbon::parse('2026-01-14 22:30:00', 'UTC'));
+    $header = "Category,Brand,Model,Quantity,Buying Price,Target Selling Price,Purchase Date\n";
+    importCsv($header."Smartphones,Samsung,Galaxy A15,1,320000,395000,2026-01-15\n", 'stock.csv', ['branch_id' => $this->lilongwe->id])
+        ->assertCreated();
+    expect(InventoryBatch::first()->purchase_date->toDateString())->toBe('2026-01-15')
+        ->and(DB::table('inventory_batches')->value('created_at'))->toBe('2026-01-14 22:30:00');
+    importCsv($header."Smartphones,Samsung,Galaxy A15,1,320000,395000,2026-01-16\n", 'stock.csv', ['branch_id' => $this->lilongwe->id])
+        ->assertUnprocessable();
+    expect(InventoryBatch::count())->toBe(1);
+});

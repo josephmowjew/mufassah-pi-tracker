@@ -8,6 +8,7 @@ use App\Http\Resources\ShiftResource;
 use App\Models\CommunicationSettings;
 use App\Models\Shift;
 use App\Notifications\ShiftEndSummaryNotification;
+use App\Support\LocalTime;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -277,6 +278,11 @@ class ShiftController extends BaseController
      */
     public function history(Request $request): JsonResponse
     {
+        $request->validate([
+            'date_from' => ['nullable', 'date'],
+            'date_to' => ['nullable', 'date', 'after_or_equal:date_from'],
+        ]);
+
         $user = $request->user();
 
         $query = $user->shifts()->with(['branch', 'sales', 'breaks']);
@@ -287,11 +293,11 @@ class ShiftController extends BaseController
         }
 
         // Filter by date range
-        if ($request->has('date_from')) {
-            $query->whereDate('started_at', '>=', $request->date_from);
+        if ($request->filled('date_from')) {
+            $query->where('started_at', '>=', LocalTime::startOfDayUtc($request->date_from));
         }
-        if ($request->has('date_to')) {
-            $query->whereDate('started_at', '<=', $request->date_to);
+        if ($request->filled('date_to')) {
+            $query->where('started_at', '<=', LocalTime::endOfDayUtc($request->date_to));
         }
 
         // Sort

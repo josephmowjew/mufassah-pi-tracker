@@ -81,6 +81,19 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Local Display Timezone
+    |--------------------------------------------------------------------------
+    |
+    | The local business timezone used when rendering user-facing dates in
+    | notifications (e.g. shift summary emails). Storage remains in UTC; this
+    | also defines local business date ranges. Reads APP_TIMEZONE, defaulting to Malawi.
+    |
+    */
+
+    'local_timezone' => env('APP_TIMEZONE', 'Africa/Blantyre'),
+
+    /*
+    |--------------------------------------------------------------------------
     | Application Locale Configuration
     |--------------------------------------------------------------------------
     |

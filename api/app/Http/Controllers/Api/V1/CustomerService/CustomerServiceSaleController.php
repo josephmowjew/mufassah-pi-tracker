@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\V1\CustomerService;
 use App\Http\Controllers\Api\V1\BaseController;
 use App\Http\Resources\SaleResource;
 use App\Models\Sale;
+use App\Support\LocalTime;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -15,6 +16,11 @@ class CustomerServiceSaleController extends BaseController
      */
     public function index(Request $request): JsonResponse
     {
+        $request->validate([
+            'date_from' => ['nullable', 'date'],
+            'date_to' => ['nullable', 'date', 'after_or_equal:date_from'],
+        ]);
+
         $userId = $request->user()->id;
 
         $query = Sale::query()
@@ -39,11 +45,11 @@ class CustomerServiceSaleController extends BaseController
         }
 
         // Filter by date range
-        if ($request->has('date_from')) {
-            $query->whereDate('sale_date', '>=', $request->date_from);
+        if ($request->filled('date_from')) {
+            $query->where('sale_date', '>=', LocalTime::startOfDayUtc($request->date_from));
         }
-        if ($request->has('date_to')) {
-            $query->whereDate('sale_date', '<=', $request->date_to);
+        if ($request->filled('date_to')) {
+            $query->where('sale_date', '<=', LocalTime::endOfDayUtc($request->date_to));
         }
 
         // Search by sale number or customer name

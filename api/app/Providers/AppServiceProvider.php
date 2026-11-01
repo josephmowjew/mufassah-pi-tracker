@@ -3,6 +3,7 @@
 namespace App\Providers;
 
 use App\Models\User;
+use Carbon\Carbon;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
@@ -24,8 +25,33 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        $this->registerCarbonMacros();
         $this->configureRateLimiting();
         $this->configureGates();
+    }
+
+    /**
+     * Register Carbon macros that convert a UTC date to the local display
+     * timezone (config('app.local_timezone')) before serialising. Storage
+     * stays in UTC; these are only used at display boundaries.
+     */
+    protected function registerCarbonMacros(): void
+    {
+        Carbon::macro('toLocalIso8601String', function (): string {
+            return $this->copy()->setTimezone(config('app.local_timezone'))->toIso8601String();
+        });
+
+        Carbon::macro('toLocalDateString', function (): string {
+            return $this->copy()->setTimezone(config('app.local_timezone'))->toDateString();
+        });
+
+        Carbon::macro('toLocalDateTimeString', function (): string {
+            return $this->copy()->setTimezone(config('app.local_timezone'))->toDateTimeString();
+        });
+
+        Carbon::macro('toLocalFormat', function (string $format): string {
+            return $this->copy()->setTimezone(config('app.local_timezone'))->format($format);
+        });
     }
 
     /**

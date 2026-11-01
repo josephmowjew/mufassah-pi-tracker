@@ -53,7 +53,7 @@ class AlertSubscriptionResource extends JsonResource
 
             // Stats
             'alerts_received' => $this->alerts_received,
-            'last_alert_at' => $this->last_alert_at?->toIso8601String(),
+            'last_alert_at' => $this->last_alert_at?->toLocalIso8601String(),
 
             // Computed
             'configured_locations' => $this->getConfiguredLocations(),
@@ -63,8 +63,8 @@ class AlertSubscriptionResource extends JsonResource
             'user' => new UserResource($this->whenLoaded('user')),
 
             // Timestamps
-            'created_at' => $this->created_at?->toIso8601String(),
-            'updated_at' => $this->updated_at?->toIso8601String(),
+            'created_at' => $this->created_at?->toLocalIso8601String(),
+            'updated_at' => $this->updated_at?->toLocalIso8601String(),
         ];
     }
 }

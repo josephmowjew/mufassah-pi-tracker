@@ -2,14 +2,22 @@
 
 namespace App\Http\Requests\Api\V1\TheftReport;
 
+use App\Http\Requests\Concerns\NormalizesUtcDates;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
 class StoreTheftReportRequest extends FormRequest
 {
+    use NormalizesUtcDates;
+
     public function authorize(): bool
     {
         return true;
+    }
+
+    protected function prepareForValidation(): void
+    {
+        $this->normalizeUtcDateInput('theft_date');
     }
 
     public function rules(): array

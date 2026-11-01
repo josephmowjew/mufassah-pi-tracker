@@ -44,8 +44,8 @@ class CommunityAlertResource extends JsonResource
             'can_receive_tips' => $this->canReceiveTips(),
 
             // Dates
-            'expires_at' => $this->expires_at?->toIso8601String(),
-            'resolved_at' => $this->resolved_at?->toIso8601String(),
+            'expires_at' => $this->expires_at?->toLocalIso8601String(),
+            'resolved_at' => $this->resolved_at?->toLocalIso8601String(),
 
             // Relationships
             'theft_report' => new TheftReportResource($this->whenLoaded('theftReport')),
@@ -58,8 +58,8 @@ class CommunityAlertResource extends JsonResource
             'distance_km' => $this->when(isset($this->distance), fn () => round($this->distance, 2)),
 
             // Timestamps
-            'created_at' => $this->created_at?->toIso8601String(),
-            'updated_at' => $this->updated_at?->toIso8601String(),
+            'created_at' => $this->created_at?->toLocalIso8601String(),
+            'updated_at' => $this->updated_at?->toLocalIso8601String(),
         ];
     }
 }

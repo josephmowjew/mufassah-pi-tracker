@@ -19,6 +19,7 @@ use App\Models\ShiftBreak;
 use App\Models\Subscription;
 use App\Models\TheftReport;
 use App\Models\User;
+use App\Support\LocalTime;
 use App\Support\Reports\ReportFilters;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
@@ -111,7 +112,7 @@ class ReportDataService
     {
         return $this->administrativeSales($filters)
             ->map(fn (InventoryMovement $movement) => [
-                'date' => $movement->created_at?->toDateString(),
+                'date' => $movement->created_at?->toLocalDateString(),
                 'branch_name' => $movement->branch?->name ?? 'Unassigned',
                 'reference' => $movement->movement_number ?? ('MOV-'.$movement->id),
                 'description' => trim(implode(' ', array_filter([$movement->brand, $movement->model, $movement->color])))
@@ -136,9 +137,9 @@ class ReportDataService
 
         $byPeriod = $payments
             ->filter(fn (Payment $payment) => $payment->paid_at !== null)
-            ->groupBy(fn (Payment $payment) => $payment->paid_at->format($filters->dateFormat()))
+            ->groupBy(fn (Payment $payment) => $payment->paid_at->toLocalFormat($filters->dateFormat()))
             ->map(fn (Collection $group) => [
-                'period' => $group->first()->paid_at->format($filters->dateFormat()),
+                'period' => $group->first()->paid_at->toLocalFormat($filters->dateFormat()),
                 'transactions' => $group->count(),
                 'revenue' => round((float) $group->sum('amount'), 2),
             ])
@@ -199,8 +200,8 @@ class ReportDataService
 
         $receivedScope = fn () => InventoryBatch::query()
             ->when($branchId, fn ($q) => $q->where('branch_id', $branchId))
-            ->when($from, fn ($q) => $q->whereDate('purchase_date', '>=', $from->toDateString()))
-            ->when($to, fn ($q) => $q->whereDate('purchase_date', '<=', $to->toDateString()));
+            ->when($from, fn ($q) => $q->whereDate('purchase_date', '>=', $filters->fromDate()))
+            ->when($to, fn ($q) => $q->whereDate('purchase_date', '<=', $filters->toDate()));
 
         $soldScope = fn () => $deviceScope()
             ->where('inventory_status', InventoryStatus::SOLD)
@@ -236,11 +237,11 @@ class ReportDataService
             ])
             ->orderBy('name')
             ->get(['id', 'name', 'code'])
-            ->map(function (Branch $branch) use ($from, $to) {
+            ->map(function (Branch $branch) use ($from, $to, $filters) {
                 $received = InventoryBatch::query()
                     ->where('branch_id', $branch->id)
-                    ->when($from, fn ($q) => $q->whereDate('purchase_date', '>=', $from->toDateString()))
-                    ->when($to, fn ($q) => $q->whereDate('purchase_date', '<=', $to->toDateString()))
+                    ->when($from, fn ($q) => $q->whereDate('purchase_date', '>=', $filters->fromDate()))
+                    ->when($to, fn ($q) => $q->whereDate('purchase_date', '<=', $filters->toDate()))
                     ->sum('quantity_received');
 
                 $sold = Device::query()
@@ -300,8 +301,8 @@ class ReportDataService
         $byBatch = InventoryBatch::query()
             ->with(['branch:id,name,code', 'category:id,name', 'devices:id,inventory_batch_id,inventory_status,sold_at'])
             ->when($branchId, fn ($q) => $q->where('branch_id', $branchId))
-            ->when($from, fn ($q) => $q->whereDate('purchase_date', '>=', $from->toDateString()))
-            ->when($to, fn ($q) => $q->whereDate('purchase_date', '<=', $to->toDateString()))
+            ->when($from, fn ($q) => $q->whereDate('purchase_date', '>=', $filters->fromDate()))
+            ->when($to, fn ($q) => $q->whereDate('purchase_date', '<=', $filters->toDate()))
             ->latest('purchase_date')
             ->limit(50)
             ->get()
@@ -388,7 +389,7 @@ class ReportDataService
 
         $registrationTrend = $scope()
             ->get(['created_at'])
-            ->groupBy(fn (Device $device) => $device->created_at->format('Y-m'))
+            ->groupBy(fn (Device $device) => $device->created_at->toLocalFormat('Y-m'))
             ->map->count()
             ->sortKeys();
 
@@ -421,9 +422,9 @@ class ReportDataService
             ->get();
 
         $byMonth = $reports
-            ->groupBy(fn (TheftReport $report) => $report->created_at->format('Y-m'))
+            ->groupBy(fn (TheftReport $report) => $report->created_at->toLocalFormat('Y-m'))
             ->map(fn (Collection $group) => [
-                'month' => $group->first()->created_at->format('Y-m'),
+                'month' => $group->first()->created_at->toLocalFormat('Y-m'),
                 'total' => $group->count(),
                 'recovered' => $group->where('status', TheftReportStatus::Recovered)->count(),
             ])
@@ -464,9 +465,9 @@ class ReportDataService
 
         $trend = $scope()
             ->get(['created_at', 'status'])
-            ->groupBy(fn (Subscription $subscription) => $subscription->created_at->format('Y-m'))
+            ->groupBy(fn (Subscription $subscription) => $subscription->created_at->toLocalFormat('Y-m'))
             ->map(fn (Collection $group) => [
-                'month' => $group->first()->created_at->format('Y-m'),
+                'month' => $group->first()->created_at->toLocalFormat('Y-m'),
                 'new_subscriptions' => $group->count(),
                 'cancelled' => $group->where('status', SubscriptionStatus::Cancelled)->count(),
             ])
@@ -507,7 +508,7 @@ class ReportDataService
 
         $registrationTrend = $scope()
             ->get(['created_at'])
-            ->groupBy(fn (User $user) => $user->created_at->format('Y-m'))
+            ->groupBy(fn (User $user) => $user->created_at->toLocalFormat('Y-m'))
             ->map->count()
             ->sortKeys();
 
@@ -576,7 +577,7 @@ class ReportDataService
             ->all();
 
         $byDay = $shifts
-            ->groupBy(fn (Shift $shift) => $shift->started_at?->toDateString() ?? 'undated')
+            ->groupBy(fn (Shift $shift) => $shift->started_at?->toLocalDateString() ?? 'undated')
             ->map(function (Collection $group, string $date) {
                 $scheduled = round((float) $group->sum(fn (Shift $shift) => (float) $shift->duration), 2);
                 $breakMinutes = round((float) $group->sum(fn (Shift $shift) => $shift->break_minutes), 2);
@@ -649,11 +650,11 @@ class ReportDataService
 
         $shiftRows = $shifts->map(fn (Shift $shift) => [
             'shift_id' => $shift->id,
-            'date' => $shift->started_at?->toDateString(),
+            'date' => $shift->started_at?->toLocalDateString(),
             'staff_name' => $shift->user?->name ?? 'Unknown staff',
             'branch_name' => $shift->branch?->name ?? 'Unassigned',
-            'started_at' => $shift->started_at?->toDateTimeString(),
-            'ended_at' => $shift->ended_at?->toDateTimeString(),
+            'started_at' => $shift->started_at?->toLocalIso8601String(),
+            'ended_at' => $shift->ended_at?->toLocalIso8601String(),
             'break_count' => $shift->break_count,
             'scheduled_minutes' => round((float) $shift->duration, 2),
             'break_minutes' => $shift->break_minutes,
@@ -662,12 +663,12 @@ class ReportDataService
 
         $breakRows = $shifts->flatMap(fn (Shift $shift) => $shift->breaks->map(fn (ShiftBreak $break) => [
             'shift_id' => $shift->id,
-            'date' => $shift->started_at?->toDateString(),
+            'date' => $shift->started_at?->toLocalDateString(),
             'staff_name' => $shift->user?->name ?? 'Unknown staff',
             'branch_name' => $shift->branch?->name ?? 'Unassigned',
             'type' => $break->type?->label() ?? 'Break',
-            'started_at' => $break->started_at?->toDateTimeString(),
-            'ended_at' => $break->ended_at?->toDateTimeString(),
+            'started_at' => $break->started_at?->toLocalIso8601String(),
+            'ended_at' => $break->ended_at?->toLocalIso8601String(),
             'minutes' => round((float) ($break->duration_minutes ?? 0), 2),
             'notes' => $break->notes,
         ]))->values()->all();
@@ -728,7 +729,7 @@ class ReportDataService
     {
         return $sales->map(fn (Sale $sale) => [
             'sale_number' => $sale->sale_number,
-            'sale_date' => $sale->sale_date?->toDateString(),
+            'sale_date' => $sale->sale_date?->toLocalDateString(),
             'branch_name' => $sale->branch?->name ?? 'Unassigned',
             'customer_name' => $sale->customer?->name ?? 'Walk-in',
             'sold_by' => $sale->soldBy?->name ?? '—',
@@ -858,14 +859,14 @@ class ReportDataService
         $rows = [];
 
         foreach ($sales as $sale) {
-            $key = $sale->sale_date?->toDateString() ?? 'undated';
+            $key = $sale->sale_date?->toLocalDateString() ?? 'undated';
             $rows[$key] ??= ['date' => $key, 'pos_sales_count' => 0, 'pos_revenue' => 0.0, 'administrative_sale_value' => 0.0, 'combined_revenue' => 0.0];
             $rows[$key]['pos_sales_count']++;
             $rows[$key]['pos_revenue'] += (float) $sale->items->sum('total_price');
         }
 
         foreach ($administrative as $movement) {
-            $key = $movement->created_at?->toDateString() ?? 'undated';
+            $key = $movement->created_at?->toLocalDateString() ?? 'undated';
             $rows[$key] ??= ['date' => $key, 'pos_sales_count' => 0, 'pos_revenue' => 0.0, 'administrative_sale_value' => 0.0, 'combined_revenue' => 0.0];
             $rows[$key]['administrative_sale_value'] += (float) $movement->total_amount;
         }
@@ -914,8 +915,8 @@ class ReportDataService
 
     private function churnRate(?int $branchId): float
     {
-        $startOfMonth = now()->startOfMonth();
-        $endOfMonth = now()->endOfMonth();
+        $startOfMonth = LocalTime::now()->startOfMonth()->utc();
+        $endOfMonth = LocalTime::now()->endOfMonth()->utc();
 
         $activeAtStart = Subscription::query()
             ->where('status', SubscriptionStatus::Active)

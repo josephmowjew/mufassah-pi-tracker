@@ -51,7 +51,7 @@ class NewSaleNotification extends Notification implements ShouldQueue
             ->line('- Total Amount: MWK '.number_format($this->sale->total_amount, 2))
             ->line('- Payment Method: '.str_replace('_', ' ', ucfirst($this->sale->payment_method->value)))
             ->line("- Items Sold: {$this->sale->items->count()}")
-            ->line("- Date: {$this->sale->created_at->format('Y-m-d H:i')}")
+            ->line("- Date: {$this->sale->created_at->toLocalFormat('Y-m-d H:i')}")
             ->action('View Sale Details', $frontendUrl."/admin/sales/{$this->sale->id}")
             ->line('Thank you for using Mufasah Device Tracking!');
     }

@@ -759,13 +759,16 @@ describe('Admin Sales', function () {
     });
 
     it('filters sales inclusively by the requested date range', function () {
-        $from = now()->subDays(2)->toDateString();
-        $to = now()->subDay()->toDateString();
+        config(['app.local_timezone' => 'Africa/Blantyre']);
+        $from = '2026-01-15';
+        $to = '2026-01-16';
 
         foreach ([
-            ['number' => 'SALE-2026-DATE-01', 'date' => now()->subDays(3)],
-            ['number' => 'SALE-2026-DATE-02', 'date' => now()->subDays(2)->startOfDay()],
-            ['number' => 'SALE-2026-DATE-03', 'date' => now()->subDay()->endOfDay()],
+            // Stored UTC instants immediately outside/inside the Malawi date range.
+            ['number' => 'SALE-2026-DATE-01', 'date' => '2026-01-14 21:59:59'],
+            ['number' => 'SALE-2026-DATE-02', 'date' => '2026-01-14 22:00:00'],
+            ['number' => 'SALE-2026-DATE-03', 'date' => '2026-01-16 21:59:59'],
+            ['number' => 'SALE-2026-DATE-04', 'date' => '2026-01-16 22:00:00'],
         ] as $saleData) {
             Sale::create([
                 'sale_number' => $saleData['number'],

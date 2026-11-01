@@ -32,7 +32,7 @@ class FamilyResource extends JsonResource
                         'color' => $membership->role->color(),
                     ],
                     'nickname' => $membership->nickname,
-                    'joined_at' => $membership->joined_at?->toIso8601String(),
+                    'joined_at' => $membership->joined_at?->toLocalIso8601String(),
                     'status' => [
                         'value' => $membership->status->value,
                         'label' => $membership->status->label(),
@@ -49,8 +49,8 @@ class FamilyResource extends JsonResource
             'members_count' => $this->whenCounted('activeMemberRecords'),
 
             // Timestamps
-            'created_at' => $this->created_at?->toIso8601String(),
-            'updated_at' => $this->updated_at?->toIso8601String(),
+            'created_at' => $this->created_at?->toLocalIso8601String(),
+            'updated_at' => $this->updated_at?->toLocalIso8601String(),
         ];
     }
 }

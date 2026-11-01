@@ -40,11 +40,11 @@ class CommunityHeroResource extends JsonResource
             ),
 
             // Stats reset
-            'stats_reset_at' => $this->stats_reset_at?->toIso8601String(),
+            'stats_reset_at' => $this->stats_reset_at?->toLocalIso8601String(),
 
             // Timestamps
-            'created_at' => $this->created_at?->toIso8601String(),
-            'updated_at' => $this->updated_at?->toIso8601String(),
+            'created_at' => $this->created_at?->toLocalIso8601String(),
+            'updated_at' => $this->updated_at?->toLocalIso8601String(),
         ];
     }
 }

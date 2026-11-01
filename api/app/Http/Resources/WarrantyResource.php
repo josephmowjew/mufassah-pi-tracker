@@ -25,7 +25,7 @@ class WarrantyResource extends JsonResource
             'provider' => $this->provider,
             'notes' => $this->notes,
             'is_active' => $this->isActive(),
-            'days_remaining' => $this->end_date?->isFuture() ? now()->diffInDays($this->end_date) : 0,
+            'days_remaining' => $this->daysRemaining(),
 
             // Relationships
             'device' => new DeviceResource($this->whenLoaded('device')),
@@ -33,8 +33,8 @@ class WarrantyResource extends JsonResource
             'claims_count' => $this->whenCounted('claims'),
 
             // Timestamps
-            'created_at' => $this->created_at?->toIso8601String(),
-            'updated_at' => $this->updated_at?->toIso8601String(),
+            'created_at' => $this->created_at?->toLocalIso8601String(),
+            'updated_at' => $this->updated_at?->toLocalIso8601String(),
         ];
     }
 }

@@ -402,7 +402,7 @@
         <div class="info-grid">
             <div class="info-box">
                 <h3>Sale Information</h3>
-                <p><strong>Date:</strong> {{ $sale->sale_date->format('F j, Y - g:i A') }}</p>
+                <p><strong>Date:</strong> {{ $sale->sale_date->toLocalFormat('F j, Y - g:i A') }}</p>
                 <p><strong>Status:</strong>
                     <span class="status-badge status-{{ $sale->status->value }}">
                         {{ $sale->status->label() }}

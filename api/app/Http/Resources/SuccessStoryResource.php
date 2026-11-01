@@ -29,7 +29,7 @@ class SuccessStoryResource extends JsonResource
             // Publication status
             'is_published' => $this->is_published,
             'is_featured' => $this->is_featured,
-            'published_at' => $this->published_at?->toIso8601String(),
+            'published_at' => $this->published_at?->toLocalIso8601String(),
 
             // Status helpers
             'is_pending' => $this->isPending(),
@@ -52,7 +52,7 @@ class SuccessStoryResource extends JsonResource
                 $request->user()?->id === $this->author_id,
                 $this->rejection_reason
             ),
-            'approved_at' => $this->approved_at?->toIso8601String(),
+            'approved_at' => $this->approved_at?->toLocalIso8601String(),
 
             // Relationships
             'alert' => new CommunityAlertResource($this->whenLoaded('alert')),
@@ -60,8 +60,8 @@ class SuccessStoryResource extends JsonResource
             'approver' => new UserResource($this->whenLoaded('approver')),
 
             // Timestamps
-            'created_at' => $this->created_at?->toIso8601String(),
-            'updated_at' => $this->updated_at?->toIso8601String(),
+            'created_at' => $this->created_at?->toLocalIso8601String(),
+            'updated_at' => $this->updated_at?->toLocalIso8601String(),
         ];
     }
 }

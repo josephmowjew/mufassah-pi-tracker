@@ -139,9 +139,10 @@ describe('Sales report', function () {
     });
 
     it('includes the whole of the final day in the range', function () {
-        // Regression: `to` used to be compared as a bare date, so MySQL read it as
-        // midnight and every sale after 00:00 on the last day was silently dropped.
-        ($this->makeSale)($this->lilongwe, '2026-09-30 23:45:00', 75000);
+        config(['app.local_timezone' => 'Africa/Blantyre']);
+        // 23:45 Malawi is 21:45 UTC; the next local day's midnight is excluded.
+        ($this->makeSale)($this->lilongwe, '2026-09-30 21:45:00', 75000);
+        ($this->makeSale)($this->lilongwe, '2026-09-30 22:00:00', 999999);
 
         $this->actingAs($this->admin)
             ->getJson('/api/v1/admin/reports/sales?from=2026-09-01&to=2026-09-30')

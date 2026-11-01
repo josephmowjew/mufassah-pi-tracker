@@ -25,15 +25,15 @@ class WarrantyClaimResource extends JsonResource
             'resolution_type' => $this->resolution_type,
             'resolution_notes' => $this->resolution_notes,
             'repair_cost' => $this->repair_cost,
-            'processed_at' => $this->processed_at?->toIso8601String(),
+            'processed_at' => $this->processed_at?->toLocalIso8601String(),
 
             // Relationships
             'warranty' => new WarrantyResource($this->whenLoaded('warranty')),
             'processor' => new UserResource($this->whenLoaded('processor')),
 
             // Timestamps
-            'created_at' => $this->created_at?->toIso8601String(),
-            'updated_at' => $this->updated_at?->toIso8601String(),
+            'created_at' => $this->created_at?->toLocalIso8601String(),
+            'updated_at' => $this->updated_at?->toLocalIso8601String(),
         ];
     }
 }

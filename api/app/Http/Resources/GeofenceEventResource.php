@@ -23,7 +23,7 @@ class GeofenceEventResource extends JsonResource
             'event_type_label' => $this->event_type->label(),
             'distance_from_center' => (float) $this->distance_from_center,
             'alert_sent' => $this->alert_sent,
-            'event_time' => $this->event_time->toIso8601String(),
+            'event_time' => $this->event_time->toLocalIso8601String(),
             'geofence' => new GeofenceResource($this->whenLoaded('geofence')),
             'location' => $this->whenLoaded('location', fn () => [
                 'latitude' => (float) $this->location->latitude,

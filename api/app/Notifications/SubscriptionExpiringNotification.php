@@ -33,7 +33,7 @@ class SubscriptionExpiringNotification extends Notification implements ShouldQue
             ->line("Your {$plan->name} subscription will expire in {$this->daysRemaining} days.")
             ->line('Subscription Details:')
             ->line("- Plan: {$plan->name}")
-            ->line("- Expires: {$this->subscription->ends_at->format('M d, Y')}")
+            ->line("- Expires: {$this->subscription->ends_at->toLocalFormat('M d, Y')}")
             ->line('- Auto-Renew: '.($this->subscription->auto_renew ? 'Enabled' : 'Disabled'));
 
         if ($this->subscription->auto_renew) {
@@ -57,7 +57,7 @@ class SubscriptionExpiringNotification extends Notification implements ShouldQue
             'message' => "Your {$this->subscription->plan->name} subscription expires in {$this->daysRemaining} days.",
             'subscription_id' => $this->subscription->id,
             'plan_name' => $this->subscription->plan->name,
-            'expires_at' => $this->subscription->ends_at->toIso8601String(),
+            'expires_at' => $this->subscription->ends_at->toLocalIso8601String(),
             'days_remaining' => $this->daysRemaining,
             'auto_renew' => $this->subscription->auto_renew,
             'icon' => 'warning',

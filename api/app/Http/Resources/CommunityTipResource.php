@@ -18,7 +18,7 @@ class CommunityTipResource extends JsonResource
             'spotted_latitude' => $this->spotted_latitude,
             'spotted_longitude' => $this->spotted_longitude,
             'spotted_address' => $this->spotted_address,
-            'spotted_at' => $this->spotted_at?->toIso8601String(),
+            'spotted_at' => $this->spotted_at?->toLocalIso8601String(),
             'has_location' => $this->hasLocation(),
 
             // Anonymity
@@ -52,11 +52,11 @@ class CommunityTipResource extends JsonResource
             'reviewer' => new UserResource($this->whenLoaded('reviewer')),
 
             // Review timestamps
-            'reviewed_at' => $this->reviewed_at?->toIso8601String(),
+            'reviewed_at' => $this->reviewed_at?->toLocalIso8601String(),
 
             // Timestamps
-            'created_at' => $this->created_at?->toIso8601String(),
-            'updated_at' => $this->updated_at?->toIso8601String(),
+            'created_at' => $this->created_at?->toLocalIso8601String(),
+            'updated_at' => $this->updated_at?->toLocalIso8601String(),
         ];
     }
 }

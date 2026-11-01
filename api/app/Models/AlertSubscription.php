@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\LocalTime;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -188,7 +189,7 @@ class AlertSubscription extends Model
             return false;
         }
 
-        $now = now()->format('H:i');
+        $now = LocalTime::now()->format('H:i');
         $start = $this->quiet_hours_start->format('H:i');
         $end = $this->quiet_hours_end->format('H:i');
 

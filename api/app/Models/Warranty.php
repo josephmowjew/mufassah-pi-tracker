@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\WarrantyStatus;
+use App\Support\LocalTime;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -48,12 +49,33 @@ class Warranty extends Model
 
     public function isActive(): bool
     {
-        return $this->status === WarrantyStatus::Active && $this->end_date->isFuture();
+        $today = LocalTime::now()->toDateString();
+
+        return $this->status === WarrantyStatus::Active
+            && $this->start_date !== null && $this->end_date !== null
+            && $this->start_date->toDateString() <= $today
+            && $this->end_date->toDateString() >= $today;
+    }
+
+    /** Calendar days still covered, including today and the closing day. */
+    public function daysRemaining(): int
+    {
+        if (! $this->isActive()) {
+            return 0;
+        }
+
+        $today = LocalTime::now()->startOfDay();
+        $lastDay = $today->copy()->setDate($this->end_date->year, $this->end_date->month, $this->end_date->day);
+
+        return max(0, (int) $today->diffInDays($lastDay) + 1);
     }
 
     public function scopeActive($query)
     {
+        $today = LocalTime::now()->toDateString();
+
         return $query->where('status', WarrantyStatus::Active)
-            ->where('end_date', '>=', now());
+            ->whereDate('start_date', '<=', $today)
+            ->whereDate('end_date', '>=', $today);
     }
 }

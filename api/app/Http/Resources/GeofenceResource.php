@@ -32,8 +32,8 @@ class GeofenceResource extends JsonResource
             'active_time_end' => $this->active_time_end?->format('H:i'),
             'device' => new DeviceResource($this->whenLoaded('device')),
             'events_count' => $this->whenCounted('events'),
-            'created_at' => $this->created_at->toIso8601String(),
-            'updated_at' => $this->updated_at->toIso8601String(),
+            'created_at' => $this->created_at->toLocalIso8601String(),
+            'updated_at' => $this->updated_at->toLocalIso8601String(),
         ];
     }
 }

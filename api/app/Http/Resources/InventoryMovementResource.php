@@ -51,8 +51,8 @@ class InventoryMovementResource extends JsonResource
             'from_branch' => new BranchResource($this->whenLoaded('fromBranch')),
             'to_branch' => new BranchResource($this->whenLoaded('toBranch')),
             'created_by' => new UserResource($this->whenLoaded('createdBy')),
-            'created_at' => $this->created_at?->toIso8601String(),
-            'updated_at' => $this->updated_at?->toIso8601String(),
+            'created_at' => $this->created_at?->toLocalIso8601String(),
+            'updated_at' => $this->updated_at?->toLocalIso8601String(),
         ];
     }
 }

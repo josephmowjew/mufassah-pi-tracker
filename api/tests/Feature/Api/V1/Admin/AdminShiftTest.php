@@ -78,6 +78,31 @@ it('renders the real staff name in the shift summary notification', function () 
         ->not->toContain('Unknown Staff');
 });
 
+it('displays shift times in the local timezone in the summary notification', function (string $start, string $end, string $localStart, string $localEnd) {
+    config(['app.local_timezone' => 'Africa/Blantyre']);
+    $staff = User::factory()->create(['branch_id' => $this->branch->id]);
+
+    $shift = Shift::create([
+        'user_id' => $staff->id,
+        'branch_id' => $this->branch->id,
+        'started_at' => $start,
+        'ended_at' => $end,
+        'status' => 'completed',
+    ]);
+
+    $mail = (new \App\Notifications\ShiftEndSummaryNotification($shift))->toMail($staff);
+    $body = implode("\n", $mail->introLines);
+
+    expect($body)
+        ->toContain('- Started: '.$localStart)
+        ->toContain('- Ended: '.$localEnd)
+        ->and($shift->fresh()->started_at->toDateTimeString())->toBe($start)
+        ->and($shift->fresh()->ended_at->toDateTimeString())->toBe($end);
+})->with([
+    'daytime' => ['2026-01-15 10:00:00', '2026-01-15 18:00:00', '2026-01-15 12:00', '2026-01-15 20:00'],
+    'local midnight' => ['2026-01-15 21:30:00', '2026-01-15 22:30:00', '2026-01-15 23:30', '2026-01-16 00:30'],
+]);
+
 it('keeps the recorded start time when a shift is completed', function () {
     $staff = User::factory()->create(['branch_id' => $this->branch->id]);
 

@@ -566,3 +566,54 @@ describe('Warranty Claim Deletion', function () {
             ->assertForbidden();
     });
 });
+
+describe('Malawi warranty calendar boundaries', function () {
+    beforeEach(function () {
+        config(['app.local_timezone' => 'Africa/Blantyre']);
+        $this->owner = User::factory()->create();
+        $this->owner->assignRole('customer');
+        $this->warranty = Warranty::factory()->create([
+            'device_id' => Device::factory()->for($this->owner, 'owner'),
+            'status' => WarrantyStatus::Active,
+            'start_date' => '2025-01-15', 'end_date' => '2026-01-15',
+        ]);
+    });
+
+    it('allows claims through the entire closing day and stores claim timestamps in UTC', function (string $utcNow) {
+        $this->travelTo(\Carbon\Carbon::parse($utcNow, 'UTC'));
+        expect($this->warranty->isActive())->toBeTrue()
+            ->and($this->warranty->daysRemaining())->toBe(1);
+        actingAs($this->owner, 'sanctum')->getJson(apiUrl('warranties?active_only=1'))
+            ->assertOk()->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.is_active', true)->assertJsonPath('data.0.days_remaining', 1)
+            ->assertJsonPath('data.0.end_date', '2026-01-15');
+        $response = $this->postJson(apiUrl("warranties/{$this->warranty->id}/claims"), [
+            'issue_description' => 'Screen has stopped working', 'issue_category' => 'screen',
+        ])->assertCreated();
+        $this->assertDatabaseHas('warranty_claims', ['id' => $response->json('data.id'), 'created_at' => $utcNow]);
+        expect($this->warranty->fresh()->end_date->toDateString())->toBe('2026-01-15');
+    })->with(['midnight' => '2026-01-14 22:00:00', 'noon' => '2026-01-15 10:00:00', 'last second' => '2026-01-15 21:59:59']);
+
+    it('expires at the next Malawi midnight even while UTC is still on the closing date', function () {
+        $this->travelTo(\Carbon\Carbon::parse('2026-01-15 22:00:00', 'UTC'));
+        expect($this->warranty->isActive())->toBeFalse()->and($this->warranty->daysRemaining())->toBe(0);
+        actingAs($this->owner, 'sanctum')->getJson(apiUrl('warranties?active_only=1'))
+            ->assertOk()->assertJsonCount(0, 'data');
+        $this->getJson(apiUrl("warranties/{$this->warranty->id}"))->assertOk()
+            ->assertJsonPath('data.is_active', false)->assertJsonPath('data.days_remaining', 0);
+        $this->postJson(apiUrl("warranties/{$this->warranty->id}/claims"), [
+            'issue_description' => 'Screen has stopped working', 'issue_category' => 'screen',
+        ])->assertStatus(400);
+        $this->assertDatabaseCount('warranty_claims', 0);
+    });
+
+    it('does not activate a future warranty or a void warranty', function (bool $future) {
+        $this->travelTo(\Carbon\Carbon::parse('2026-01-15 10:00:00', 'UTC'));
+        $this->warranty->update($future
+            ? ['start_date' => '2026-01-16', 'end_date' => '2027-01-16']
+            : ['status' => WarrantyStatus::Voided]);
+        expect($this->warranty->isActive())->toBeFalse()->and($this->warranty->daysRemaining())->toBe(0);
+        actingAs($this->owner, 'sanctum')->getJson(apiUrl('warranties?active_only=1'))
+            ->assertOk()->assertJsonCount(0, 'data');
+    })->with(['future' => true, 'void' => false]);
+});

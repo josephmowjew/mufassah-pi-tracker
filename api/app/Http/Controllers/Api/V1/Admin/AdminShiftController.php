@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\V1\Admin;
 use App\Http\Controllers\Api\V1\BaseController;
 use App\Http\Resources\ShiftResource;
 use App\Models\Shift;
+use App\Support\LocalTime;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -15,6 +16,11 @@ class AdminShiftController extends BaseController
      */
     public function index(Request $request): JsonResponse
     {
+        $request->validate([
+            'date_from' => ['nullable', 'date'],
+            'date_to' => ['nullable', 'date', 'after_or_equal:date_from'],
+        ]);
+
         $branchId = $this->resolveBranchId($request);
         // `breaks` is eager-loaded because ShiftResource reads break_count,
         // break_minutes and worked_minutes for every row; without it the list
@@ -38,11 +44,11 @@ class AdminShiftController extends BaseController
         }
 
         // Filter by date range
-        if ($request->has('date_from')) {
-            $query->whereDate('started_at', '>=', $request->date_from);
+        if ($request->filled('date_from')) {
+            $query->where('started_at', '>=', LocalTime::startOfDayUtc($request->date_from));
         }
-        if ($request->has('date_to')) {
-            $query->whereDate('started_at', '<=', $request->date_to);
+        if ($request->filled('date_to')) {
+            $query->where('started_at', '<=', LocalTime::endOfDayUtc($request->date_to));
         }
 
         // Search by user name or email
@@ -94,16 +100,21 @@ class AdminShiftController extends BaseController
      */
     public function stats(Request $request): JsonResponse
     {
+        $request->validate([
+            'date_from' => ['nullable', 'date'],
+            'date_to' => ['nullable', 'date', 'after_or_equal:date_from'],
+        ]);
+
         $branchId = $this->resolveBranchId($request);
         $query = Shift::query()
             ->when($branchId, fn ($query) => $query->where('branch_id', $branchId));
 
         // Apply date filters
-        if ($request->has('date_from')) {
-            $query->whereDate('started_at', '>=', $request->date_from);
+        if ($request->filled('date_from')) {
+            $query->where('started_at', '>=', LocalTime::startOfDayUtc($request->date_from));
         }
-        if ($request->has('date_to')) {
-            $query->whereDate('started_at', '<=', $request->date_to);
+        if ($request->filled('date_to')) {
+            $query->where('started_at', '<=', LocalTime::endOfDayUtc($request->date_to));
         }
         if ($request->has('branch_id') && $request->user()->hasRole('super_admin')) {
             $query->where('branch_id', $request->branch_id);

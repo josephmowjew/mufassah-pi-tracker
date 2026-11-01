@@ -236,7 +236,7 @@ class AdminInvoiceController extends BaseController
             'challenge_id' => $challenge->id,
             'action' => $challenge->action,
             'masked_email' => $this->approvalService->maskedEmail($this->approvalService->approvalEmail()),
-            'expires_at' => $challenge->expires_at?->toIso8601String(),
+            'expires_at' => $challenge->expires_at?->toLocalIso8601String(),
             'attempts_remaining' => max(0, $challenge->max_attempts - $challenge->attempts),
             'device_count' => count((array) ($challenge->payload['device_ids'] ?? [])),
         ];

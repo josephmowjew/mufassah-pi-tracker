@@ -28,7 +28,7 @@ class InvoiceItemResource extends JsonResource
             'product_specs' => $this->product_specs,
             'device' => new DeviceResource($this->whenLoaded('device')),
             'subscription_plan' => new SubscriptionPlanResource($this->whenLoaded('subscriptionPlan')),
-            'created_at' => $this->created_at?->toIso8601String(),
+            'created_at' => $this->created_at?->toLocalIso8601String(),
         ];
     }
 }

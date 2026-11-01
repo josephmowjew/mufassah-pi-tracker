@@ -30,7 +30,7 @@ class AdminUserResource extends UserResource
             // The admin UI reads these to render the SUSPENDED badge and the
             // suspend/unsuspend toggle. Without them every account looked
             // active and "unsuspend" was unreachable.
-            'suspended_at' => $this->suspended_at?->toIso8601String(),
+            'suspended_at' => $this->suspended_at?->toLocalIso8601String(),
             'is_suspended' => $this->isSuspended(),
         ];
     }

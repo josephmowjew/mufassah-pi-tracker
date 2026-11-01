@@ -2,14 +2,22 @@
 
 namespace App\Http\Requests;
 
+use App\Http\Requests\Concerns\NormalizesUtcDates;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
 class StoreCommunityAlertRequest extends FormRequest
 {
+    use NormalizesUtcDates;
+
     public function authorize(): bool
     {
         return true;
+    }
+
+    protected function prepareForValidation(): void
+    {
+        $this->normalizeUtcDateInput('expires_at');
     }
 
     public function rules(): array

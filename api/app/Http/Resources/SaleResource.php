@@ -36,7 +36,7 @@ class SaleResource extends JsonResource
             ],
             'notes' => $this->notes,
             'refund_reason' => $this->refund_reason,
-            'sale_date' => $this->sale_date?->toIso8601String(),
+            'sale_date' => $this->sale_date?->toLocalIso8601String(),
             'vat_applicable' => $this->vat_applicable ?? true,
             'is_completed' => $this->isCompleted(),
             'is_paid' => $this->isPaid(),
@@ -51,8 +51,8 @@ class SaleResource extends JsonResource
             'items' => SaleItemResource::collection($this->whenLoaded('items')),
 
             // Timestamps
-            'created_at' => $this->created_at?->toIso8601String(),
-            'updated_at' => $this->updated_at?->toIso8601String(),
+            'created_at' => $this->created_at?->toLocalIso8601String(),
+            'updated_at' => $this->updated_at?->toLocalIso8601String(),
         ];
     }
 }

@@ -194,7 +194,7 @@
         <div class="receipt-info">
             <div class="receipt-info-row">
                 <span>Date:</span>
-                <span>{{ $sale->sale_date->format('Y-m-d H:i') }}</span>
+                <span>{{ $sale->sale_date->toLocalFormat('Y-m-d H:i') }}</span>
             </div>
             <div class="receipt-info-row">
                 <span>Receipt #:</span>

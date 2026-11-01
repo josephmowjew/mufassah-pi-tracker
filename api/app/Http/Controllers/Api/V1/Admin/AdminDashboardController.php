@@ -20,6 +20,7 @@ use App\Models\SubscriptionPlan;
 use App\Models\TheftReport;
 use App\Models\User;
 use App\Models\WarrantyClaim;
+use App\Support\LocalTime;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
@@ -42,10 +43,10 @@ class AdminDashboardController extends Controller
         $validated = $this->validateDashboardFilters($request);
         $branchId = $this->resolveBranchId($request);
         [$salesFrom, $salesTo] = $this->resolveSalesDateRange($validated);
-        $now = now();
-        $startOfMonth = $now->copy()->startOfMonth();
-        $startOfLastMonth = $now->copy()->subMonth()->startOfMonth();
-        $endOfLastMonth = $now->copy()->subMonth()->endOfMonth();
+        $now = LocalTime::now();
+        $startOfMonth = $now->copy()->startOfMonth()->utc();
+        $startOfLastMonth = $now->copy()->startOfMonth()->subMonth()->utc();
+        $endOfLastMonth = $now->copy()->startOfMonth()->subMonth()->endOfMonth()->utc();
 
         $paymentQuery = $this->paymentsQuery($branchId);
         $monthlyRevenue = (float) (clone $paymentQuery)
@@ -305,7 +306,7 @@ class AdminDashboardController extends Controller
                 'recovery_rate' => $this->calculateRecoveryRate($branchId),
                 'average_resolution_days' => $this->calculateAverageResolutionDays($branchId),
                 'recent_active' => $activeReports,
-                'this_month' => $this->theftReportsQuery($branchId)->where('created_at', '>=', now()->startOfMonth())->count(),
+                'this_month' => $this->theftReportsQuery($branchId)->where('created_at', '>=', LocalTime::now()->startOfMonth()->utc())->count(),
             ],
         ]);
     }
@@ -379,7 +380,7 @@ class AdminDashboardController extends Controller
                 'by_status' => $claimsByStatus,
                 'pending_count' => $this->warrantyClaimsQuery($branchId)->where('status', 'pending')->count(),
                 'recent_pending' => $pendingClaims,
-                'this_month' => $this->warrantyClaimsQuery($branchId)->where('created_at', '>=', now()->startOfMonth())->count(),
+                'this_month' => $this->warrantyClaimsQuery($branchId)->where('created_at', '>=', LocalTime::now()->startOfMonth()->utc())->count(),
             ],
         ]);
     }
@@ -437,11 +438,11 @@ class AdminDashboardController extends Controller
     private function resolveSalesDateRange(array $validated): array
     {
         $from = ! empty($validated['date_from'])
-            ? Carbon::parse($validated['date_from'])->startOfDay()
-            : now()->startOfYear();
+            ? LocalTime::startOfDayUtc($validated['date_from'])
+            : LocalTime::now()->startOfYear()->utc();
         $to = ! empty($validated['date_to'])
-            ? Carbon::parse($validated['date_to'])->endOfDay()
-            : now()->endOfDay();
+            ? LocalTime::endOfDayUtc($validated['date_to'])
+            : LocalTime::now()->endOfDay()->utc();
 
         return [$from, $to];
     }
@@ -464,17 +465,17 @@ class AdminDashboardController extends Controller
         $administrativeTotal = (float) (clone $administrativeQuery)->sum('total_amount');
         $administrativeTransactions = (int) (clone $administrativeQuery)->count();
 
-        $rangeDays = $from->copy()->startOfDay()->diffInDays($to->copy()->startOfDay()) + 1;
-        $previousTo = $from->copy()->startOfDay()->subSecond();
-        $previousFrom = $previousTo->copy()->subDays($rangeDays - 1)->startOfDay();
+        $rangeDays = $from->copy()->setTimezone(config('app.local_timezone'))->startOfDay()->diffInDays($to->copy()->setTimezone(config('app.local_timezone'))->startOfDay()) + 1;
+        $previousTo = $from->copy()->subSecond();
+        $previousFrom = $previousTo->copy()->setTimezone(config('app.local_timezone'))->subDays($rangeDays - 1)->startOfDay()->utc();
         $previousPosTotal = $this->completedSalesQuery($branchId, $previousFrom, $previousTo)->sum('total_amount');
         $previousAdministrativeTotal = $this->administrativeSalesQuery($branchId)
             ->whereBetween('created_at', [$previousFrom, $previousTo])
             ->sum('total_amount');
 
         return [
-            'date_from' => $from->toDateString(),
-            'date_to' => $to->toDateString(),
+            'date_from' => $from->toLocalDateString(),
+            'date_to' => $to->toLocalDateString(),
             'total_amount' => round($posTotal, 2),
             'total_transactions' => $posTransactions,
             'average_amount' => $posTransactions > 0 ? round($posTotal / $posTransactions, 2) : 0.0,
@@ -574,11 +575,11 @@ class AdminDashboardController extends Controller
 
     private function getSalesTrendData(?int $branchId, Carbon $from, Carbon $to): array
     {
-        $format = $from->copy()->startOfDay()->diffInDays($to->copy()->startOfDay()) > 62 ? 'Y-m' : 'Y-m-d';
+        $format = $from->copy()->setTimezone(config('app.local_timezone'))->startOfDay()->diffInDays($to->copy()->setTimezone(config('app.local_timezone'))->startOfDay()) > 62 ? 'Y-m' : 'Y-m-d';
 
         return $this->completedSalesQuery($branchId, $from, $to)
             ->get(['sale_date', 'total_amount'])
-            ->groupBy(fn ($sale) => $sale->sale_date->format($format))
+            ->groupBy(fn ($sale) => $sale->sale_date->toLocalFormat($format))
             ->map(fn ($group) => round((float) $group->sum('total_amount'), 2))
             ->sortKeys()
             ->toArray();
@@ -586,13 +587,13 @@ class AdminDashboardController extends Controller
 
     private function getCombinedSalesTrendData(?int $branchId, Carbon $from, Carbon $to): array
     {
-        $format = $from->copy()->startOfDay()->diffInDays($to->copy()->startOfDay()) > 62 ? 'Y-m' : 'Y-m-d';
+        $format = $from->copy()->setTimezone(config('app.local_timezone'))->startOfDay()->diffInDays($to->copy()->setTimezone(config('app.local_timezone'))->startOfDay()) > 62 ? 'Y-m' : 'Y-m-d';
         $trend = [];
 
         $this->completedSalesQuery($branchId, $from, $to)
             ->get(['sale_date', 'total_amount'])
             ->each(function (Sale $sale) use (&$trend, $format): void {
-                $key = Carbon::parse($sale->sale_date)->format($format);
+                $key = Carbon::parse($sale->sale_date)->toLocalFormat($format);
                 $trend[$key] = ($trend[$key] ?? 0) + (float) $sale->total_amount;
             });
 
@@ -600,7 +601,7 @@ class AdminDashboardController extends Controller
             ->whereBetween('created_at', [$from, $to])
             ->get(['created_at', 'total_amount'])
             ->each(function (InventoryMovement $movement) use (&$trend, $format): void {
-                $key = Carbon::parse($movement->created_at)->format($format);
+                $key = Carbon::parse($movement->created_at)->toLocalFormat($format);
                 $trend[$key] = ($trend[$key] ?? 0) + (float) $movement->total_amount;
             });
 
@@ -620,11 +621,11 @@ class AdminDashboardController extends Controller
     private function buildDailySalesBreakdown(?int $branchId, Carbon $from, Carbon $to): array
     {
         $daily = [];
-        $day = $from->copy()->startOfDay();
-        $lastDay = $to->copy()->startOfDay();
+        $day = $from->copy()->setTimezone(config('app.local_timezone'))->startOfDay();
+        $lastDay = $to->copy()->setTimezone(config('app.local_timezone'))->startOfDay();
 
         while ($day->lessThanOrEqualTo($lastDay)) {
-            $date = $day->toDateString();
+            $date = $day->toLocalDateString();
             $daily[$date] = [
                 'date' => $date,
                 'pos_total_amount' => 0.0,
@@ -659,7 +660,7 @@ class AdminDashboardController extends Controller
             ->keyBy('id');
 
         foreach ($posSales as $sale) {
-            $date = Carbon::parse($sale->sale_date)->toDateString();
+            $date = Carbon::parse($sale->sale_date)->toLocalDateString();
             if (! isset($daily[$date])) {
                 continue;
             }
@@ -674,7 +675,7 @@ class AdminDashboardController extends Controller
         }
 
         foreach ($administrativeSales as $movement) {
-            $date = Carbon::parse($movement->created_at)->toDateString();
+            $date = Carbon::parse($movement->created_at)->toLocalDateString();
             if (! isset($daily[$date])) {
                 continue;
             }
@@ -769,7 +770,7 @@ class AdminDashboardController extends Controller
             ->where('created_at', '>=', now()->subDays($days))
             ->get(['created_at']);
 
-        return $users->groupBy(fn ($user) => $user->created_at->format($format))
+        return $users->groupBy(fn ($user) => $user->created_at->toLocalFormat($format))
             ->map->count()
             ->sortKeys()
             ->toArray();
@@ -787,7 +788,7 @@ class AdminDashboardController extends Controller
             ->where('paid_at', '>=', now()->subDays($days))
             ->get(['paid_at', 'amount']);
 
-        return $payments->groupBy(fn ($payment) => $payment->paid_at->format($format))
+        return $payments->groupBy(fn ($payment) => $payment->paid_at->toLocalFormat($format))
             ->map(fn ($group) => (float) $group->sum('amount'))
             ->sortKeys()
             ->toArray();

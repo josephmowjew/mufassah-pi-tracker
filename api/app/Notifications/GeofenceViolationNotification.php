@@ -44,7 +44,7 @@ class GeofenceViolationNotification extends Notification implements ShouldQueue
             ->line("- Device: {$device->name}")
             ->line("- Geofence: {$this->geofence->name}")
             ->line('- Event: '.ucfirst($action))
-            ->line("- Time: {$this->event->event_time->format('M d, Y H:i:s')}")
+            ->line("- Time: {$this->event->event_time->toLocalFormat('M d, Y H:i:s')}")
             ->line('- Distance from center: '.number_format($this->event->distance_from_center, 2).'m')
             ->action('View Device', $frontendUrl.'/devices/'.$device->id)
             ->salutation('Best regards, Mufasah Electronics Team');
@@ -69,7 +69,7 @@ class GeofenceViolationNotification extends Notification implements ShouldQueue
             'device_id' => $device->id,
             'device_name' => $device->name,
             'event_type' => $eventType->value,
-            'event_time' => $this->event->event_time->toIso8601String(),
+            'event_time' => $this->event->event_time->toLocalIso8601String(),
             'icon' => $eventType === GeofenceEventType::Entry ? 'enter' : 'exit',
         ];
     }

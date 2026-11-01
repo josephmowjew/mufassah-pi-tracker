@@ -222,3 +222,44 @@ it('streams a staff time workbook with the expected sheets', function () {
     // the exported sheet cannot be summed or pivoted after it leaves the app.
     expect($sheetXml)->not->toMatch('/<t xml:space="preserve">-?[0-9]+(\.[0-9]+)?<\/t>/');
 });
+
+it('returns offset-qualified staff instants and exports local text without changing UTC storage', function () {
+    config(['app.local_timezone' => 'Africa/Blantyre']);
+    $shift = Shift::create([
+        'user_id' => $this->storeAdmin->id, 'branch_id' => $this->lilongwe->id,
+        'started_at' => '2026-01-14 22:30:00', 'ended_at' => '2026-01-15 10:00:00',
+        'status' => 'completed',
+    ]);
+    $break = $shift->breaks()->create([
+        'type' => ShiftBreakType::LUNCH,
+        'started_at' => '2026-01-15 08:00:00', 'ended_at' => '2026-01-15 08:30:00',
+    ]);
+
+    $this->actingAs($this->storeAdmin)
+        ->getJson('/api/v1/admin/reports/staff-time?from=2026-01-15&to=2026-01-15')
+        ->assertSuccessful()
+        ->assertJsonPath('data.recent_shifts.0.date', '2026-01-15')
+        ->assertJsonPath('data.recent_shifts.0.started_at', '2026-01-15T00:30:00+02:00')
+        ->assertJsonPath('data.recent_shifts.0.ended_at', '2026-01-15T12:00:00+02:00')
+        ->assertJsonPath('data.breaks.0.started_at', '2026-01-15T10:00:00+02:00')
+        ->assertJsonPath('data.breaks.0.ended_at', '2026-01-15T10:30:00+02:00');
+
+    $response = $this->get('/api/v1/admin/reports/export?report=staff_time&from=2026-01-15&to=2026-01-15')->assertOk();
+    $path = tempnam(sys_get_temp_dir(), 'xlsx_timezone_');
+    $zip = new ZipArchive;
+    try {
+        file_put_contents($path, $response->streamedContent());
+        expect($zip->open($path))->toBeTrue();
+        $shiftsXml = (string) $zip->getFromName('xl/worksheets/sheet4.xml');
+        $breaksXml = (string) $zip->getFromName('xl/worksheets/sheet5.xml');
+        expect($shiftsXml)->toContain('2026-01-15 00:30:00', '2026-01-15 12:00:00')
+            ->and($breaksXml)->toContain('2026-01-15 10:00:00', '2026-01-15 10:30:00')
+            ->and($shiftsXml.$breaksXml)->not->toContain('+02:00');
+        $zip->close();
+    } finally {
+        unlink($path);
+    }
+
+    $this->assertDatabaseHas('shifts', ['id' => $shift->id, 'started_at' => '2026-01-14 22:30:00', 'ended_at' => '2026-01-15 10:00:00']);
+    $this->assertDatabaseHas('shift_breaks', ['id' => $break->id, 'started_at' => '2026-01-15 08:00:00', 'ended_at' => '2026-01-15 08:30:00']);
+});

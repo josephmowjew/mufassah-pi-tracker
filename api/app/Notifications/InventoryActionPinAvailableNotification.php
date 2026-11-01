@@ -29,8 +29,8 @@ class InventoryActionPinAvailableNotification extends Notification
             'action_label' => $this->actionLabel,
             'target_label' => $this->targetLabel,
             'device_count' => count((array) ($this->challenge->payload['device_ids'] ?? [])) ?: 1,
-            'issued_at' => $this->challenge->last_sent_at?->toIso8601String(),
-            'expires_at' => $this->challenge->expires_at?->toIso8601String(),
+            'issued_at' => $this->challenge->last_sent_at?->toLocalIso8601String(),
+            'expires_at' => $this->challenge->expires_at?->toLocalIso8601String(),
             'status' => 'active',
         ];
     }

@@ -49,7 +49,7 @@ class SubscriptionExpiredNotification extends Notification implements ShouldQueu
             'message' => "Your {$this->subscription->plan->name} subscription has expired.",
             'subscription_id' => $this->subscription->id,
             'plan_name' => $this->subscription->plan->name,
-            'expired_at' => $this->subscription->ends_at->toIso8601String(),
+            'expired_at' => $this->subscription->ends_at->toLocalIso8601String(),
             'icon' => 'error',
         ];
     }

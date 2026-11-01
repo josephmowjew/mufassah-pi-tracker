@@ -22,9 +22,9 @@ class SubscriptionResource extends JsonResource
                 'color' => $this->status->color(),
             ],
             'billing_cycle' => $this->billing_cycle,
-            'starts_at' => $this->starts_at?->toIso8601String(),
-            'ends_at' => $this->ends_at?->toIso8601String(),
-            'cancelled_at' => $this->cancelled_at?->toIso8601String(),
+            'starts_at' => $this->starts_at?->toLocalIso8601String(),
+            'ends_at' => $this->ends_at?->toLocalIso8601String(),
+            'cancelled_at' => $this->cancelled_at?->toLocalIso8601String(),
             'cancellation_reason' => $this->cancellation_reason,
             'auto_renew' => $this->auto_renew,
             'is_active' => $this->isActive(),
@@ -33,8 +33,8 @@ class SubscriptionResource extends JsonResource
             'user' => new UserResource($this->whenLoaded('user')),
             'last_payment' => new PaymentResource($this->whenLoaded('lastPayment')),
             'payments' => PaymentResource::collection($this->whenLoaded('payments')),
-            'created_at' => $this->created_at?->toIso8601String(),
-            'updated_at' => $this->updated_at?->toIso8601String(),
+            'created_at' => $this->created_at?->toLocalIso8601String(),
+            'updated_at' => $this->updated_at?->toLocalIso8601String(),
         ];
     }
 }

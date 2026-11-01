@@ -20,9 +20,9 @@ class NotificationResource extends JsonResource
             'title' => $this->data['title'] ?? 'Notification',
             'message' => $this->data['message'] ?? '',
             'data' => $this->data,
-            'read_at' => $this->read_at?->toIso8601String(),
+            'read_at' => $this->read_at?->toLocalIso8601String(),
             'is_read' => $this->read_at !== null,
-            'created_at' => $this->created_at->toIso8601String(),
+            'created_at' => $this->created_at->toLocalIso8601String(),
         ];
     }
 }

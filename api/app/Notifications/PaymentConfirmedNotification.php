@@ -31,7 +31,7 @@ class PaymentConfirmedNotification extends Notification implements ShouldQueue
             ->line("- Payment Number: {$this->payment->payment_number}")
             ->line("- Amount: {$this->payment->currency} ".number_format($this->payment->amount, 2))
             ->line("- Description: {$this->payment->description}")
-            ->line("- Date: {$this->payment->paid_at?->format('M d, Y H:i')}")
+            ->line("- Date: {$this->payment->paid_at?->toLocalFormat('M d, Y H:i')}")
             ->action('View Payment', $frontendUrl.'/payments/'.$this->payment->id)
             ->line('Thank you for your payment!')
             ->salutation('Best regards, Mufasah Electronics Team');

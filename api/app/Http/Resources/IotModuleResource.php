@@ -28,9 +28,9 @@ class IotModuleResource extends JsonResource
             'battery_level' => $this->battery_level,
             'signal_strength' => $this->signal_strength,
             'is_online' => $this->isOnline(),
-            'last_ping' => $this->last_ping?->toIso8601String(),
-            'last_location_update' => $this->last_location_update?->toIso8601String(),
-            'activated_at' => $this->activated_at?->toIso8601String(),
+            'last_ping' => $this->last_ping?->toLocalIso8601String(),
+            'last_location_update' => $this->last_location_update?->toLocalIso8601String(),
+            'activated_at' => $this->activated_at?->toLocalIso8601String(),
 
             // Only include configuration for admin users
             'configuration' => $this->when(
@@ -41,8 +41,8 @@ class IotModuleResource extends JsonResource
             // Relationships
             'device' => new DeviceResource($this->whenLoaded('device')),
 
-            'created_at' => $this->created_at?->toIso8601String(),
-            'updated_at' => $this->updated_at?->toIso8601String(),
+            'created_at' => $this->created_at?->toLocalIso8601String(),
+            'updated_at' => $this->updated_at?->toLocalIso8601String(),
         ];
     }
 }

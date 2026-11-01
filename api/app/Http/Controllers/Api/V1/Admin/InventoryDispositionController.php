@@ -319,7 +319,7 @@ class InventoryDispositionController extends BaseController
         return $this->success([
             'challenge_id' => $challenge->id,
             'pin' => $pin,
-            'expires_at' => $challenge->expires_at?->toIso8601String(),
+            'expires_at' => $challenge->expires_at?->toLocalIso8601String(),
         ], 'PIN revealed securely.')
             ->header('Cache-Control', 'no-store, no-cache, must-revalidate, private')
             ->header('Pragma', 'no-cache');
@@ -693,7 +693,7 @@ class InventoryDispositionController extends BaseController
             'challenge_id' => $challenge->id,
             'action' => $challenge->action,
             'masked_email' => $this->approvalService->maskedEmail($this->approvalService->approvalEmail()),
-            'expires_at' => $challenge->expires_at?->toIso8601String(),
+            'expires_at' => $challenge->expires_at?->toLocalIso8601String(),
             'attempts_remaining' => max(0, $challenge->max_attempts - $challenge->attempts),
         ];
         if (isset($challenge->payload['device_ids']) && is_array($challenge->payload['device_ids'])) {

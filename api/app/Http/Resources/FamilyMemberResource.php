@@ -47,11 +47,11 @@ class FamilyMemberResource extends JsonResource
 
             // Invitation info
             'inviter' => new UserResource($this->whenLoaded('inviter')),
-            'joined_at' => $this->joined_at?->toIso8601String(),
+            'joined_at' => $this->joined_at?->toLocalIso8601String(),
 
             // Timestamps
-            'created_at' => $this->created_at?->toIso8601String(),
-            'updated_at' => $this->updated_at?->toIso8601String(),
+            'created_at' => $this->created_at?->toLocalIso8601String(),
+            'updated_at' => $this->updated_at?->toLocalIso8601String(),
         ];
     }
 }

@@ -13,8 +13,8 @@ class DeviceOwnershipHistoryResource extends JsonResource
             'id' => $this->id,
             'transfer_reason' => $this->transfer_reason,
             'notes' => $this->notes,
-            'transferred_at' => $this->transferred_at?->toIso8601String(),
-            'created_at' => $this->created_at?->toIso8601String(),
+            'transferred_at' => $this->transferred_at?->toLocalIso8601String(),
+            'created_at' => $this->created_at?->toLocalIso8601String(),
 
             // Relationships
             'device' => new DeviceResource($this->whenLoaded('device')),

@@ -19,13 +19,13 @@ class ShiftBreakResource extends JsonResource
             'shift_id' => $this->shift_id,
             'type' => $this->type?->value,
             'type_label' => $this->type?->label(),
-            'started_at' => $this->started_at?->toIso8601String(),
-            'ended_at' => $this->ended_at?->toIso8601String(),
+            'started_at' => $this->started_at?->toLocalIso8601String(),
+            'ended_at' => $this->ended_at?->toLocalIso8601String(),
             'duration_minutes' => $this->duration_minutes,
             'is_open' => $this->isOpen(),
             'notes' => $this->notes,
-            'created_at' => $this->created_at?->toIso8601String(),
-            'updated_at' => $this->updated_at?->toIso8601String(),
+            'created_at' => $this->created_at?->toLocalIso8601String(),
+            'updated_at' => $this->updated_at?->toLocalIso8601String(),
         ];
     }
 }

@@ -32,8 +32,8 @@ class InventoryBatchResource extends JsonResource
             'branch' => new BranchResource($this->whenLoaded('branch')),
             'category' => new DeviceCategoryResource($this->whenLoaded('category')),
             'devices' => DeviceResource::collection($this->whenLoaded('devices')),
-            'created_at' => $this->created_at?->toIso8601String(),
-            'updated_at' => $this->updated_at?->toIso8601String(),
+            'created_at' => $this->created_at?->toLocalIso8601String(),
+            'updated_at' => $this->updated_at?->toLocalIso8601String(),
         ];
     }
 }

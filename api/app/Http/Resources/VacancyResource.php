@@ -19,9 +19,9 @@ class VacancyResource extends JsonResource
             'closing_date' => $this->closing_date?->toDateString(),
             'sort_order' => $this->when($request->user(), $this->sort_order),
             'is_published' => $this->when($request->user(), $this->is_published),
-            'published_at' => $this->when($request->user(), $this->published_at?->toIso8601String()),
-            'created_at' => $this->when($request->user(), $this->created_at?->toIso8601String()),
-            'updated_at' => $this->when($request->user(), $this->updated_at?->toIso8601String()),
+            'published_at' => $this->when($request->user(), $this->published_at?->toLocalIso8601String()),
+            'created_at' => $this->when($request->user(), $this->created_at?->toLocalIso8601String()),
+            'updated_at' => $this->when($request->user(), $this->updated_at?->toLocalIso8601String()),
         ];
     }
 }

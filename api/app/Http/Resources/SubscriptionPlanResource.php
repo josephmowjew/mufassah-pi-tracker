@@ -39,7 +39,7 @@ class SubscriptionPlanResource extends JsonResource
             ],
             'is_active' => $this->is_active,
             'sort_order' => $this->sort_order,
-            'created_at' => $this->created_at?->toIso8601String(),
+            'created_at' => $this->created_at?->toLocalIso8601String(),
         ];
     }
 }

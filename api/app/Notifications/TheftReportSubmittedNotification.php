@@ -32,7 +32,7 @@ class TheftReportSubmittedNotification extends Notification implements ShouldQue
             ->line("- Case Number: {$this->theftReport->report_number}")
             ->line("- Device: {$device->name}")
             ->line("- Serial Number: {$device->serial_number}")
-            ->line("- Incident Date: {$this->theftReport->incident_date->format('M d, Y')}")
+            ->line("- Incident Date: {$this->theftReport->incident_date->toLocalFormat('M d, Y')}")
             ->line("- Status: {$this->theftReport->status->value}")
             ->action('View Report', $frontendUrl.'/theft-reports/'.$this->theftReport->id)
             ->line('Our team will review your report and assist in the recovery process.')

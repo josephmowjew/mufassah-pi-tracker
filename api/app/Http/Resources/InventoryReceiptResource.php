@@ -20,13 +20,13 @@ class InventoryReceiptResource extends JsonResource
             'status' => $this->status,
             'notes' => $this->notes,
             'received_by_id' => $this->received_by_id,
-            'received_at' => $this->received_at?->toIso8601String(),
+            'received_at' => $this->received_at?->toLocalIso8601String(),
             'summary' => $this->summary(),
             'branch' => new BranchResource($this->whenLoaded('branch')),
             'received_by' => new UserResource($this->whenLoaded('receivedBy')),
             'batches' => InventoryBatchResource::collection($this->whenLoaded('batches')),
-            'created_at' => $this->created_at?->toIso8601String(),
-            'updated_at' => $this->updated_at?->toIso8601String(),
+            'created_at' => $this->created_at?->toLocalIso8601String(),
+            'updated_at' => $this->updated_at?->toLocalIso8601String(),
         ];
     }
 }

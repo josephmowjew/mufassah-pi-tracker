@@ -7,6 +7,7 @@ use App\Http\Resources\UserResource;
 use App\Models\Device;
 use App\Models\Sale;
 use App\Models\User;
+use App\Support\LocalTime;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -49,7 +50,7 @@ class CustomerServiceController extends BaseController
                 ->count(),
             'pendingWarranties' => 0, // TODO: Implement when warranty claims are added
             'todaySales' => Sale::where('sold_by_id', $userId)
-                ->whereDate('created_at', today())
+                ->whereBetween('created_at', [LocalTime::now()->startOfDay()->utc(), LocalTime::now()->endOfDay()->utc()])
                 ->count(),
         ];
 

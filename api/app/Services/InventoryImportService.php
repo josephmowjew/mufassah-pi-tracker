@@ -7,6 +7,7 @@ use App\Models\Device;
 use App\Models\DeviceCategory;
 use App\Models\InventoryReceipt;
 use App\Models\User;
+use App\Support\LocalTime;
 use App\Support\Spreadsheet\SpreadsheetReader;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
@@ -571,7 +572,7 @@ class InventoryImportService
 
             if ($dateError !== null) {
                 $errors[] = $dateError;
-            } elseif ($purchaseDate !== null && $purchaseDate->isAfter(CarbonImmutable::today())) {
+            } elseif ($purchaseDate !== null && $purchaseDate->toDateString() > LocalTime::now()->toDateString()) {
                 $errors[] = 'Purchase Date '.$purchaseDate->toDateString().' is in the future.';
                 $purchaseDate = null;
             }

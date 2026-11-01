@@ -335,8 +335,8 @@ class AdminFamilyController extends Controller
             'settings' => $family->settings,
             'owner' => $family->relationLoaded('owner') ? new UserResource($family->owner) : null,
             'members_count' => $family->active_member_records_count ?? $family->activeMemberRecords()->count(),
-            'created_at' => $family->created_at?->toIso8601String(),
-            'updated_at' => $family->updated_at?->toIso8601String(),
+            'created_at' => $family->created_at?->toLocalIso8601String(),
+            'updated_at' => $family->updated_at?->toLocalIso8601String(),
         ];
     }
 }

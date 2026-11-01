@@ -2,14 +2,22 @@
 
 namespace App\Http\Requests\Api\V1\TheftReport;
 
+use App\Http\Requests\Concerns\NormalizesUtcDates;
 use Illuminate\Foundation\Http\FormRequest;
 
 class UpdateTheftReportRequest extends FormRequest
 {
+    use NormalizesUtcDates;
+
     public function authorize(): bool
     {
         return $this->user()->hasRole(['super_admin', 'store_admin', 'customer_service'])
             || $this->route('theft_report')->reported_by === $this->user()->id;
+    }
+
+    protected function prepareForValidation(): void
+    {
+        $this->normalizeUtcDateInput('theft_date');
     }
 
     public function rules(): array

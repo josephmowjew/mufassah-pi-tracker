@@ -44,7 +44,7 @@ class DeviceResource extends JsonResource
             ],
             'notes' => $this->notes,
             'photos' => $this->photos,
-            'last_seen_at' => $this->last_seen_at?->toIso8601String(),
+            'last_seen_at' => $this->last_seen_at?->toLocalIso8601String(),
             'is_stolen' => $this->isStolen(),
             'has_iot_module' => $this->hasIotModule(),
 
@@ -56,7 +56,7 @@ class DeviceResource extends JsonResource
             ]),
             'is_in_stock' => $this->isInStock(),
             'is_sold' => $this->isSold(),
-            'sold_at' => $this->sold_at?->toIso8601String(),
+            'sold_at' => $this->sold_at?->toLocalIso8601String(),
 
             // Relationships
             'owner' => new UserResource($this->whenLoaded('owner')),
@@ -68,8 +68,8 @@ class DeviceResource extends JsonResource
             'last_location' => new DeviceLocationResource($this->whenLoaded('lastLocation')),
 
             // Timestamps
-            'created_at' => $this->created_at?->toIso8601String(),
-            'updated_at' => $this->updated_at?->toIso8601String(),
+            'created_at' => $this->created_at?->toLocalIso8601String(),
+            'updated_at' => $this->updated_at?->toLocalIso8601String(),
         ];
     }
 }

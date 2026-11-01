@@ -29,8 +29,8 @@ class ShiftResource extends JsonResource
             'branch_id' => $this->branch_id,
             'branch' => $this->whenLoaded('branch', fn () => new BranchResource($this->branch)),
             'user' => $this->whenLoaded('user', fn () => new UserResource($this->user)),
-            'started_at' => $this->started_at?->toIso8601String(),
-            'ended_at' => $this->ended_at?->toIso8601String(),
+            'started_at' => $this->started_at?->toLocalIso8601String(),
+            'ended_at' => $this->ended_at?->toLocalIso8601String(),
             'status' => $this->status,
             'notes' => $this->notes,
             'opening_cash' => (float) $this->opening_cash,
@@ -44,8 +44,8 @@ class ShiftResource extends JsonResource
             'revenue' => (float) ($this->revenue ?? 0),
             'sales_count' => $this->sales_count ?? 0,
             'cash_sales' => (float) ($this->cash_sales ?? 0),
-            'created_at' => $this->created_at?->toIso8601String(),
-            'updated_at' => $this->updated_at?->toIso8601String(),
+            'created_at' => $this->created_at?->toLocalIso8601String(),
+            'updated_at' => $this->updated_at?->toLocalIso8601String(),
         ];
     }
 }

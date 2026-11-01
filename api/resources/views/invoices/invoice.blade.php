@@ -36,8 +36,8 @@
         <div class="right">
             <h1>INVOICE</h1>
             <div><strong>{{ $invoice->invoice_number }}</strong></div>
-            <div class="muted">Issued: {{ $invoice->issued_at?->format('Y-m-d H:i') }}</div>
-            <div class="muted">Valid until: {{ $invoice->expires_at?->format('Y-m-d H:i') }}</div>
+            <div class="muted">Issued: {{ $invoice->issued_at?->toLocalFormat('Y-m-d H:i') }}</div>
+            <div class="muted">Valid until: {{ $invoice->expires_at?->toLocalFormat('Y-m-d H:i') }}</div>
         </div>
     </div>
 

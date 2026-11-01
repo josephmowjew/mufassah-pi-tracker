@@ -21,7 +21,7 @@ class BountyClaimResource extends JsonResource
             'recovery_latitude' => $this->recovery_latitude,
             'recovery_longitude' => $this->recovery_longitude,
             'recovery_address' => $this->recovery_address,
-            'recovery_date' => $this->recovery_date?->toIso8601String(),
+            'recovery_date' => $this->recovery_date?->toLocalIso8601String(),
 
             // Status
             'status' => [
@@ -45,11 +45,11 @@ class BountyClaimResource extends JsonResource
                 $this->payment_account
             ),
             'payment_reference' => $this->payment_reference,
-            'paid_at' => $this->paid_at?->toIso8601String(),
+            'paid_at' => $this->paid_at?->toLocalIso8601String(),
 
             // Review details
             'rejection_reason' => $this->rejection_reason,
-            'reviewed_at' => $this->reviewed_at?->toIso8601String(),
+            'reviewed_at' => $this->reviewed_at?->toLocalIso8601String(),
 
             // Rating
             'owner_rating' => $this->owner_rating,
@@ -61,8 +61,8 @@ class BountyClaimResource extends JsonResource
             'reviewer' => new UserResource($this->whenLoaded('reviewer')),
 
             // Timestamps
-            'created_at' => $this->created_at?->toIso8601String(),
-            'updated_at' => $this->updated_at?->toIso8601String(),
+            'created_at' => $this->created_at?->toLocalIso8601String(),
+            'updated_at' => $this->updated_at?->toLocalIso8601String(),
         ];
     }
 }

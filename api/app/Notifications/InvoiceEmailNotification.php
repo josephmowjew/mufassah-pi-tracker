@@ -25,7 +25,7 @@ class InvoiceEmailNotification extends Notification implements ShouldQueue
         $invoice = $this->invoice->loadMissing(['customer', 'items']);
         $frontendUrl = rtrim(config('app.frontend_url', 'http://localhost:3000'), '/');
         $customerName = $invoice->customer?->name ?? 'Customer';
-        $expiresAt = $invoice->expires_at?->copy()->timezone(config('app.timezone', 'UTC'));
+
         $taxText = $invoice->vat_applicable
             ? sprintf('%s (%s%%): MWK %s', $invoice->tax_label, $invoice->tax_rate, number_format((float) $invoice->tax_amount, 2))
             : 'VAT: Not applicable';
@@ -36,8 +36,8 @@ class InvoiceEmailNotification extends Notification implements ShouldQueue
             ->greeting("Hello {$customerName},")
             ->line('Your price-locked device invoice is ready. The prices and taxes below are fixed for 24 hours from issue time.')
             ->line("**Invoice number:** {$invoice->invoice_number}")
-            ->line("**Issued:** {$invoice->issued_at?->timezone(config('app.timezone', 'UTC'))->format('Y-m-d H:i')}")
-            ->line("**Valid until:** {$expiresAt?->format('Y-m-d H:i')}")
+            ->line("**Issued:** {$invoice->issued_at?->toLocalFormat('Y-m-d H:i')}")
+            ->line("**Valid until:** {$invoice->expires_at?->toLocalFormat('Y-m-d H:i')}")
             ->line("**Items:** {$invoice->items->count()}")
             ->line('**Subtotal:** MWK '.number_format((float) $invoice->subtotal, 2))
             ->line('**Discount:** MWK '.number_format((float) $invoice->discount_amount, 2))
@@ -54,7 +54,7 @@ class InvoiceEmailNotification extends Notification implements ShouldQueue
             'type' => 'invoice_issued',
             'invoice_id' => $this->invoice->id,
             'invoice_number' => $this->invoice->invoice_number,
-            'expires_at' => $this->invoice->expires_at?->toIso8601String(),
+            'expires_at' => $this->invoice->expires_at?->toLocalIso8601String(),
             'total_amount' => $this->invoice->total_amount,
         ];
     }

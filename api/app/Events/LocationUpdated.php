@@ -55,9 +55,9 @@ class LocationUpdated implements ShouldBroadcast
                 'accuracy' => $this->location->accuracy ? (float) $this->location->accuracy : null,
                 'speed' => $this->location->speed ? (float) $this->location->speed : null,
                 'heading' => $this->location->heading ? (float) $this->location->heading : null,
-                'recorded_at' => $this->location->recorded_at->toIso8601String(),
+                'recorded_at' => $this->location->recorded_at->toLocalIso8601String(),
             ],
-            'timestamp' => now()->toIso8601String(),
+            'timestamp' => now()->toLocalIso8601String(),
         ];
     }
 

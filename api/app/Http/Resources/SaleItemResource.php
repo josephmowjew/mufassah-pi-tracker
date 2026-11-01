@@ -25,8 +25,8 @@ class SaleItemResource extends JsonResource
             'subscription_plan' => new SubscriptionPlanResource($this->whenLoaded('subscriptionPlan')),
 
             // Timestamps
-            'created_at' => $this->created_at?->toIso8601String(),
-            'updated_at' => $this->updated_at?->toIso8601String(),
+            'created_at' => $this->created_at?->toLocalIso8601String(),
+            'updated_at' => $this->updated_at?->toLocalIso8601String(),
         ];
     }
 }

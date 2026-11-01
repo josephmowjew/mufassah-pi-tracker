@@ -24,8 +24,8 @@ class InvoiceResource extends JsonResource
                 'label' => $this->status->label(),
                 'color' => $this->status->color(),
             ],
-            'issued_at' => $this->issued_at?->toIso8601String(),
-            'expires_at' => $this->expires_at?->toIso8601String(),
+            'issued_at' => $this->issued_at?->toLocalIso8601String(),
+            'expires_at' => $this->expires_at?->toLocalIso8601String(),
             'remaining_seconds' => $remainingSeconds,
             'is_redeemable' => $this->isRedeemable(),
             'vat_applicable' => $this->vat_applicable,
@@ -40,9 +40,9 @@ class InvoiceResource extends JsonResource
             'total_amount' => $this->total_amount,
             'currency' => $this->currency,
             'notes' => $this->notes,
-            'emailed_at' => $this->emailed_at?->toIso8601String(),
-            'redeemed_at' => $this->redeemed_at?->toIso8601String(),
-            'cancelled_at' => $this->cancelled_at?->toIso8601String(),
+            'emailed_at' => $this->emailed_at?->toLocalIso8601String(),
+            'redeemed_at' => $this->redeemed_at?->toLocalIso8601String(),
+            'cancelled_at' => $this->cancelled_at?->toLocalIso8601String(),
             'cancellation_reason' => $this->cancellation_reason,
             'converted_sale_id' => $this->converted_sale_id,
             'cost_total' => $this->when(
@@ -54,8 +54,8 @@ class InvoiceResource extends JsonResource
             'branch' => new BranchResource($this->whenLoaded('branch')),
             'created_by' => new UserResource($this->whenLoaded('createdBy')),
             'converted_sale' => new SaleResource($this->whenLoaded('convertedSale')),
-            'created_at' => $this->created_at?->toIso8601String(),
-            'updated_at' => $this->updated_at?->toIso8601String(),
+            'created_at' => $this->created_at?->toLocalIso8601String(),
+            'updated_at' => $this->updated_at?->toLocalIso8601String(),
         ];
     }
 }

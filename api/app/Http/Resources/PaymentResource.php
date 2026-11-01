@@ -33,11 +33,11 @@ class PaymentResource extends JsonResource
             'provider_reference' => $this->provider_reference,
             'description' => $this->description,
             'metadata' => $this->metadata,
-            'paid_at' => $this->paid_at?->toIso8601String(),
+            'paid_at' => $this->paid_at?->toLocalIso8601String(),
             'subscription' => new SubscriptionResource($this->whenLoaded('subscription')),
             'user' => new UserResource($this->whenLoaded('user')),
-            'created_at' => $this->created_at?->toIso8601String(),
-            'updated_at' => $this->updated_at?->toIso8601String(),
+            'created_at' => $this->created_at?->toLocalIso8601String(),
+            'updated_at' => $this->updated_at?->toLocalIso8601String(),
         ];
     }
 }

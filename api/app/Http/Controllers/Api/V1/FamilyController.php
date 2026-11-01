@@ -261,7 +261,7 @@ class FamilyController extends BaseController
                     'id' => $membership->inviter->id,
                     'name' => $membership->inviter->name,
                 ] : null,
-                'created_at' => $membership->created_at->toIso8601String(),
+                'created_at' => $membership->created_at->toLocalIso8601String(),
             ];
         });
 

@@ -13,6 +13,7 @@ use App\Models\Geofence;
 use App\Models\GeofenceEvent;
 use App\Models\IotModule;
 use App\Notifications\GeofenceViolationNotification;
+use App\Support\LocalTime;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -63,7 +64,9 @@ class IotLocationController extends Controller
                 'speed' => $validated['speed'] ?? null,
                 'heading' => $validated['heading'] ?? null,
                 'is_manual' => false,
-                'recorded_at' => $validated['recorded_at'] ?? now(),
+                'recorded_at' => isset($validated['recorded_at'])
+                    ? LocalTime::instantUtc($validated['recorded_at'])
+                    : now(),
             ]);
 
             // Update device's last location and seen timestamp
@@ -135,7 +138,7 @@ class IotLocationController extends Controller
                     'speed' => $locationData['speed'] ?? null,
                     'heading' => $locationData['heading'] ?? null,
                     'is_manual' => false,
-                    'recorded_at' => $locationData['recorded_at'],
+                    'recorded_at' => LocalTime::instantUtc($locationData['recorded_at']),
                 ]);
             });
 

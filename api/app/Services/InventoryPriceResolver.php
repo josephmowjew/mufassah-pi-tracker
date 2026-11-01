@@ -57,7 +57,7 @@ class InventoryPriceResolver
                 'source' => 'last_batch',
                 'batch_id' => $batch->id,
                 'batch_number' => $batch->batch_number,
-                'received_at' => $batch->created_at?->toIso8601String(),
+                'received_at' => $batch->created_at?->toLocalIso8601String(),
             ];
         }
 

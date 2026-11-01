@@ -51,6 +51,26 @@ A comprehensive Laravel-based REST API for device tracking, theft prevention, an
 - Community alert moderation
 - Comprehensive reporting and analytics
 
+## Timezone contract and release checks
+
+`config('app.timezone')` stays `UTC`; `APP_TIMEZONE=Africa/Blantyre` controls local display and business calendar boundaries through `app.local_timezone`. Do not switch the Laravel application timezone or shift existing database rows by two hours.
+
+- Stored instants remain UTC. JSON instants include an explicit offset, including staff report shift and break times. Consumers must parse that offset before formatting in Malawi time.
+- Excel, PDF and email text is formatted in Malawi time at the output boundary.
+- Calendar-only fields (purchase dates, warranty start/end dates and vacancy dates) retain their calendar values. Date-only report filters select the Malawi day and convert its boundaries to UTC; instant filters respect supplied offsets and treat legacy naive datetimes as UTC.
+- Warranties cover both their starting and closing dates in Malawi. `days_remaining` includes today and the closing day (one on the final day, zero when inactive). Weekly report labels use the ISO week year, e.g. 31 December 2025 is `2026-W01`.
+
+When releasing these changes:
+
+1. Include the new support/request helpers, frontend date helper, and `2026_11_01_000001_expand_bounty_claim_types.php` migration in the release. Set `APP_TIMEZONE=Africa/Blantyre` in the API environment.
+2. Back up the database and run `php artisan migrate --force` in the deployment's normal maintenance process. The bounty claim migration preserves legacy types and adds the types accepted by the API. Its rollback refuses to narrow the enum while new claim types are in use.
+3. Run `php artisan config:cache`, restart long-running workers with `php artisan queue:restart`, and reload any persistent application processes used by the deployment. Rebuild and publish the web assets with `npm ci && npm run build` from `web/`.
+4. Verify the database connection actually used by the app is operating in UTC. For MySQL/MariaDB, inspect `SELECT @@session.time_zone, @@global.time_zone, TIMESTAMPDIFF(SECOND, UTC_TIMESTAMP(), NOW()) AS offset_seconds;` on that connection. `offset_seconds` must be zero; `SYSTEM` alone does not establish this. If it is nonzero, investigate the server/session configuration and existing `TIMESTAMP` columns before changing it: their read/write conversion depends on the session timezone. No blanket timestamp migration is part of this release.
+5. Update the Python tracker on each device and follow its README's buffer audit instructions before restarting. API deployment alone does not update installed trackers.
+6. Smoke-test a timestamp near 22:00 UTC (Malawi midnight), a staff report and its Excel export, and a bounty claim. Compare the offset-qualified response with the raw UTC database value. Check any other API clients use offsets rather than stripping them.
+
+Regression checks: run `php -d memory_limit=512M vendor/bin/pest --compact` in `api/`, `npm test` in `web/`, and `python3 -m unittest discover -s tests` in `mufassah-tracker/`. Tests do not establish the timezone of a production database session or update already installed devices.
+
 ## Requirements
 
 - PHP 8.4+

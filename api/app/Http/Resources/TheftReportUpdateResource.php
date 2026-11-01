@@ -28,7 +28,7 @@ class TheftReportUpdateResource extends JsonResource
             'user' => new UserResource($this->whenLoaded('user')),
 
             // Timestamps
-            'created_at' => $this->created_at?->toIso8601String(),
+            'created_at' => $this->created_at?->toLocalIso8601String(),
         ];
     }
 }

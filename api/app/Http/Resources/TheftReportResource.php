@@ -16,7 +16,7 @@ class TheftReportResource extends JsonResource
                 'label' => $this->status->label(),
                 'color' => $this->status->color(),
             ],
-            'theft_date' => $this->theft_date?->toIso8601String(),
+            'theft_date' => $this->theft_date?->toLocalIso8601String(),
             'theft_location' => $this->theft_location,
             'theft_latitude' => $this->theft_latitude,
             'theft_longitude' => $this->theft_longitude,
@@ -32,7 +32,7 @@ class TheftReportResource extends JsonResource
             'evidence_photos' => $this->evidence_photos,
 
             // Recovery information
-            'recovered_at' => $this->recovered_at?->toIso8601String(),
+            'recovered_at' => $this->recovered_at?->toLocalIso8601String(),
             'recovery_location' => $this->recovery_location,
             'recovery_notes' => $this->recovery_notes,
 
@@ -43,8 +43,8 @@ class TheftReportResource extends JsonResource
             'updates' => TheftReportUpdateResource::collection($this->whenLoaded('updates')),
 
             // Timestamps
-            'created_at' => $this->created_at?->toIso8601String(),
-            'updated_at' => $this->updated_at?->toIso8601String(),
+            'created_at' => $this->created_at?->toLocalIso8601String(),
+            'updated_at' => $this->updated_at?->toLocalIso8601String(),
         ];
     }
 }

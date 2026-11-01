@@ -41,9 +41,11 @@ class ShiftEndSummaryNotification extends Notification implements ShouldQueue
         $staffName = $this->shift->user?->name ?? 'Unknown Staff';
         $branchName = $this->shift->branch?->name ?? 'Unknown Branch';
 
-        // Calculate shift duration
-        $startTime = $this->shift->started_at;
-        $endTime = $this->shift->ended_at;
+        // Times are stored in UTC; convert to the local display timezone for
+        // the email body. The duration interval is timezone-independent.
+        $displayTimezone = config('app.local_timezone');
+        $startTime = $this->shift->started_at->copy()->setTimezone($displayTimezone);
+        $endTime = $this->shift->ended_at->copy()->setTimezone($displayTimezone);
         $duration = $endTime->diffAsCarbonInterval($startTime);
 
         return (new MailMessage)

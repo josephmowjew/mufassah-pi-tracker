@@ -18,7 +18,7 @@ use App\Notifications\NewSaleNotification;
 use App\Services\InventoryMovementService;
 use App\Services\ReceiptService;
 use App\Services\SuperAdminSaleNotificationService;
-use Carbon\Carbon;
+use App\Support\LocalTime;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
@@ -79,10 +79,10 @@ class AdminSaleController extends BaseController
             ->when($branchId, fn ($query) => $query->where('branch_id', $branchId));
 
         if (! empty($validated['date_from'])) {
-            $administrativeSaleQuery->where('created_at', '>=', Carbon::parse($validated['date_from'])->startOfDay());
+            $administrativeSaleQuery->where('created_at', '>=', LocalTime::startOfDayUtc($validated['date_from']));
         }
         if (! empty($validated['date_to'])) {
-            $administrativeSaleQuery->where('created_at', '<=', Carbon::parse($validated['date_to'])->endOfDay());
+            $administrativeSaleQuery->where('created_at', '<=', LocalTime::endOfDayUtc($validated['date_to']));
         }
 
         $administrativeSaleAmount = (float) (clone $administrativeSaleQuery)->sum('total_amount');
@@ -813,10 +813,10 @@ class AdminSaleController extends BaseController
         }
 
         if (! empty($validated['date_from'])) {
-            $query->whereDate('sale_date', '>=', $validated['date_from']);
+            $query->where('sale_date', '>=', LocalTime::startOfDayUtc($validated['date_from']));
         }
         if (! empty($validated['date_to'])) {
-            $query->whereDate('sale_date', '<=', $validated['date_to']);
+            $query->where('sale_date', '<=', LocalTime::endOfDayUtc($validated['date_to']));
         }
 
         if ($request->has('search')) {

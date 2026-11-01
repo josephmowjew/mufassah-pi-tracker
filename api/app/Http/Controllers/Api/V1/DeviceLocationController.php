@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\V1;
 use App\Http\Resources\DeviceLocationResource;
 use App\Models\Device;
 use App\Models\DeviceLocation;
+use App\Support\LocalTime;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -22,15 +23,20 @@ class DeviceLocationController extends BaseController
     {
         $this->authorize('viewLocations', $device);
 
+        $request->validate([
+            'from' => ['nullable', 'date'],
+            'to' => ['nullable', 'date', 'after_or_equal:from'],
+        ]);
+
         $query = DeviceLocation::where('device_id', $device->id);
 
         // Filter by date range
-        if ($request->has('from')) {
-            $query->where('recorded_at', '>=', $request->from);
+        if ($request->filled('from')) {
+            $query->where('recorded_at', '>=', LocalTime::instantUtc($request->from));
         }
 
-        if ($request->has('to')) {
-            $query->where('recorded_at', '<=', $request->to);
+        if ($request->filled('to')) {
+            $query->where('recorded_at', '<=', LocalTime::instantUtc($request->to));
         }
 
         // Filter by source (manual or automatic)
@@ -213,11 +219,11 @@ class DeviceLocationController extends BaseController
 
         $query = DeviceLocation::where('device_id', $device->id);
 
-        if ($request->has('from')) {
-            $query->where('recorded_at', '>=', $request->from);
+        if ($request->filled('from')) {
+            $query->where('recorded_at', '>=', LocalTime::instantUtc($request->from));
         }
-        if ($request->has('to')) {
-            $query->where('recorded_at', '<=', $request->to);
+        if ($request->filled('to')) {
+            $query->where('recorded_at', '<=', LocalTime::instantUtc($request->to));
         }
 
         $locations = $query->orderBy('recorded_at', 'asc')->get();
@@ -253,8 +259,8 @@ class DeviceLocationController extends BaseController
             'total_distance_km' => round($totalDistance / 1000, 2),
             'average_speed_kmh' => $averageSpeed ? round($averageSpeed * 3.6, 2) : null,
             'max_speed_kmh' => $maxSpeed ? round($maxSpeed * 3.6, 2) : null,
-            'first_location_at' => $locations->first()?->recorded_at?->toIso8601String(),
-            'last_location_at' => $locations->last()?->recorded_at?->toIso8601String(),
+            'first_location_at' => $locations->first()?->recorded_at?->toLocalIso8601String(),
+            'last_location_at' => $locations->last()?->recorded_at?->toLocalIso8601String(),
         ]);
     }
 
@@ -276,11 +282,11 @@ class DeviceLocationController extends BaseController
 
         $query = DeviceLocation::where('device_id', $device->id);
 
-        if ($request->has('from')) {
-            $query->where('recorded_at', '>=', $request->from);
+        if ($request->filled('from')) {
+            $query->where('recorded_at', '>=', LocalTime::instantUtc($request->from));
         }
-        if ($request->has('to')) {
-            $query->where('recorded_at', '<=', $request->to);
+        if ($request->filled('to')) {
+            $query->where('recorded_at', '<=', LocalTime::instantUtc($request->to));
         }
 
         $locations = $query->get(['latitude', 'longitude']);
@@ -321,7 +327,7 @@ class DeviceLocationController extends BaseController
         ]);
 
         $locations = DeviceLocation::where('device_id', $device->id)
-            ->whereBetween('recorded_at', [$request->from, $request->to])
+            ->whereBetween('recorded_at', [LocalTime::instantUtc($request->from), LocalTime::instantUtc($request->to)])
             ->orderBy('recorded_at', 'asc')
             ->get();
 
@@ -338,7 +344,7 @@ class DeviceLocationController extends BaseController
                 'speed' => $location->speed ? (float) $location->speed : null,
                 'heading' => $location->heading ? (float) $location->heading : null,
                 'accuracy' => $location->accuracy ? (float) $location->accuracy : null,
-                'recorded_at' => $location->recorded_at->toIso8601String(),
+                'recorded_at' => $location->recorded_at->toLocalIso8601String(),
                 'distance_from_previous' => round($distanceFromPrevious, 2),
             ];
         });
