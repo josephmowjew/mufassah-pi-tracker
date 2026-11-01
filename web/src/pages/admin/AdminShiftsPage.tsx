@@ -1,7 +1,8 @@
-import { formatMalawiDate, formatMalawiDateTime, formatMalawiTime } from '@/lib/datetime'
+import { formatMalawiDateTime, formatMalawiTime } from '@/lib/datetime'
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Search, Clock, CheckCircle, XCircle, Loader2, MapPin, ShoppingCart, DollarSign, Eye } from 'lucide-react'
+import { ShiftTimes } from '@/components/shifts/ShiftTimes'
 import { Authorize } from '@/components/auth/Authorize'
 import { PERMISSIONS } from '@/stores/auth-store'
 import apiClient from '@/api/client'
@@ -178,20 +179,9 @@ export default function AdminShiftsPage() {
     }
   }
 
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString)
-    return formatMalawiDate(date, 'en-MW', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    })
-  }
-
   return (
     <Authorize permission={PERMISSIONS.ACCESS_ADMIN_PANEL} fallback={<div className="p-6">Access denied</div>}>
-      <div className="space-y-6 p-6">
+      <div className="min-w-0 space-y-6 p-2 sm:p-6">
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
@@ -206,10 +196,10 @@ export default function AdminShiftsPage() {
 
         {/* Statistics Cards */}
         {stats && (
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 2xl:grid-cols-4 gap-4">
             <div className="bg-white rounded-xl border border-slate-200 p-4">
               <div className="flex items-center gap-3">
-                <div className="h-10 w-10 rounded-lg bg-slate-100 flex items-center justify-center">
+                <div className="h-10 w-10 shrink-0 rounded-lg bg-slate-100 flex items-center justify-center">
                   <Clock className="h-5 w-5 text-slate-600" />
                 </div>
                 <div>
@@ -220,7 +210,7 @@ export default function AdminShiftsPage() {
             </div>
             <div className="bg-white rounded-xl border border-slate-200 p-4">
               <div className="flex items-center gap-3">
-                <div className="h-10 w-10 rounded-lg bg-emerald-100 flex items-center justify-center">
+                <div className="h-10 w-10 shrink-0 rounded-lg bg-emerald-100 flex items-center justify-center">
                   <CheckCircle className="h-5 w-5 text-emerald-600" />
                 </div>
                 <div>
@@ -231,18 +221,18 @@ export default function AdminShiftsPage() {
             </div>
             <div className="bg-white rounded-xl border border-slate-200 p-4">
               <div className="flex items-center gap-3">
-                <div className="h-10 w-10 rounded-lg bg-blue-100 flex items-center justify-center">
+                <div className="h-10 w-10 shrink-0 rounded-lg bg-blue-100 flex items-center justify-center">
                   <DollarSign className="h-5 w-5 text-blue-600" />
                 </div>
                 <div>
-                  <p className="text-2xl font-bold text-blue-600">MWK {(stats.total_revenue || 0).toLocaleString()}</p>
+                  <p className="text-xl font-bold text-blue-600 tabular-nums break-words">MWK {(stats.total_revenue || 0).toLocaleString()}</p>
                   <p className="text-xs text-slate-500">Total Revenue</p>
                 </div>
               </div>
             </div>
             <div className="bg-white rounded-xl border border-slate-200 p-4">
               <div className="flex items-center gap-3">
-                <div className="h-10 w-10 rounded-lg bg-purple-100 flex items-center justify-center">
+                <div className="h-10 w-10 shrink-0 rounded-lg bg-purple-100 flex items-center justify-center">
                   <ShoppingCart className="h-5 w-5 text-purple-600" />
                 </div>
                 <div>
@@ -256,11 +246,12 @@ export default function AdminShiftsPage() {
 
         {/* Filters */}
         <div className="bg-white rounded-xl border border-slate-200 p-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6 gap-4">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
               <input
                 type="text"
+                aria-label="Search staff"
                 placeholder="Search staff..."
                 value={search}
                 onChange={(e) => { setSearch(e.target.value); setPage(1) }}
@@ -268,9 +259,10 @@ export default function AdminShiftsPage() {
               />
             </div>
             <select
+              aria-label="Status"
               value={statusFilter}
               onChange={(e) => { setStatusFilter(e.target.value); setPage(1) }}
-              className="px-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="min-w-0 w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
               <option value="">All Status</option>
               <option value="active">Active</option>
@@ -278,9 +270,10 @@ export default function AdminShiftsPage() {
               <option value="cancelled">Cancelled</option>
             </select>
             {isSuperAdmin && <select
+              aria-label="Branch"
               value={branchFilter}
               onChange={(e) => { setBranchFilter(e.target.value); setPage(1) }}
-              className="px-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="min-w-0 w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
               <option value="">All Branches</option>
               {branches?.map((branch) => (
@@ -290,9 +283,10 @@ export default function AdminShiftsPage() {
               ))}
             </select>}
             <select
+              aria-label="Staff"
               value={userFilter}
               onChange={(e) => { setUserFilter(e.target.value); setPage(1) }}
-              className="px-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="min-w-0 w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
               <option value="">All Staff</option>
               {staff?.map((user) => (
@@ -303,16 +297,18 @@ export default function AdminShiftsPage() {
             </select>
             <input
               type="date"
+              aria-label="From date"
               value={dateFrom}
-              onChange={(e) => setDateFrom(e.target.value)}
-              className="px-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              onChange={(e) => { setDateFrom(e.target.value); setPage(1) }}
+              className="min-w-0 w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               placeholder="From"
             />
             <input
               type="date"
+              aria-label="To date"
               value={dateTo}
-              onChange={(e) => setDateTo(e.target.value)}
-              className="px-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              onChange={(e) => { setDateTo(e.target.value); setPage(1) }}
+              className="min-w-0 w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               placeholder="To"
             />
           </div>
@@ -330,75 +326,82 @@ export default function AdminShiftsPage() {
               <p className="text-slate-500">No shifts found</p>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full">
+            <div className="overflow-x-auto" role="region" aria-label="Staff shifts" tabIndex={0}>
+              <table className="w-full min-w-[1390px] table-fixed text-sm">
+                <colgroup>
+                  <col className="w-[230px]" />
+                  <col className="w-[150px]" />
+                  <col className="w-[290px]" />
+                  <col className="w-[100px]" />
+                  <col className="w-[100px]" />
+                  <col className="w-[90px]" />
+                  <col className="w-[130px]" />
+                  <col className="w-[150px]" />
+                  <col className="w-[65px]" />
+                  <col className="w-[85px]" />
+                </colgroup>
                 <thead className="bg-slate-50 border-b border-slate-200">
                   <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Staff</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Branch</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Date & Time</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Duration</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Breaks</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Worked</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Status</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Revenue</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Sales</th>
-                    <th className="px-6 py-3 text-right text-xs font-medium text-slate-500 uppercase tracking-wider">Actions</th>
+                    <th className="px-3 py-3 text-left whitespace-nowrap text-xs font-medium text-slate-500 uppercase tracking-wider">Staff</th>
+                    <th className="px-3 py-3 text-left whitespace-nowrap text-xs font-medium text-slate-500 uppercase tracking-wider">Branch</th>
+                    <th className="px-3 py-3 text-left whitespace-nowrap text-xs font-medium text-slate-500 uppercase tracking-wider">Shift times<span className="block text-[11px] font-normal normal-case tracking-normal">Malawi time (CAT)</span></th>
+                    <th className="px-3 py-3 text-left whitespace-nowrap text-xs font-medium text-slate-500 uppercase tracking-wider">Duration</th>
+                    <th className="px-3 py-3 text-left whitespace-nowrap text-xs font-medium text-slate-500 uppercase tracking-wider">Breaks</th>
+                    <th className="px-3 py-3 text-left whitespace-nowrap text-xs font-medium text-slate-500 uppercase tracking-wider">Worked</th>
+                    <th className="px-3 py-3 text-left whitespace-nowrap text-xs font-medium text-slate-500 uppercase tracking-wider">Status</th>
+                    <th className="px-3 py-3 text-right whitespace-nowrap text-xs font-medium text-slate-500 uppercase tracking-wider">Revenue</th>
+                    <th className="px-3 py-3 text-left whitespace-nowrap text-xs font-medium text-slate-500 uppercase tracking-wider">Sales</th>
+                    <th className="px-3 py-3 text-right whitespace-nowrap text-xs font-medium text-slate-500 uppercase tracking-wider">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200">
                   {shifts.map((shift) => (
-                    <tr key={shift.id} className="hover:bg-slate-50 transition-colors">
-                      <td className="px-6 py-4">
+                    <tr key={shift.id} className="align-middle hover:bg-slate-50 transition-colors">
+                      <td className="px-3 py-3 tabular-nums">
                         <div className="flex items-center gap-3">
-                          <div className="h-8 w-8 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white text-sm font-medium">
+                          <div className="h-8 w-8 shrink-0 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white text-sm font-medium">
                             {shift.user?.name?.charAt(0).toUpperCase()}
                           </div>
-                          <div>
-                            <p className="font-medium text-slate-900">{shift.user?.name}</p>
-                            <p className="text-xs text-slate-500">{shift.user?.email}</p>
+                          <div className="min-w-0">
+                            <p className="truncate font-medium text-slate-900" title={shift.user?.name}>{shift.user?.name}</p>
+                            <p className="truncate text-xs text-slate-500" title={shift.user?.email ?? undefined}>{shift.user?.email}</p>
                           </div>
                         </div>
                       </td>
-                      <td className="px-6 py-4">
+                      <td className="px-3 py-3 tabular-nums">
                         <div className="flex items-center gap-2">
-                          <MapPin className="h-4 w-4 text-slate-400" />
-                          <span className="text-slate-700">{shift.branch?.name}</span>
+                          <MapPin className="h-4 w-4 shrink-0 text-slate-400" />
+                          <span className="line-clamp-2 text-slate-700" title={shift.branch?.name}>{shift.branch?.name}</span>
                         </div>
                       </td>
-                      <td className="px-6 py-4">
-                        <div className="text-sm">
-                          <p className="text-slate-900 font-medium">{formatDate(shift.started_at)}</p>
-                          {shift.ended_at && (
-                            <p className="text-slate-500">to {formatDate(shift.ended_at)}</p>
-                          )}
-                        </div>
+                      <td className="px-3 py-3 tabular-nums">
+                        <ShiftTimes startedAt={shift.started_at} endedAt={shift.ended_at} status={shift.status} />
                       </td>
-                      <td className="px-6 py-4">
-                        <span className="text-slate-700">{formatDuration(shift.started_at, shift.ended_at)}</span>
+                      <td className="px-3 py-3 tabular-nums">
+                        <span className="whitespace-nowrap text-slate-700">{formatDuration(shift.started_at, shift.ended_at)}</span>
                       </td>
-                      <td className="px-6 py-4">
-                        <span className="text-amber-700">
+                      <td className="px-3 py-3 tabular-nums">
+                        <span className="whitespace-nowrap text-amber-700">
                           {shift.break_minutes > 0
                             ? `${formatMinutes(shift.break_minutes)} (${shift.break_count})`
                             : '-'}
                         </span>
                       </td>
-                      <td className="px-6 py-4">
-                        <span className="font-medium text-slate-900">
+                      <td className="px-3 py-3 tabular-nums">
+                        <span className="whitespace-nowrap font-medium text-slate-900">
                           {formatMinutes(shift.worked_minutes)}
                         </span>
                       </td>
-                      <td className="px-6 py-4">
+                      <td className="px-3 py-3 tabular-nums">
                         {getStatusBadge(shift.status)}
                       </td>
-                      <td className="px-6 py-4">
-                        <span className="font-medium text-blue-600">MWK {shift.revenue.toLocaleString()}</span>
+                      <td className="px-3 py-3 text-right tabular-nums">
+                        <span className="whitespace-nowrap font-medium text-blue-600">{formatCurrency(shift.revenue)}</span>
                       </td>
-                      <td className="px-6 py-4">
+                      <td className="px-3 py-3 tabular-nums">
                         <span className="text-slate-700">{shift.sales_count || 0}</span>
                       </td>
-                      <td className="px-6 py-4 text-right">
+                      <td className="px-3 py-3 text-right">
                         <button
                           onClick={() => handleViewShift(shift)}
                           className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 text-sm font-medium"
