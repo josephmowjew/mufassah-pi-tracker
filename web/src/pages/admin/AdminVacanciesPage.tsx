@@ -1,3 +1,4 @@
+import { formatMalawiDate } from '@/lib/datetime'
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { BriefcaseBusiness, CalendarDays, Edit2, Eye, EyeOff, Loader2, Plus, Search, Trash2, X } from 'lucide-react'
@@ -38,7 +39,7 @@ function errorMessage(error: unknown, fallback: string) {
 
 function formatClosingDate(date: string | null) {
   if (!date) return 'No closing date'
-  return new Intl.DateTimeFormat('en', { day: 'numeric', month: 'short', year: 'numeric' }).format(new Date(`${date}T00:00:00`))
+  return formatMalawiDate(date, 'en', { day: 'numeric', month: 'short', year: 'numeric' })
 }
 
 export default function AdminVacanciesPage() {

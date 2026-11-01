@@ -1,3 +1,4 @@
+import { formatMalawiDate } from '@/lib/datetime'
 import { useState, useRef } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -488,7 +489,7 @@ export default function ProfilePage() {
             </label>
             <p className="text-foreground">
               {user?.created_at
-                ? new Date(user.created_at).toLocaleDateString('en-US', {
+                ? formatMalawiDate(user.created_at, 'en-US', {
                     month: 'long',
                     day: 'numeric',
                     year: 'numeric',

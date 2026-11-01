@@ -1,3 +1,4 @@
+import { malawiCalendarDate } from '@/lib/datetime'
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
@@ -212,7 +213,7 @@ function toIsoDate(date: Date): string {
 }
 
 function monthRange(offset: number): { from: string; to: string } {
-  const now = new Date()
+  const now = malawiCalendarDate()
   return {
     from: toIsoDate(new Date(now.getFullYear(), now.getMonth() + offset, 1)),
     to: toIsoDate(new Date(now.getFullYear(), now.getMonth() + offset + 1, 0)),
@@ -220,12 +221,12 @@ function monthRange(offset: number): { from: string; to: string } {
 }
 
 function yearRange(): { from: string; to: string } {
-  const year = new Date().getFullYear()
+  const year = malawiCalendarDate().getFullYear()
   return { from: `${year}-01-01`, to: `${year}-12-31` }
 }
 
 function quarterRange(): { from: string; to: string } {
-  const now = new Date()
+  const now = malawiCalendarDate()
   const startMonth = Math.floor(now.getMonth() / 3) * 3
   return {
     from: toIsoDate(new Date(now.getFullYear(), startMonth, 1)),

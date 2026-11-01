@@ -1,3 +1,4 @@
+import { formatMalawiDateTime } from '@/lib/datetime'
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useLocation } from 'react-router-dom'
@@ -60,7 +61,7 @@ const formatMoney = (value: number | string | null | undefined) =>
   `MWK ${Number(value || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 
 const formatDate = (value: string | null | undefined) =>
-  value ? new Date(value).toLocaleString() : '—'
+  value ? formatMalawiDateTime(value) : '—'
 
 const roundMoney = (value: number) => Math.round((value + Number.EPSILON) * 100) / 100
 

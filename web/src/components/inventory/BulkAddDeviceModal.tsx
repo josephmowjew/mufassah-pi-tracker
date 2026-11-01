@@ -1,3 +1,4 @@
+import { malawiDateInput } from '@/lib/datetime'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { DeviceCategory, InventoryReceiptData, InventoryReceiptLineData } from '@/types'
@@ -435,7 +436,7 @@ export default function BulkAddDeviceModal({ onClose }: BulkAddDeviceModalProps)
     branch_id: currentUser?.branch_id || 0,
     supplier: '',
     reference_number: '',
-    purchase_date: new Date().toISOString().slice(0, 10),
+    purchase_date: malawiDateInput(),
     purchase_location: '',
     notes: '',
     lines: [emptyLine()],

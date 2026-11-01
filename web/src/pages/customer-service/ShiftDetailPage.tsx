@@ -1,18 +1,18 @@
 import { useParams, Link } from 'react-router-dom'
 import { ArrowLeft, Clock, TrendingUp, ShoppingCart, User, Building2, DollarSign } from 'lucide-react'
 import { useShift } from '@/hooks/useShifts'
-import { format } from 'date-fns'
+import { formatMalawiDate, formatMalawiTime } from '@/lib/datetime'
 
 export default function ShiftDetailPage() {
   const { id } = useParams<{ id: string }>()
   const { data: shift, isLoading, error } = useShift(parseInt(id || '0'))
 
   const formatDateTime = (dateString: string) => {
-    return format(new Date(dateString), 'MMM dd, yyyy • HH:mm:ss')
+    return `${formatMalawiDate(dateString, 'en-US', { month: 'short', day: '2-digit', year: 'numeric' })} • ${formatMalawiTime(dateString, 'en-GB')}`
   }
 
   const formatTime = (dateString: string) => {
-    return format(new Date(dateString), 'HH:mm:ss')
+    return formatMalawiTime(dateString, 'en-GB')
   }
 
   const formatDuration = (minutes: number | null) => {

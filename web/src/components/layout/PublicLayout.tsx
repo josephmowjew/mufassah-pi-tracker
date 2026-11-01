@@ -1,3 +1,4 @@
+import { malawiCalendarDate } from '@/lib/datetime'
 import { useEffect, useRef, useState } from 'react'
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
 import { ArrowUpRight, Mail, Menu, Phone, X } from 'lucide-react'
@@ -217,7 +218,7 @@ export default function PublicLayout() {
             </div>
           </div>
           <div className="marketing-footer-bottom">
-            <span>© {new Date().getFullYear()} Mufasah Electronics.</span>
+            <span>© {malawiCalendarDate().getFullYear()} Mufasah Electronics.</span>
             <span>Built around your everyday technology.</span>
           </div>
         </div>

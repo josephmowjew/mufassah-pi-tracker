@@ -1,3 +1,4 @@
+import { formatMalawiDate } from '@/lib/datetime'
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Plus, Search, Edit, Trash2, Shield, Ban, Mail, Loader2, CheckCircle, XCircle, Users, Eye, RefreshCw, MailCheck, X, KeyRound, SlidersHorizontal } from 'lucide-react'
@@ -525,7 +526,7 @@ export default function AdminUsersPage() {
                           )}
                         </td>
                         <td className="py-3 px-4 text-sm text-slate-500">
-                          {new Date(user.created_at).toLocaleDateString()}
+                          {formatMalawiDate(user.created_at)}
                         </td>
                         <td className="py-3 px-4">
                           <div className="flex items-center justify-end gap-1">
@@ -676,7 +677,7 @@ export default function AdminUsersPage() {
                 </div>
                 <div className="p-3 bg-slate-50 rounded-lg">
                   <p className="text-xs text-slate-500 mb-1">Joined</p>
-                  <p className="text-sm font-medium text-slate-700">{new Date(selectedUser.created_at).toLocaleDateString()}</p>
+                  <p className="text-sm font-medium text-slate-700">{formatMalawiDate(selectedUser.created_at)}</p>
                 </div>
                 <div className="p-3 bg-slate-50 rounded-lg">
                   <p className="text-xs text-slate-500 mb-1">Phone</p>

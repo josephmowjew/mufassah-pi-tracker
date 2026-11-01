@@ -1,3 +1,4 @@
+import { formatMalawiDate, formatMalawiDateTime, formatMalawiTime } from '@/lib/datetime'
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Search, Clock, CheckCircle, XCircle, Loader2, MapPin, ShoppingCart, DollarSign, Eye } from 'lucide-react'
@@ -179,7 +180,7 @@ export default function AdminShiftsPage() {
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString)
-    return date.toLocaleDateString('en-MW', {
+    return formatMalawiDate(date, 'en-MW', {
       year: 'numeric',
       month: 'short',
       day: 'numeric',
@@ -506,12 +507,12 @@ function ShiftDetailModal({ shift, onClose }: ShiftDetailModalProps) {
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <div className="bg-slate-50 rounded-lg p-4">
                   <p className="text-xs text-slate-500 mb-1">Started</p>
-                  <p className="font-medium text-slate-900">{new Date(shiftDetail.started_at).toLocaleString()}</p>
+                  <p className="font-medium text-slate-900">{formatMalawiDateTime(shiftDetail.started_at)}</p>
                 </div>
                 <div className="bg-slate-50 rounded-lg p-4">
                   <p className="text-xs text-slate-500 mb-1">Ended</p>
                   <p className="font-medium text-slate-900">
-                    {shiftDetail.ended_at ? new Date(shiftDetail.ended_at).toLocaleString() : 'Active'}
+                    {shiftDetail.ended_at ? formatMalawiDateTime(shiftDetail.ended_at) : 'Active'}
                   </p>
                 </div>
                 <div className="bg-slate-50 rounded-lg p-4">
@@ -555,10 +556,10 @@ function ShiftDetailModal({ shift, onClose }: ShiftDetailModalProps) {
                           <tr key={entry.id}>
                             <td className="px-4 py-2 text-sm text-slate-700">{entry.type_label}</td>
                             <td className="px-4 py-2 text-sm text-slate-700">
-                              {new Date(entry.started_at).toLocaleString()}
+                              {formatMalawiDateTime(entry.started_at)}
                             </td>
                             <td className="px-4 py-2 text-sm text-slate-700">
-                              {entry.ended_at ? new Date(entry.ended_at).toLocaleString() : 'In progress'}
+                              {entry.ended_at ? formatMalawiDateTime(entry.ended_at) : 'In progress'}
                             </td>
                             <td className="px-4 py-2 text-sm text-slate-700 text-right">
                               {entry.duration_minutes === null ? '-' : Math.floor(entry.duration_minutes)}
@@ -615,7 +616,7 @@ function ShiftDetailModal({ shift, onClose }: ShiftDetailModalProps) {
                             <td className="px-4 py-3 text-sm font-medium text-blue-600">{sale.sale_number}</td>
                             <td className="px-4 py-3 text-sm text-slate-700">{sale.customer?.name || 'Walk-in'}</td>
                             <td className="px-4 py-3 text-sm text-slate-500">
-                              {new Date(sale.created_at).toLocaleTimeString()}
+                              {formatMalawiTime(sale.created_at)}
                             </td>
                             <td className="px-4 py-3 text-sm text-slate-900 text-right font-medium">
                               {formatCurrency(Number(sale.total_amount))}

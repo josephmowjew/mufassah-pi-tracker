@@ -1,3 +1,4 @@
+import { formatMalawiDate } from '@/lib/datetime'
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
@@ -236,7 +237,7 @@ function TheftReportItem({
         <div className="flex flex-wrap items-center gap-4 text-sm text-slate-500">
           <span className="flex items-center gap-1">
             <Calendar className="h-3.5 w-3.5" />
-            Theft date: {new Date(report.theft_date).toLocaleDateString()}
+            Theft date: {formatMalawiDate(report.theft_date)}
           </span>
           {report.theft_location && (
             <span className="flex items-center gap-1">
@@ -246,7 +247,7 @@ function TheftReportItem({
           )}
           <span className="flex items-center gap-1">
             <Clock className="h-3.5 w-3.5" />
-            Reported: {new Date(report.created_at).toLocaleDateString()}
+            Reported: {formatMalawiDate(report.created_at)}
           </span>
         </div>
 

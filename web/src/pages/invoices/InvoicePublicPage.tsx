@@ -1,3 +1,4 @@
+import { formatMalawiDateTime } from '@/lib/datetime'
 import { useQuery } from '@tanstack/react-query'
 import { useParams } from 'react-router-dom'
 import { FileText, Loader2, Mail, ShieldCheck } from 'lucide-react'
@@ -5,7 +6,7 @@ import apiClient from '@/api/client'
 import type { Invoice } from '@/types'
 
 const money = (value: number | string | null | undefined) => `MWK ${Number(value || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-const date = (value: string) => new Date(value).toLocaleString()
+const date = (value: string) => formatMalawiDateTime(value)
 
 export default function InvoicePublicPage() {
   const { token } = useParams<{ token: string }>()

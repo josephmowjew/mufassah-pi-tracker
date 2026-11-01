@@ -1,3 +1,4 @@
+import { malawiDateInput } from '@/lib/datetime'
 import { useState, useEffect } from 'react'
 import { X, Loader2, Smartphone } from 'lucide-react'
 import { toast } from 'sonner'
@@ -238,7 +239,7 @@ export default function EditDeviceModal({ device, isOpen, onClose }: EditDeviceM
                     name="purchase_date"
                     value={formData.purchase_date}
                     onChange={handleChange}
-                    max={new Date().toISOString().split('T')[0]}
+                    max={malawiDateInput()}
                     className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
                   />
                 </div>

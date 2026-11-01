@@ -1,3 +1,4 @@
+import { formatMalawiDateTime } from '@/lib/datetime'
 import { useEffect, useRef, useState } from 'react'
 import { Printer, X } from 'lucide-react'
 import { createPortal, flushSync } from 'react-dom'
@@ -38,7 +39,7 @@ export default function ReceiptModal({ sale, onClose }: ReceiptModalProps) {
   }, [])
 
   const formatDateTime = (dateString: string) => {
-    return new Date(dateString).toLocaleString()
+    return formatMalawiDateTime(dateString)
   }
 
   const handlePrint = (copy: ReceiptCopy) => {

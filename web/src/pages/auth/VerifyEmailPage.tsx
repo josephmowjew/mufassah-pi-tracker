@@ -1,3 +1,4 @@
+import { malawiCalendarDate } from '@/lib/datetime'
 import { useEffect, useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { CheckCircle, XCircle, Loader2, Mail, MapPin } from 'lucide-react'
@@ -189,7 +190,7 @@ export default function VerifyEmailPage() {
 
       {/* Footer */}
       <p className="mt-8 text-xs text-muted-foreground text-center">
-        &copy; {new Date().getFullYear()} Mufasah Electronics. All rights reserved.
+        &copy; {malawiCalendarDate().getFullYear()} Mufasah Electronics. All rights reserved.
       </p>
     </div>
   )

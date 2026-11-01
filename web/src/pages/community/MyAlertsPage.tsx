@@ -1,3 +1,4 @@
+import { formatMalawiDate } from '@/lib/datetime'
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
@@ -304,7 +305,7 @@ function MyAlertCard({ alert, onPause, onResume, onResolve, onSetBounty }: MyAle
           </span>
           <span className="flex items-center gap-1 ml-auto text-slate-400">
             <Clock className="h-3.5 w-3.5" />
-            {new Date(alert.created_at).toLocaleDateString()}
+            {formatMalawiDate(alert.created_at)}
           </span>
         </div>
 

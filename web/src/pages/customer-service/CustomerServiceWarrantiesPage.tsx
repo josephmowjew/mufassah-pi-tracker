@@ -1,3 +1,4 @@
+import { formatMalawiDate } from '@/lib/datetime'
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Search, FileText, Loader2, AlertCircle, Clock, CheckCircle, XCircle } from 'lucide-react'
@@ -182,7 +183,7 @@ export default function CustomerServiceWarrantiesPage() {
                       <td className="px-6 py-4">{getStatusBadge(claim.status)}</td>
                       <td className="px-6 py-4">
                         <p className="text-sm text-slate-700">
-                          {new Date(claim.created_at).toLocaleDateString()}
+                          {formatMalawiDate(claim.created_at)}
                         </p>
                       </td>
                     </tr>

@@ -1,3 +1,4 @@
+import { formatMalawiDate } from '@/lib/datetime'
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
@@ -334,7 +335,7 @@ export default function AdminFamiliesPage() {
                         </span>
                       </td>
                       <td className="py-3 px-4 text-sm text-slate-500">
-                        {new Date(family.created_at).toLocaleDateString()}
+                        {formatMalawiDate(family.created_at)}
                       </td>
                       <td className="py-3 px-4">
                         <div className="flex items-center justify-end gap-1">

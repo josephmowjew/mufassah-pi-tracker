@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Clock, ArrowLeft, Eye, TrendingUp, ShoppingCart } from 'lucide-react'
 import { useShiftHistory } from '@/hooks/useShifts'
-import { format } from 'date-fns'
+import { formatMalawiDate, formatMalawiTime } from '@/lib/datetime'
 
 export default function ShiftHistoryPage() {
   const [statusFilter, setStatusFilter] = useState('')
@@ -33,7 +33,7 @@ export default function ShiftHistoryPage() {
   }
 
   const formatDate = (dateString: string) => {
-    return format(new Date(dateString), 'MMM dd, yyyy • HH:mm:ss')
+    return `${formatMalawiDate(dateString, 'en-US', { month: 'short', day: '2-digit', year: 'numeric' })} • ${formatMalawiTime(dateString, 'en-GB')}`
   }
 
   const formatDuration = (minutes: number | null) => {

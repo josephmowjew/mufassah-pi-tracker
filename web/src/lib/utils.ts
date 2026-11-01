@@ -1,3 +1,4 @@
+import { formatMalawiDate } from '@/lib/datetime'
 import { type ClassValue, clsx } from 'clsx'
 import { twMerge } from 'tailwind-merge'
 
@@ -19,10 +20,7 @@ export function requiresApiConfirmation(error: unknown): boolean {
 }
 
 export function formatDate(date: string | Date, options?: Intl.DateTimeFormatOptions) {
-  return new Intl.DateTimeFormat('en-US', {
-    dateStyle: 'medium',
-    ...options,
-  }).format(new Date(date))
+  return formatMalawiDate(date, 'en-US', { dateStyle: 'medium', ...options })
 }
 
 export function formatCurrency(amount: number, currency = 'MWK') {

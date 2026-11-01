@@ -1,3 +1,4 @@
+import { formatMalawiDate, formatMalawiDateTime } from '@/lib/datetime'
 import { useState } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import {
@@ -207,7 +208,7 @@ export default function CommunityAlertDetailPage() {
                       Last seen: {alert.theft_report.theft_location}
                     </p>
                     <p className="text-xs text-slate-400">
-                      {new Date(alert.theft_report.theft_date).toLocaleDateString()}
+                      {formatMalawiDate(alert.theft_report.theft_date)}
                     </p>
                   </div>
                 </div>
@@ -229,7 +230,7 @@ export default function CommunityAlertDetailPage() {
                 </span>
                 <span className="flex items-center gap-1.5 text-sm text-slate-400">
                   <Clock className="h-4 w-4" />
-                  Posted {new Date(alert.created_at).toLocaleDateString()}
+                  Posted {formatMalawiDate(alert.created_at)}
                 </span>
               </div>
             </div>
@@ -472,7 +473,7 @@ function TipCard({ tip }: { tip: CommunityTip }) {
               </p>
             )}
             <p className="text-xs text-slate-400 mt-1">
-              {new Date(tip.created_at).toLocaleString()}
+              {formatMalawiDateTime(tip.created_at)}
             </p>
           </div>
         </div>

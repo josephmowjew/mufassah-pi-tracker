@@ -1,3 +1,4 @@
+import { formatMalawiDate } from '@/lib/datetime'
 import type { Device } from '@/types'
 import { Package, Smartphone, Hash, CheckCircle, Clock, Tag, RotateCcw, XCircle, Loader2 } from 'lucide-react'
 import { Authorize } from '@/components/auth/Authorize'
@@ -116,7 +117,7 @@ export default function SerialViewTable({ devices, isLoading, onChangeStatus, on
                 </td>
                 <td className="px-6 py-4">
                   <span className="text-sm text-slate-500">
-                    {new Date(device.created_at).toLocaleDateString()}
+                    {formatMalawiDate(device.created_at)}
                   </span>
                 </td>
                 <td className="px-6 py-4 text-right">

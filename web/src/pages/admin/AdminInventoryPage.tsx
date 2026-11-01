@@ -1,3 +1,4 @@
+import { formatMalawiDate } from '@/lib/datetime'
 import { useState, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Search, Package, Plus, Loader2, LayoutGrid, List, Layers, Upload } from 'lucide-react'
@@ -70,7 +71,7 @@ const formatMoney = (value: number | string | null | undefined) => {
 
 const formatDate = (value: string | null | undefined) => {
   if (!value) return '-'
-  return new Date(value).toLocaleDateString()
+  return formatMalawiDate(value)
 }
 
 export default function AdminInventoryPage() {

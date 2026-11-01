@@ -1,3 +1,4 @@
+import { formatMalawiDate, malawiCalendarDate } from '@/lib/datetime'
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Search, ShoppingCart, Plus, Loader2, User, Eye, CheckCircle, XCircle, RotateCcw, Clock, CalendarDays, Receipt, Smartphone, Trash2, Package, UserPlus, X, Minus, DollarSign, TrendingUp } from 'lucide-react'
@@ -76,7 +77,7 @@ const formatDateInput = (date: Date) => {
 const getDurationRange = (preset: DurationPreset): { from: string; to: string } | null => {
   if (preset === 'all' || preset === 'custom') return null
 
-  const today = new Date()
+  const today = malawiCalendarDate()
   const currentDay = new Date(today.getFullYear(), today.getMonth(), today.getDate())
 
   if (preset === 'today') {
@@ -960,7 +961,7 @@ export default function SalesPage() {
                       </td>
                       <td className="px-6 py-4">
                         <span className="text-sm text-slate-500">
-                          {new Date(sale.sale_date).toLocaleDateString()}
+                          {formatMalawiDate(sale.sale_date)}
                         </span>
                       </td>
                       <td className="px-6 py-4 text-right">

@@ -1,3 +1,4 @@
+import { formatMalawiDate, formatMalawiDateTime } from '@/lib/datetime'
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
@@ -463,7 +464,7 @@ export default function IoTModulesPage() {
                         <td className="py-3 px-4">
                           {module.last_ping ? (
                             <span className="text-sm text-slate-500">
-                              {new Date(module.last_ping).toLocaleString()}
+                              {formatMalawiDateTime(module.last_ping)}
                             </span>
                           ) : (
                             <span className="text-sm text-slate-400">Never</span>
@@ -824,7 +825,7 @@ export default function IoTModulesPage() {
                       <span className="text-xs text-slate-500">Last Ping</span>
                     </div>
                     <p className="text-sm font-medium text-slate-700">
-                      {new Date(selectedModule.last_ping).toLocaleString()}
+                      {formatMalawiDateTime(selectedModule.last_ping)}
                     </p>
                   </div>
                 )}
@@ -835,7 +836,7 @@ export default function IoTModulesPage() {
                       <span className="text-xs text-slate-500">Activated</span>
                     </div>
                     <p className="text-sm font-medium text-slate-700">
-                      {new Date(selectedModule.activated_at).toLocaleDateString()}
+                      {formatMalawiDate(selectedModule.activated_at)}
                     </p>
                   </div>
                 )}

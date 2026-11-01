@@ -1,3 +1,4 @@
+import { formatMalawiDate, formatMalawiTime, malawiCalendarDate } from '@/lib/datetime'
 import {
   Users,
   Smartphone,
@@ -63,9 +64,7 @@ const formatDateInput = (date: Date): string => {
 }
 
 const formatDisplayDate = (value: string): string => {
-  const date = new Date(`${value}T00:00:00`)
-
-  return date.toLocaleDateString(undefined, {
+  return formatMalawiDate(value, undefined, {
     month: 'short',
     day: 'numeric',
     year: 'numeric',
@@ -73,7 +72,7 @@ const formatDisplayDate = (value: string): string => {
 }
 
 const getDefaultSalesRange = () => {
-  const today = new Date()
+  const today = malawiCalendarDate()
   return {
     from: formatDateInput(new Date(today.getFullYear(), 0, 1)),
     to: formatDateInput(today),
@@ -187,7 +186,7 @@ export default function AdminDashboardPage() {
             <div className="flex items-center gap-3">
               <div className="px-4 py-2 bg-white/10 backdrop-blur-sm rounded-xl border border-white/20">
                 <p className="text-xs text-slate-400">Last updated</p>
-                <p className="text-sm font-medium">{new Date().toLocaleTimeString()}</p>
+                <p className="text-sm font-medium">{formatMalawiTime(new Date())}</p>
               </div>
             </div>
           </div>
@@ -258,7 +257,7 @@ export default function AdminDashboardPage() {
             <button
               type="button"
               onClick={() => {
-                const today = formatDateInput(new Date())
+                const today = formatDateInput(malawiCalendarDate())
                 setDateFrom(today)
                 setDateTo(today)
               }}

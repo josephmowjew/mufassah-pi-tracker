@@ -1,3 +1,4 @@
+import { malawiDateInput } from '@/lib/datetime'
 import apiClient, { type ApiResponse, type PaginatedResponse } from './client'
 import type { Device, DeviceStatus, DeviceStatusValue, Geofence, Notification } from '@/types'
 
@@ -34,12 +35,8 @@ export const dashboardApi = {
     const activeDevices = devices.data?.filter(d => getStatusValue(d.status) === 'active').length || 0
 
     // Count today's alerts (notifications from today)
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
-    const alertsToday = notifications.filter(n => {
-      const notifDate = new Date(n.created_at)
-      return notifDate >= today
-    }).length
+    const today = malawiDateInput()
+    const alertsToday = notifications.filter(n => malawiDateInput(n.created_at) === today).length
 
     return {
       totalDevices: devices.meta?.total || devices.data?.length || 0,

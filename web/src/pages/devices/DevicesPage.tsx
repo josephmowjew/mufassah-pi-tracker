@@ -1,3 +1,4 @@
+import { formatMalawiDate } from '@/lib/datetime'
 import { useState, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import {
@@ -272,7 +273,7 @@ export default function DevicesPage() {
                         {device.last_seen_at ? (
                           <div className="flex items-center gap-1.5 text-sm text-slate-600">
                             <MapPin className="h-3.5 w-3.5 text-slate-400" />
-                            {new Date(device.last_seen_at).toLocaleDateString()}
+                            {formatMalawiDate(device.last_seen_at)}
                           </div>
                         ) : (
                           <span className="text-sm text-slate-400">Never</span>

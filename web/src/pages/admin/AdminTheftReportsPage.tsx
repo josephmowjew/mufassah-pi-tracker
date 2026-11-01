@@ -1,3 +1,4 @@
+import { formatMalawiDate } from '@/lib/datetime'
 import React, { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Search, AlertTriangle, MapPin, User, Smartphone, Loader2, Eye, UserCheck, CheckCircle, Clock, XCircle } from 'lucide-react'
@@ -211,7 +212,7 @@ export default function AdminTheftReportsPage() {
                         )}
                       </td>
                       <td className="py-3 px-4 text-sm text-slate-500">
-                        {new Date(report.theft_date).toLocaleDateString()}
+                        {formatMalawiDate(report.theft_date)}
                       </td>
                       <td className="py-3 px-4">
                         <div className="flex items-center justify-end gap-1">
@@ -304,7 +305,7 @@ export default function AdminTheftReportsPage() {
                 <div className="p-3 bg-slate-50 rounded-lg">
                   <p className="text-xs text-slate-500 mb-1">Theft Date</p>
                   <p className="text-sm font-medium text-slate-700">
-                    {new Date(selectedReport.theft_date).toLocaleDateString()}
+                    {formatMalawiDate(selectedReport.theft_date)}
                   </p>
                 </div>
                 <div className="p-3 bg-slate-50 rounded-lg col-span-2">

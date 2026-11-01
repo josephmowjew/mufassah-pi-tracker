@@ -1,3 +1,4 @@
+import { malawiDateInput } from '@/lib/datetime'
 import { useState } from 'react'
 import { X, Loader2, AlertTriangle, MapPin } from 'lucide-react'
 import { useCreateTheftReport } from '@/hooks/useTheftReports'
@@ -19,7 +20,7 @@ interface CreateTheftReportModalProps {
 export default function CreateTheftReportModal({ isOpen, onClose, defaultDeviceId }: CreateTheftReportModalProps) {
   const [formData, setFormData] = useState({
     device_id: defaultDeviceId?.toString() || '',
-    theft_date: new Date().toISOString().split('T')[0],
+    theft_date: malawiDateInput(),
     theft_location: '',
     description: '',
     police_report_number: '',
@@ -99,7 +100,7 @@ export default function CreateTheftReportModal({ isOpen, onClose, defaultDeviceI
           onClose()
           setFormData({
             device_id: '',
-            theft_date: new Date().toISOString().split('T')[0],
+            theft_date: malawiDateInput(),
             theft_location: '',
             description: '',
             police_report_number: '',
@@ -195,7 +196,7 @@ export default function CreateTheftReportModal({ isOpen, onClose, defaultDeviceI
                   name="theft_date"
                   value={formData.theft_date}
                   onChange={handleChange}
-                  max={new Date().toISOString().split('T')[0]}
+                  max={malawiDateInput()}
                   className={`w-full px-4 py-2.5 bg-slate-50 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 ${
                     errors.theft_date ? 'border-red-300' : 'border-slate-200'
                   }`}

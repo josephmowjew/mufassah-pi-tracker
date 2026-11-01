@@ -1,3 +1,4 @@
+import { formatMalawiDate } from '@/lib/datetime'
 import { useState } from 'react'
 import { Check, Crown, Zap, Shield, Smartphone, MapPin, Bell, Headphones, Loader2, CreditCard, Phone, Building, X, Calendar, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
@@ -149,7 +150,7 @@ export default function SubscriptionsPage() {
               <div className="flex items-center gap-4 mt-3 text-sm">
                 <span className="flex items-center gap-1.5">
                   <Calendar className="h-4 w-4" />
-                  Renews {new Date(currentSubscription.ends_at).toLocaleDateString()}
+                  Renews {formatMalawiDate(currentSubscription.ends_at)}
                 </span>
                 <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
                   currentSubscription.status === 'active' ? 'bg-white/20' : 'bg-amber-400 text-amber-900'
@@ -364,7 +365,7 @@ export default function SubscriptionsPage() {
                       </span>
                     </td>
                     <td className="py-3 px-4 text-slate-500">
-                      {payment.paid_at ? new Date(payment.paid_at).toLocaleDateString() : '-'}
+                      {payment.paid_at ? formatMalawiDate(payment.paid_at) : '-'}
                     </td>
                   </tr>
                 ))}

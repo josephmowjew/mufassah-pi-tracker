@@ -1,3 +1,4 @@
+import { formatMalawiDateTime, malawiHour } from '@/lib/datetime'
 import { Link } from 'react-router-dom'
 import {
   Smartphone,
@@ -30,7 +31,7 @@ export default function DashboardPage() {
 
   // Get time-based greeting
   const getGreeting = () => {
-    const hour = new Date().getHours()
+    const hour = malawiHour()
     if (hour < 12) return 'Good morning'
     if (hour < 17) return 'Good afternoon'
     return 'Good evening'
@@ -280,7 +281,7 @@ export default function DashboardPage() {
                     {(notification.data as { message?: string })?.message || notification.type}
                   </p>
                   <p className="text-xs text-slate-500 mt-0.5">
-                    {new Date(notification.created_at).toLocaleString()}
+                    {formatMalawiDateTime(notification.created_at)}
                   </p>
                 </div>
               </div>

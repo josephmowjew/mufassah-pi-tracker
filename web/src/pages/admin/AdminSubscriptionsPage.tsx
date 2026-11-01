@@ -1,3 +1,4 @@
+import { formatMalawiDate } from '@/lib/datetime'
 import React, { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { CreditCard, Calendar, Loader2, Eye, Ban, RefreshCw, CheckCircle, XCircle, Clock, Package } from 'lucide-react'
@@ -203,7 +204,7 @@ export default function AdminSubscriptionsPage() {
                       <td className="py-3 px-4">
                         <div className="flex items-center gap-2 text-sm text-slate-500">
                           <Calendar className="h-4 w-4 text-slate-400" />
-                          {new Date(subscription.ends_at).toLocaleDateString()}
+                          {formatMalawiDate(subscription.ends_at)}
                         </div>
                       </td>
                       <td className="py-3 px-4">
@@ -327,7 +328,7 @@ export default function AdminSubscriptionsPage() {
                 <div className="p-3 bg-slate-50 rounded-lg">
                   <p className="text-xs text-slate-500 mb-1">Expires</p>
                   <p className="text-sm font-medium text-slate-700">
-                    {new Date(selectedSubscription.ends_at).toLocaleDateString()}
+                    {formatMalawiDate(selectedSubscription.ends_at)}
                   </p>
                 </div>
                 <div className="p-3 bg-slate-50 rounded-lg">
@@ -339,7 +340,7 @@ export default function AdminSubscriptionsPage() {
                 <div className="p-3 bg-slate-50 rounded-lg">
                   <p className="text-xs text-slate-500 mb-1">Started</p>
                   <p className="text-sm font-medium text-slate-700">
-                    {new Date(selectedSubscription.starts_at).toLocaleDateString()}
+                    {formatMalawiDate(selectedSubscription.starts_at)}
                   </p>
                 </div>
               </div>

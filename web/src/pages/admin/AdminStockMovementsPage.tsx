@@ -1,3 +1,4 @@
+import { formatMalawiDateTime } from '@/lib/datetime'
 import { useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -36,7 +37,7 @@ const label = (value: string | null | undefined) => {
 
 const formatDate = (value: string | null | undefined) => {
   if (!value) return '-'
-  return new Date(value).toLocaleString()
+  return formatMalawiDateTime(value)
 }
 
 const formatMoney = (value: number | string | null | undefined) => {

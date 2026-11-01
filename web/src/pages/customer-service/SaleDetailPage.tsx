@@ -1,3 +1,4 @@
+import { formatMalawiDateTime } from '@/lib/datetime'
 import { useParams, Link } from 'react-router-dom'
 import { ArrowLeft } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
@@ -23,7 +24,7 @@ export default function SaleDetailPage() {
   })
 
   const formatDateTime = (dateString: string) => {
-    return new Date(dateString).toLocaleString()
+    return formatMalawiDateTime(dateString)
   }
 
   const getStatusBadge = (sale: Sale) => {

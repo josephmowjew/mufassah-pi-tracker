@@ -1,3 +1,4 @@
+import { formatMalawiDate } from '@/lib/datetime'
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
@@ -273,7 +274,7 @@ function AlertCard({ alert }: { alert: CommunityAlert }) {
         {/* Time */}
         <div className="flex items-center gap-1 text-xs text-slate-400 mt-3 pt-3 border-t border-slate-100">
           <Clock className="h-3 w-3" />
-          Posted {new Date(alert.created_at).toLocaleDateString()}
+          Posted {formatMalawiDate(alert.created_at)}
         </div>
       </div>
     </Link>

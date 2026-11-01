@@ -1,3 +1,4 @@
+import { formatMalawiDate, formatMalawiDateTime } from '@/lib/datetime'
 import React, { useState } from 'react'
 import { useParams, Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
@@ -298,7 +299,7 @@ export default function DeviceDetailPage() {
               <DetailItem icon={Tag} label="Category" value={device.category?.name || 'N/A'} />
               <DetailItem icon={Hash} label="Serial Number" value={device.serial_number || 'N/A'} mono />
               <DetailItem icon={Palette} label="Color" value={device.color || 'N/A'} />
-              <DetailItem icon={Calendar} label="Purchase Date" value={device.purchase_date ? new Date(device.purchase_date).toLocaleDateString() : 'N/A'} />
+              <DetailItem icon={Calendar} label="Purchase Date" value={device.purchase_date ? formatMalawiDate(device.purchase_date) : 'N/A'} />
               <DetailItem icon={DollarSign} label="Purchase Price" value={device.purchase_price ? `MWK ${Number(device.purchase_price).toLocaleString()}` : 'N/A'} />
               <DetailItem icon={MapPin} label="Purchase Location" value={device.purchase_location || 'N/A'} />
             </div>
@@ -400,7 +401,7 @@ export default function DeviceDetailPage() {
                         {location.address || `${location.latitude.toFixed(6)}, ${location.longitude.toFixed(6)}`}
                       </p>
                       <p className="text-xs text-slate-500 mt-0.5">
-                        {new Date(location.recorded_at).toLocaleString()}
+                        {formatMalawiDateTime(location.recorded_at)}
                       </p>
                     </div>
                     {location.accuracy && (
@@ -440,7 +441,7 @@ export default function DeviceDetailPage() {
                   </p>
                   <p className="text-xs text-slate-500 mt-1 flex items-center gap-1">
                     <Clock className="h-3 w-3" />
-                    {new Date(latestLocation.recorded_at).toLocaleString()}
+                    {formatMalawiDateTime(latestLocation.recorded_at)}
                   </p>
                 </div>
                 <Link
@@ -501,7 +502,7 @@ export default function DeviceDetailPage() {
                 {device.iot_module.last_ping && (
                   <div className="pt-3 border-t border-slate-100">
                     <p className="text-xs text-slate-500">
-                      Last ping: {new Date(device.iot_module.last_ping).toLocaleString()}
+                      Last ping: {formatMalawiDateTime(device.iot_module.last_ping)}
                     </p>
                   </div>
                 )}
@@ -551,10 +552,10 @@ export default function DeviceDetailPage() {
           {/* Timestamps */}
           <div className="bg-slate-50 rounded-xl p-4">
             <div className="space-y-2 text-xs text-slate-500">
-              <p>Created: {new Date(device.created_at).toLocaleString()}</p>
-              <p>Updated: {new Date(device.updated_at).toLocaleString()}</p>
+              <p>Created: {formatMalawiDateTime(device.created_at)}</p>
+              <p>Updated: {formatMalawiDateTime(device.updated_at)}</p>
               {device.last_seen_at && (
-                <p>Last Seen: {new Date(device.last_seen_at).toLocaleString()}</p>
+                <p>Last Seen: {formatMalawiDateTime(device.last_seen_at)}</p>
               )}
             </div>
           </div>

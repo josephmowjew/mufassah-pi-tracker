@@ -1,3 +1,4 @@
+import { formatMalawiDate } from '@/lib/datetime'
 import { useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import {
@@ -320,5 +321,5 @@ function formatTimeAgo(date: Date): string {
   if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)}h ago`
   if (diffInSeconds < 604800) return `${Math.floor(diffInSeconds / 86400)}d ago`
 
-  return date.toLocaleDateString()
+  return formatMalawiDate(date)
 }

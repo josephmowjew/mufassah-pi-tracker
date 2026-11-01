@@ -1,3 +1,4 @@
+import { formatMalawiDate, formatMalawiDateTime } from '@/lib/datetime'
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
@@ -213,7 +214,7 @@ function AlertsTab() {
                       </div>
                     </td>
                     <td className="py-3 px-4 text-sm text-slate-500">
-                      {new Date(alert.created_at).toLocaleDateString()}
+                      {formatMalawiDate(alert.created_at)}
                     </td>
                   </tr>
                 ))}
@@ -376,7 +377,7 @@ function TipsTab() {
                     )}
                     <p className="text-xs text-slate-400">
                       <Clock className="inline h-3 w-3 mr-1" />
-                      {new Date(tip.created_at).toLocaleString()}
+                      {formatMalawiDateTime(tip.created_at)}
                     </p>
                   </div>
                 </div>
@@ -591,7 +592,7 @@ function ClaimsTab() {
                   </td>
                   <td className="py-3 px-4">{getStatusBadge(claim.status)}</td>
                   <td className="py-3 px-4 text-sm text-slate-500">
-                    {new Date(claim.created_at).toLocaleDateString()}
+                    {formatMalawiDate(claim.created_at)}
                   </td>
                   <td className="py-3 px-4">
                     <div className="flex items-center justify-end gap-1">

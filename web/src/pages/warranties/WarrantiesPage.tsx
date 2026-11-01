@@ -1,3 +1,4 @@
+import { formatMalawiDate } from '@/lib/datetime'
 import { useState } from 'react'
 import { Shield, Calendar, Smartphone, CheckCircle, XCircle, Clock, AlertTriangle, FileText, Plus, Loader2, ChevronRight } from 'lucide-react'
 import { toast } from 'sonner'
@@ -131,11 +132,11 @@ export default function WarrantiesPage() {
                   <div className="mt-4 pt-4 border-t border-slate-100 grid grid-cols-2 gap-4 text-sm">
                     <div className="flex items-center gap-2 text-slate-500">
                       <Calendar className="h-4 w-4" />
-                      <span>Starts: {new Date(warranty.starts_at).toLocaleDateString()}</span>
+                      <span>Starts: {formatMalawiDate(warranty.starts_at)}</span>
                     </div>
                     <div className="flex items-center gap-2 text-slate-500">
                       <Calendar className="h-4 w-4" />
-                      <span>Ends: {new Date(warranty.ends_at).toLocaleDateString()}</span>
+                      <span>Ends: {formatMalawiDate(warranty.ends_at)}</span>
                     </div>
                   </div>
                 </div>
@@ -213,7 +214,7 @@ export default function WarrantiesPage() {
                           </div>
                           <p className="text-sm text-slate-700 line-clamp-2">{claim.issue_description}</p>
                           <p className="text-xs text-slate-400 mt-2">
-                            {new Date(claim.created_at).toLocaleDateString()}
+                            {formatMalawiDate(claim.created_at)}
                           </p>
                         </div>
                       ))}

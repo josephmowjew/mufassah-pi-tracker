@@ -1,3 +1,4 @@
+import { formatMalawiDate } from '@/lib/datetime'
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Search, Users, Loader2, Mail, Phone, ShoppingBag } from 'lucide-react'
@@ -149,7 +150,7 @@ export default function CustomerServiceCustomersPage() {
                       </td>
                       <td className="px-6 py-4">
                         <p className="text-sm text-slate-700">
-                          {customer.created_at ? new Date(customer.created_at).toLocaleDateString() : 'N/A'}
+                          {customer.created_at ? formatMalawiDate(customer.created_at) : 'N/A'}
                         </p>
                       </td>
                     </tr>

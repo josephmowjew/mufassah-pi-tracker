@@ -1,3 +1,4 @@
+import { formatMalawiDate, formatMalawiTime } from '@/lib/datetime'
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -275,10 +276,10 @@ export default function CustomerServiceSalesPage() {
                       </td>
                       <td className="px-6 py-4">
                         <div className="text-sm text-slate-900">
-                          {new Date(sale.sale_date).toLocaleDateString()}
+                          {formatMalawiDate(sale.sale_date)}
                         </div>
                         <div className="text-xs text-slate-500">
-                          {new Date(sale.sale_date).toLocaleTimeString()}
+                          {formatMalawiTime(sale.sale_date)}
                         </div>
                       </td>
                       <td className="px-6 py-4">

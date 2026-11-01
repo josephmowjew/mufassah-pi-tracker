@@ -1,3 +1,4 @@
+import { formatMalawiDate, formatMalawiDateTime } from '@/lib/datetime'
 import { useState, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
@@ -610,7 +611,7 @@ export default function DeviceManagementPage() {
                           {device.last_seen_at ? (
                             <div className="flex items-center gap-2 text-sm text-slate-500">
                               <MapPin className="h-4 w-4 text-slate-400" />
-                              {new Date(device.last_seen_at).toLocaleDateString()}
+                              {formatMalawiDate(device.last_seen_at)}
                             </div>
                           ) : (
                             <span className="text-sm text-slate-400">Never</span>
@@ -765,7 +766,7 @@ export default function DeviceManagementPage() {
                     <span className="text-xs text-slate-500">Purchase Date</span>
                   </div>
                   <p className="text-sm font-medium text-slate-700">
-                    {selectedDevice.purchase_date ? new Date(selectedDevice.purchase_date).toLocaleDateString() : 'N/A'}
+                    {selectedDevice.purchase_date ? formatMalawiDate(selectedDevice.purchase_date) : 'N/A'}
                   </p>
                 </div>
                 <div className="p-3 bg-slate-50 rounded-lg">
@@ -790,7 +791,7 @@ export default function DeviceManagementPage() {
                     <span className="text-xs text-slate-500">Last Seen</span>
                   </div>
                   <p className="text-sm font-medium text-slate-700">
-                    {selectedDevice.last_seen_at ? new Date(selectedDevice.last_seen_at).toLocaleString() : 'Never'}
+                    {selectedDevice.last_seen_at ? formatMalawiDateTime(selectedDevice.last_seen_at) : 'Never'}
                   </p>
                 </div>
                 <div className="p-3 bg-slate-50 rounded-lg">
@@ -799,7 +800,7 @@ export default function DeviceManagementPage() {
                     <span className="text-xs text-slate-500">Registered</span>
                   </div>
                   <p className="text-sm font-medium text-slate-700">
-                    {new Date(selectedDevice.created_at).toLocaleDateString()}
+                    {formatMalawiDate(selectedDevice.created_at)}
                   </p>
                 </div>
               </div>

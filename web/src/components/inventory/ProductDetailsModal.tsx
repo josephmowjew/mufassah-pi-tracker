@@ -1,3 +1,4 @@
+import { formatMalawiDate, formatMalawiDateTime } from '@/lib/datetime'
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import type { GroupedInventoryItem, Device } from '@/types'
@@ -150,7 +151,7 @@ export default function ProductDetailsModal({ product, branchId = '', branchLabe
 
   const formatDate = (dateString: string | null | undefined) => {
     if (!dateString) return null
-    return new Date(dateString).toLocaleDateString('en-US', {
+    return formatMalawiDate(dateString, 'en-US', {
       year: 'numeric',
       month: 'short',
       day: 'numeric'
@@ -159,7 +160,7 @@ export default function ProductDetailsModal({ product, branchId = '', branchLabe
 
   const formatDateTime = (dateString: string | null | undefined) => {
     if (!dateString) return null
-    return new Date(dateString).toLocaleString('en-US', {
+    return formatMalawiDateTime(dateString, 'en-US', {
       year: 'numeric',
       month: 'short',
       day: 'numeric',

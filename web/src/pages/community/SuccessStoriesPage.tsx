@@ -1,3 +1,4 @@
+import { formatMalawiDate } from '@/lib/datetime'
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
@@ -256,7 +257,7 @@ function StoryCard({ story, onLike }: { story: SuccessStory; onLike: (id: number
           <span>by {story.author?.name || 'Anonymous'}</span>
           <span>·</span>
           <Calendar className="h-3.5 w-3.5" />
-          <span>{story.published_at ? new Date(story.published_at).toLocaleDateString() : 'Draft'}</span>
+          <span>{story.published_at ? formatMalawiDate(story.published_at) : 'Draft'}</span>
         </div>
 
         {/* Actions */}
