@@ -15,7 +15,7 @@ import sqlite3
 import subprocess
 import socket
 import requests
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from threading import Thread, Event
 from urllib.parse import urlparse
@@ -657,7 +657,7 @@ class GPSReader:
                     'speed': packet.hspeed if hasattr(packet, 'hspeed') else 0,
                     'heading': packet.track if hasattr(packet, 'track') else 0,
                     'accuracy': packet.position_error() if hasattr(packet, 'position_error') else None,
-                    'recorded_at': datetime.now().isoformat()
+                    'recorded_at': datetime.now(timezone.utc).isoformat()
                 }
 
                 # Validate accuracy

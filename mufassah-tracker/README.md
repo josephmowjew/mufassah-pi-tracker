@@ -321,11 +321,35 @@ API_RETRY_DELAY=5          # Seconds between retries
 
 **Note:** Tracking interval can be automatically updated by the backend (e.g., 30s for stolen devices)
 
+## UTC timestamps and existing buffers
+
+New GPS points use offset-qualified UTC timestamps such as `2026-01-14T22:15:00+00:00`, independent of the Raspberry Pi's timezone. SQLite buffering and single/batch uploads preserve that value. The API stores the instant in UTC and displays it as `2026-01-15T00:15:00+02:00` in Malawi.
+
+Older tracker versions emitted timestamps without offsets. Their original timezone depends on the device configuration at capture time; a string alone cannot establish it. Changing the Pi timezone now does not repair previously collected values.
+
+When upgrading an existing tracker:
+
+1. Stop it with `sudo systemctl stop mufassah-tracker` and back up its `buffer.db` while stopped. Preserve any associated SQLite WAL files if present, or use SQLite's backup facility.
+2. Install the updated `tracker.py` and `audit_buffer.py` in the service directory, preserving the device's `config.env` and buffer.
+3. From that directory, run `python3 audit_buffer.py buffer.db`. This audit is read-only and never creates a missing buffer. Exit code 0 means all queued timestamps carry offsets; 1 flags ambiguous/invalid rows; 2 means the file/schema could not be read. A fresh installation with no buffer can skip the audit.
+4. If rows lack offsets, establish the timezone used when they were captured before syncing. Keep an untouched backup and resolve affected rows using that evidence. Do not blanket-add/subtract two hours or assume all old devices used Malawi time. The updated tracker leaves existing rows unchanged and would upload them as stored; the API retains legacy naive-as-UTC semantics.
+5. After resolving any ambiguous queue entries, restart with `sudo systemctl restart mufassah-tracker` and verify a new point's timestamp and the corresponding UTC database value.
+
+Historical points already uploaded by old trackers require a separate evidence-based audit if their capture timezone was not UTC. No historical records are rewritten by this update.
+
+Run timezone regression tests without GPS hardware or network access:
+
+```bash
+python3 -m unittest discover -s tests -v
+```
+
 ## File Structure
 
 ```
 mufassah-tracker/
-├── tracker.py              # Main application (single file)
+├── tracker.py              # Main application
+├── audit_buffer.py         # Read-only timestamp audit
+├── tests/                  # Timezone regression tests
 ├── config.env              # Environment configuration
 ├── buffer.db               # SQLite database (auto-created)
 ├── logs/                   # Log files directory
