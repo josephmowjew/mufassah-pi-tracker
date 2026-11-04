@@ -55,6 +55,38 @@ function salePayload(Device $device, User $customer, array $overrides = []): arr
 }
 
 describe('Admin Sales', function () {
+    it('leaves two units in stock after selling five out of seven', function () {
+        Notification::fake();
+        $devices = Device::factory()->count(7)->create([
+            'category_id' => $this->category->id,
+            'branch_id' => $this->branch->id,
+            'brand' => 'Samsung',
+            'model' => 'UA32F4088',
+            'color' => null,
+            'owner_id' => null,
+            'purchase_price' => 800,
+            'inventory_status' => InventoryStatus::IN_STOCK,
+        ]);
+        $payload = salePayload($devices->first(), $this->customer);
+        $payload['items'][0]['quantity'] = 5;
+        $payload['payment_amount'] = 10000;
+        $this->actingAs($this->admin)->postJson('/api/v1/admin/sales', $payload)
+            ->assertCreated();
+
+        $this->getJson('/api/v1/admin/inventory/grouped')
+            ->assertSuccessful()
+            ->assertJsonPath('data.data.0.in_stock', 2)
+            ->assertJsonPath('data.data.0.sold', 5)
+            ->assertJsonPath('data.data.0.available', 2)
+            ->assertJsonPath('data.data.0.total', 7);
+        $this->getJson('/api/v1/admin/inventory/stats')
+            ->assertSuccessful()
+            ->assertJsonPath('data.summary.in_stock', 2)
+            ->assertJsonPath('data.summary.sold', 5);
+        $this->getJson('/api/v1/admin/inventory?inventory_status=in_stock&brand=Samsung&model=UA32F4088&color=')
+            ->assertSuccessful()->assertJsonPath('meta.total', 2);
+    });
+
     it('sends completed POS sale notifications to the approval email', function () {
         config(['inventory.approval_email' => 'approval@example.test']);
         CommunicationSettings::current()->update([

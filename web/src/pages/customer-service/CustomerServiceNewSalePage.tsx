@@ -164,7 +164,10 @@ export default function CustomerServiceNewSalePage() {
       return response.data.data
     },
     onSuccess: async (sale) => {
-      // Invalidate queries to refresh dashboard data
+      // Refresh inventory as well as sales after stock leaves the branch.
+      for (const key of ['admin-inventory', 'inventory-grouped', 'inventory-devices', 'inventory-stats', 'inventory-batches', 'inventory-batch', 'product-options']) {
+        queryClient.invalidateQueries({ queryKey: [key] })
+      }
       queryClient.invalidateQueries({ queryKey: ['current-shift'] })
       queryClient.invalidateQueries({ queryKey: ['customer-service-dashboard'] })
       queryClient.invalidateQueries({ queryKey: ['customer-service-sales'] })

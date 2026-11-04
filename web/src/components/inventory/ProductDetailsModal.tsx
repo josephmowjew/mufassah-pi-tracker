@@ -46,34 +46,45 @@ interface ProductDetailsModalProps {
   onDeleteDevices: (devices: Device[]) => void
 }
 
-export default function ProductDetailsModal({ product, branchId = '', branchLabel, inventoryStatus = '', onClose, onChangeStatus, onDeleteDevices }: ProductDetailsModalProps) {
-  // Fetch devices matching this product combination, honoring the active inventory filters
-  const { data: devices, isLoading } = useQuery({
-    queryKey: ['inventory-devices', product.category_id, product.brand, product.model, product.color, branchId, inventoryStatus],
+export default function ProductDetailsModal({ product: initialProduct, branchId = '', branchLabel, inventoryStatus = '', onClose, onChangeStatus, onDeleteDevices }: ProductDetailsModalProps) {
+  const productParams = () => {
+    const params = new URLSearchParams({
+      category_id: initialProduct.category_id.toString(),
+      brand: initialProduct.brand,
+      model: initialProduct.model,
+      color: initialProduct.color || '',
+    })
+    if (inventoryStatus) params.set('inventory_status', inventoryStatus)
+    appendBranchScope(params, branchId)
+    return params
+  }
+  const productKey = [initialProduct.category_id, initialProduct.brand, initialProduct.model, initialProduct.color, branchId, inventoryStatus]
+
+  // Refresh the summary when details open; the selected table row is a snapshot.
+  const { data: currentProduct } = useQuery({
+    queryKey: ['inventory-grouped', 'details', ...productKey],
+    staleTime: 0,
+    refetchOnWindowFocus: true,
     queryFn: async () => {
-      const params = new URLSearchParams({
-        category_id: product.category_id.toString(),
-        per_page: '100',
-      })
-      if (inventoryStatus) params.append('inventory_status', inventoryStatus)
-      appendBranchScope(params, branchId)
-
-      const response = await apiClient.get<{ success: boolean; data: Device[] }>(`/admin/inventory?${params}`)
-
-      // Filter to exact match
-      const filtered = response.data.data.filter((d: Device) => {
-        const brandMatch = d.brand === product.brand
-        const modelMatch = d.model === product.model
-        const deviceColor = d.color || null
-        const productColor = product.color || null
-        const colorMatch = deviceColor === productColor
-
-        return brandMatch && modelMatch && colorMatch
-      })
-
-      return filtered
+      const response = await apiClient.get<{ success: boolean; data: { data: GroupedInventoryItem[] } }>(`/admin/inventory/grouped?${productParams()}`)
+      return response.data.data.data[0] ?? { ...initialProduct, in_stock: 0, reserved: 0, sold: 0, returned: 0, faulty: 0, available: 0, total: 0 }
     },
   })
+  const product = currentProduct ?? initialProduct
+
+  const { data: devicePage, isLoading } = useQuery({
+    queryKey: ['inventory-devices', ...productKey],
+    staleTime: 0,
+    refetchOnWindowFocus: true,
+    queryFn: async () => {
+      const params = productParams()
+      params.set('per_page', '100')
+      const response = await apiClient.get<{ success: boolean; data: Device[]; meta: { total: number } }>(`/admin/inventory?${params}`)
+      return response.data
+    },
+  })
+  const devices = devicePage?.data
+  const matchingTotal = devicePage?.meta.total ?? 0
 
   const getDeviceStatus = (device: Device): string => {
     if (typeof device.inventory_status === 'string') {
@@ -102,7 +113,7 @@ export default function ProductDetailsModal({ product, branchId = '', branchLabe
   const selectedCount = selectedDevices.length
   const allLoadedSelected = selectableDeviceList.length > 0 && selectableDeviceList.every((device) => validSelectedDeviceIds.includes(device.id))
   const someSelected = selectedCount > 0 && !allLoadedSelected
-  const isDeviceListTruncated = product.total > deviceList.length
+  const isDeviceListTruncated = matchingTotal > deviceList.length
 
   const toggleDeviceSelection = (device: Device) => {
     if (validSelectedDeviceIds.includes(device.id)) {
@@ -682,7 +693,7 @@ export default function ProductDetailsModal({ product, branchId = '', branchLabe
           <div className="flex items-center justify-between">
             <div className="text-sm text-slate-600">
               Showing <span className="font-bold text-slate-900">{devices?.length || 0}</span> of{' '}
-              <span className="font-bold text-slate-900">{product.total}</span> total units
+              <span className="font-bold text-slate-900">{matchingTotal}</span> matching units
             </div>
             <button
               onClick={onClose}

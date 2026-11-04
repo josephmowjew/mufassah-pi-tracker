@@ -34,6 +34,27 @@ beforeEach(function () {
 });
 
 describe('Inventory Index', function () {
+    it('filters exact product units before paginating', function () {
+        $product = [
+            'category_id' => $this->category->id,
+            'brand' => 'Samsung',
+            'model' => 'UA32F4088',
+            'color' => null,
+            'inventory_status' => InventoryStatus::IN_STOCK,
+        ];
+        Device::factory()->count(2)->create($product);
+        Device::factory()->create(array_replace($product, ['brand' => 'Sony']));
+        Device::factory()->create(array_replace($product, ['model' => 'Other']));
+        Device::factory()->create(array_replace($product, ['color' => 'Black']));
+
+        $this->actingAs($this->admin)
+            ->getJson('/api/v1/admin/inventory?brand=Samsung&model=UA32F4088&color=&per_page=1')
+            ->assertSuccessful()->assertJsonPath('meta.total', 2)->assertJsonCount(1, 'data');
+        $this->getJson('/api/v1/admin/inventory/grouped?brand=Samsung&model=UA32F4088&color=')
+            ->assertSuccessful()->assertJsonCount(1, 'data.data')
+            ->assertJsonPath('data.data.0.in_stock', 2);
+    });
+
     it('does not allow customer service into broad admin inventory routes', function () {
         $this->actingAs($this->customerService)
             ->getJson('/api/v1/admin/inventory')

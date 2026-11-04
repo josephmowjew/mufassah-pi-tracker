@@ -154,6 +154,8 @@ export default function AdminInventoryPage() {
   // Fetch grouped inventory data
   const { data: groupedData, isLoading: groupedLoading } = useQuery({
     queryKey: ['inventory-grouped', search, inventoryStatus, selectedBranchId],
+    staleTime: 0,
+    refetchOnWindowFocus: true,
     queryFn: async () => {
       const params = new URLSearchParams()
       if (search) params.append('search', search)
@@ -297,6 +299,7 @@ export default function AdminInventoryPage() {
     },
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['admin-inventory'] })
+      queryClient.invalidateQueries({ queryKey: ['inventory-devices'] })
       queryClient.invalidateQueries({ queryKey: ['inventory-grouped'] })
       queryClient.invalidateQueries({ queryKey: ['inventory-stats'] })
       queryClient.invalidateQueries({ queryKey: ['inventory-batches'] })
@@ -523,9 +526,9 @@ export default function AdminInventoryPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-inventory'] })
+      queryClient.invalidateQueries({ queryKey: ['inventory-devices'] })
       queryClient.invalidateQueries({ queryKey: ['inventory-grouped'] })
       queryClient.invalidateQueries({ queryKey: ['inventory-stats'] })
-      queryClient.invalidateQueries({ queryKey: ['inventory-devices'] })
       toast.success('Inventory status updated')
       setShowStatusModal(false)
       setSelectedDevice(null)

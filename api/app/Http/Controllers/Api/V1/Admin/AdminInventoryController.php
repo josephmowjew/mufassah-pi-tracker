@@ -48,6 +48,18 @@ class AdminInventoryController extends BaseController
             ->with(['category', 'iotModule', 'branch'])
             ->when($branchId, fn ($q) => $q->where('branch_id', $branchId));
 
+        // Match the product before pagination so detail counts and units agree.
+        foreach (['brand', 'model'] as $field) {
+            if ($request->has($field)) {
+                $query->where($field, $request->input($field));
+            }
+        }
+        if ($request->has('color')) {
+            $request->filled('color')
+                ? $query->where('color', $request->input('color'))
+                : $query->whereNull('color');
+        }
+
         // Filter by inventory status
         if ($request->has('inventory_status')) {
             $query->where('inventory_status', $request->inventory_status);
@@ -145,6 +157,18 @@ class AdminInventoryController extends BaseController
         $query = Device::query()
             ->with('category:id,name')
             ->when($branchId, fn ($q) => $q->where('branch_id', $branchId));
+
+        // Match the product before pagination so detail counts and units agree.
+        foreach (['brand', 'model'] as $field) {
+            if ($request->has($field)) {
+                $query->where($field, $request->input($field));
+            }
+        }
+        if ($request->has('color')) {
+            $request->filled('color')
+                ? $query->where('color', $request->input('color'))
+                : $query->whereNull('color');
+        }
 
         // Filter by inventory status
         if ($request->has('inventory_status')) {
