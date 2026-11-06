@@ -18,9 +18,12 @@ use App\Models\ProductModel;
  *
  * Resolution order:
  *   1. the newest non-deleted batch for the same product that still carries a
- *      positive target_selling_price — i.e. the price actually in use. A batch
- *      in the receiving branch wins over one elsewhere, since branches may
- *      price the same product differently;
+ *      positive target_selling_price *and still holds available stock* — i.e.
+ *      the price actually in use. A batch whose devices have all been sold or
+ *      deleted is history, not a current price, so it is skipped rather than
+ *      advertising a price nothing can be bought at. A batch in the receiving
+ *      branch wins over one elsewhere, since branches may price the same
+ *      product differently;
  *   2. the catalog's ProductModel.base_price;
  *   3. nothing. The caller must then supply a price or reject the line; this
  *      class never invents one.
@@ -91,6 +94,10 @@ class InventoryPriceResolver
     ): ?InventoryBatch {
         $newestPriced = InventoryBatch::query()
             ->where('target_selling_price', '>', 0)
+            // Only batches that still hold sellable stock are a current price.
+            // A batch whose units were all sold or deleted is history and must
+            // not drive what the next intake is priced at.
+            ->whereHas('devices', fn ($query) => $query->available())
             ->orderByDesc('created_at')
             ->orderByDesc('id');
 

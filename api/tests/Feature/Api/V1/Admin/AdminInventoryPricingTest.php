@@ -379,3 +379,69 @@ describe('Price inheritance edge cases', function () {
             ->assertForbidden();
     });
 });
+
+describe('Batches with no remaining stock do not set the price', function () {
+    it('does not inherit from a batch whose devices have all been deleted', function () {
+        pricingReceiveStock($this, ['target_selling_price' => 650000])->assertCreated();
+
+        $batch = pricingLatestBatch();
+        Device::query()->where('inventory_batch_id', $batch->id)->delete();
+
+        // A deleted batch is not a price in use, so there is nothing to inherit.
+        pricingReceiveStock($this)->assertUnprocessable();
+    });
+
+    it('prefers a batch that still holds stock over a newer emptied batch', function () {
+        // The bug this guards: a newer lot is emptied (all its units deleted),
+        // yet it kept supplying the inherited price while older, still-sellable
+        // stock carried the real price.
+        pricingReceiveStock($this, ['target_selling_price' => 650000])->assertCreated();
+
+        pricingReceiveStock($this, ['target_selling_price' => 700000])->assertCreated();
+        $newer = pricingLatestBatch();
+        Device::query()->where('inventory_batch_id', $newer->id)->delete();
+
+        pricingReceiveStock($this)->assertCreated();
+
+        expect((float) pricingLatestBatch()->target_selling_price)->toBe(650000.0);
+    });
+
+    it('does not suggest a price from a batch with no remaining stock', function () {
+        pricingReceiveStock($this, ['target_selling_price' => 650000])->assertCreated();
+
+        $batch = pricingLatestBatch();
+        Device::query()->where('inventory_batch_id', $batch->id)->delete();
+
+        $response = $this->actingAs($this->admin)->getJson(
+            '/api/v1/admin/inventory/price-suggestion?'
+            .http_build_query([
+                'category_id' => $this->category->id,
+                'brand' => 'Samsung',
+                'model' => 'Galaxy S24',
+                'branch_id' => $this->branch->id,
+            ])
+        );
+
+        $response->assertSuccessful();
+
+        expect($response->json('data.source'))->toBeNull()
+            ->and($response->json('data.target_selling_price'))->toBeNull();
+    });
+
+    it('still reports a batch that holds stock as the price in use', function () {
+        pricingReceiveStock($this, ['target_selling_price' => 650000])->assertCreated();
+
+        $response = $this->actingAs($this->admin)->getJson(
+            '/api/v1/admin/inventory/price-suggestion?'
+            .http_build_query([
+                'category_id' => $this->category->id,
+                'brand' => 'Samsung',
+                'model' => 'Galaxy S24',
+                'branch_id' => $this->branch->id,
+            ])
+        )->assertSuccessful();
+
+        expect($response->json('data.source'))->toBe('last_batch')
+            ->and((float) $response->json('data.target_selling_price'))->toBe(650000.0);
+    });
+});
