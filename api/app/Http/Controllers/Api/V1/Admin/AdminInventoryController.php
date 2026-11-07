@@ -19,6 +19,7 @@ use App\Services\InventoryIntakeService;
 use App\Services\InventoryMovementService;
 use App\Services\InventoryPriceResolver;
 use App\Support\Inventory\InventoryBranchGuard;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -610,9 +611,8 @@ class AdminInventoryController extends BaseController
                 $lines,
                 $request->user(),
             );
-        } catch (ValidationException $e) {
-            // Same reasoning as bulkStore(): keep validation failures out of the
-            // 500 path so the operator sees which line was rejected.
+        } catch (ValidationException|AuthorizationException $e) {
+            // Keep validation and permission failures in their normal API responses.
             throw $e;
         } catch (\Exception $e) {
             Log::error('Inventory receipt creation failed', [

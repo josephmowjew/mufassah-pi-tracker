@@ -561,6 +561,7 @@ export interface InventoryReceiptLineData {
   quantity: number
   buying_price?: number
   target_selling_price?: number
+  apply_price_to_in_stock_batches?: boolean
   notes?: string
   auto_generate_serials?: boolean
   serial_numbers?: string[] | string

@@ -6,6 +6,7 @@ use App\Models\Brand;
 use App\Models\Device;
 use App\Models\DeviceCategory;
 use App\Models\InventoryBatch;
+use App\Models\InventoryReceipt;
 use App\Models\ProductModel;
 use App\Models\User;
 
@@ -266,6 +267,43 @@ describe('Catalog link on batches', function () {
 });
 
 describe('Catalog price cascade', function () {
+    it('reapplies an unchanged catalog price only to matching batches with in-stock units', function () {
+        $otherBranch = Branch::create(['name' => 'Other Branch', 'code' => 'OTH', 'is_active' => true]);
+        pricingReceiveStock($this, ['target_selling_price' => 650000])->assertCreated();
+        $localBatch = pricingLatestBatch();
+        $model = ProductModel::findOrFail($localBatch->product_model_id);
+        $model->update(['base_price' => 700000]);
+
+        pricingReceiveStock($this, ['target_selling_price' => 720000], $otherBranch->id)->assertCreated();
+        $legacyBatch = pricingLatestBatch();
+        $legacyBatch->update(['product_model_id' => null]);
+
+        pricingReceiveStock($this, ['target_selling_price' => 680000])->assertCreated();
+        $unavailableBatch = pricingLatestBatch();
+        $unavailableBatch->devices()->firstOrFail()->update(['inventory_status' => InventoryStatus::SOLD]);
+        $unavailableBatch->devices()->where('inventory_status', InventoryStatus::IN_STOCK)
+            ->update(['inventory_status' => InventoryStatus::RESERVED]);
+
+        pricingReceiveStock($this, ['model' => 'Galaxy S24 Ultra', 'target_selling_price' => 800000])->assertCreated();
+        $unrelatedBatch = pricingLatestBatch();
+
+        $url = "/api/v1/admin/catalog/models/{$model->id}";
+        $this->putJson($url, ['base_price' => 700000])->assertOk();
+        expect($localBatch->fresh()->target_selling_price)->toBe('650000.00');
+
+        $this->putJson($url, ['base_price' => null, 'apply_price_to_in_stock_batches' => true])
+            ->assertUnprocessable()->assertJsonValidationErrors('base_price');
+
+        $this->putJson($url, ['base_price' => 700000, 'apply_price_to_in_stock_batches' => true])
+            ->assertOk()->assertJsonPath('data.base_price', '700000.00');
+
+        expect($localBatch->fresh()->target_selling_price)->toBe('700000.00')
+            ->and($localBatch->fresh()->buying_price)->toBe('500000.00')
+            ->and($legacyBatch->fresh()->target_selling_price)->toBe('700000.00')
+            ->and($unavailableBatch->fresh()->target_selling_price)->toBe('680000.00')
+            ->and($unrelatedBatch->fresh()->target_selling_price)->toBe('800000.00');
+    });
+
     it('reprices batches through the catalog link even after a rename', function () {
         pricingReceiveStock($this, ['target_selling_price' => 650000])->assertCreated();
 
@@ -323,6 +361,94 @@ describe('Catalog price cascade', function () {
         $response->assertSuccessful();
 
         expect($response->json('data.related.inventory_batches'))->toBe(1);
+    });
+});
+
+describe('Repricing while receiving stock', function () {
+    it('sets one price across new and existing in-stock batches in every branch when selected', function () {
+        $otherBranch = Branch::create(['name' => 'Other Branch', 'code' => 'OTH', 'is_active' => true]);
+        pricingReceiveStock($this, ['target_selling_price' => 650000])->assertCreated();
+        $localBatch = pricingLatestBatch();
+        $model = ProductModel::findOrFail($localBatch->product_model_id);
+        pricingReceiveStock($this, ['target_selling_price' => 670000], $otherBranch->id)->assertCreated();
+        $otherBatch = pricingLatestBatch();
+        pricingReceiveStock($this, ['target_selling_price' => 680000])->assertCreated();
+        $soldBatch = pricingLatestBatch();
+        $soldBatch->devices()->update(['inventory_status' => InventoryStatus::SOLD]);
+
+        $line = [
+            'category_id' => $this->category->id,
+            'brand' => 'Samsung',
+            'model' => 'Galaxy S24',
+            'quantity' => 1,
+            'buying_price' => 550000,
+        ];
+        $this->postJson('/api/v1/admin/inventory/receipts', [
+            'branch_id' => $this->branch->id,
+            'lines' => [
+                [...$line, 'color' => 'Blue'],
+                [...$line, 'color' => 'Black', 'target_selling_price' => 710000, 'apply_price_to_in_stock_batches' => true],
+            ],
+        ])->assertCreated()
+            ->assertJsonPath('data.batches.0.target_selling_price', '710000.00')
+            ->assertJsonPath('data.batches.1.target_selling_price', '710000.00');
+
+        expect($localBatch->fresh()->target_selling_price)->toBe('710000.00')
+            ->and($localBatch->fresh()->buying_price)->toBe('500000.00')
+            ->and($otherBatch->fresh()->target_selling_price)->toBe('710000.00')
+            ->and($soldBatch->fresh()->target_selling_price)->toBe('680000.00')
+            ->and($model->fresh()->base_price)->toBe('710000.00');
+    });
+
+    it('rolls back repricing if a receipt has conflicting prices or cannot be saved', function () {
+        pricingReceiveStock($this, ['target_selling_price' => 650000])->assertCreated();
+        $batch = pricingLatestBatch();
+        $model = ProductModel::findOrFail($batch->product_model_id);
+        $model->update(['base_price' => 650000]);
+        $line = [
+            'category_id' => $this->category->id,
+            'brand' => 'Samsung',
+            'model' => 'Galaxy S24',
+            'quantity' => 1,
+            'buying_price' => 550000,
+        ];
+        $selectedLine = [...$line, 'target_selling_price' => 710000, 'apply_price_to_in_stock_batches' => true];
+
+        $this->postJson('/api/v1/admin/inventory/receipts', [
+            'branch_id' => $this->branch->id,
+            'lines' => [$selectedLine, [...$line, 'target_selling_price' => 720000]],
+        ])->assertUnprocessable()->assertJsonValidationErrors('lines.1.target_selling_price');
+
+        $this->postJson('/api/v1/admin/inventory/receipts', [
+            'branch_id' => $this->branch->id,
+            'lines' => [$selectedLine, [...$line, 'model' => 'A new model without a price']],
+        ])->assertUnprocessable()->assertJsonValidationErrors('lines.1.target_selling_price');
+
+        expect(InventoryReceipt::count())->toBe(1)
+            ->and(InventoryBatch::count())->toBe(1)
+            ->and($batch->fresh()->target_selling_price)->toBe('650000.00')
+            ->and($model->fresh()->base_price)->toBe('650000.00');
+    });
+
+    it('requires global catalog permission to reprice batches during intake', function () {
+        $storeAdmin = User::factory()->create(['branch_id' => $this->branch->id]);
+        $storeAdmin->assignRole('store_admin');
+
+        $this->actingAs($storeAdmin)->postJson('/api/v1/admin/inventory/receipts', [
+            'branch_id' => $this->branch->id,
+            'lines' => [[
+                'category_id' => $this->category->id,
+                'brand' => 'Samsung',
+                'model' => 'Galaxy S24',
+                'quantity' => 1,
+                'buying_price' => 550000,
+                'target_selling_price' => 710000,
+                'apply_price_to_in_stock_batches' => true,
+            ]],
+        ])->assertForbidden();
+
+        expect(InventoryReceipt::count())->toBe(0)
+            ->and(ProductModel::count())->toBe(0);
     });
 });
 

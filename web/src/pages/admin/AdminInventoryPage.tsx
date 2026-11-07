@@ -1,6 +1,7 @@
 import { formatMalawiDate } from '@/lib/datetime'
 import { useState, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { Link } from 'react-router-dom'
 import { Search, Package, Plus, Loader2, LayoutGrid, List, Layers, Upload } from 'lucide-react'
 import { Authorize } from '@/components/auth/Authorize'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
@@ -576,6 +577,15 @@ export default function AdminInventoryPage() {
           </div>
           <Authorize permission={PERMISSIONS.MANAGE_INVENTORY}>
             <div className="flex flex-wrap gap-2">
+              <Authorize role={ROLES.SUPER_ADMIN}>
+                <Link
+                  to="/admin/catalog"
+                  className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-700 hover:bg-slate-50"
+                >
+                  <Tag className="h-4 w-4" />
+                  Update product prices
+                </Link>
+              </Authorize>
               <button
                 onClick={() => setShowImportModal(true)}
                 className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-700 transition-colors hover:bg-slate-50"

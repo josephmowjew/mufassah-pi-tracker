@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Search, Plus, Loader2, Edit2, Trash2, ChevronRight, Package, Layers, AlertTriangle, ShieldAlert } from 'lucide-react'
+import { Search, Plus, Loader2, Edit2, Trash2, ChevronRight, Package, Layers, AlertTriangle, ShieldAlert, Tag } from 'lucide-react'
 import { Authorize } from '@/components/auth/Authorize'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
 import ActionChallengePinModal, { type ActionChallengeInfo } from '@/components/admin/ActionChallengePinModal'
@@ -121,7 +121,10 @@ export default function AdminProductCatalogPage() {
     available_colors: '',
     is_active: true,
   })
+  const [priceOnly, setPriceOnly] = useState(false)
   const [showPriceCascadeConfirm, setShowPriceCascadeConfirm] = useState(false)
+  const enteredPrice = modelForm.base_price === '' ? null : Number(modelForm.base_price)
+  const savedPrice = editingModel?.base_price == null ? null : Number(editingModel.base_price)
 
   // Catalog deletion override state
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null)
@@ -334,18 +337,26 @@ export default function AdminProductCatalogPage() {
   })
 
   const updateModelMutation = useMutation({
-    mutationFn: async ({ id, data }: { id: number; data: Partial<ModelFormData> }) => {
+    mutationFn: async ({ id, data, applyPriceToBatches = false }: { id: number; data: Partial<ModelFormData>; applyPriceToBatches?: boolean }) => {
+      const { base_price, available_colors, ...fields } = data
       const payload = {
-        ...data,
-        base_price: data.base_price ? parseFloat(data.base_price) : null,
-        available_colors: data.available_colors ? data.available_colors.split(',').map(c => c.trim()).filter(Boolean) : [],
+        ...fields,
+        ...(base_price !== undefined && { base_price: base_price === '' ? null : Number(base_price) }),
+        ...(available_colors !== undefined && { available_colors: available_colors.split(',').map(c => c.trim()).filter(Boolean) }),
+        apply_price_to_in_stock_batches: applyPriceToBatches,
       }
       await apiClient.put(`/admin/catalog/models/${id}`, payload)
     },
-    onSuccess: () => {
+    onSuccess: (_result, { applyPriceToBatches }) => {
       queryClient.invalidateQueries({ queryKey: ['catalog-models'] })
       queryClient.invalidateQueries({ queryKey: ['catalog-brands'] })
-      toast.success('Product model updated successfully')
+      if (applyPriceToBatches) {
+        for (const key of ['inventory-batches', 'inventory-batch', 'product-options', 'customer-service-product-options', 'inventory-price-suggestion', 'catalog-models-for-receipt-line']) {
+          queryClient.invalidateQueries({ queryKey: [key] })
+        }
+      }
+      toast.success(applyPriceToBatches ? 'Selling price applied to matching in-stock batches' : 'Product model updated successfully')
+      setShowPriceCascadeConfirm(false)
       setShowModelModal(false)
       resetModelForm()
     },
@@ -381,6 +392,7 @@ export default function AdminProductCatalogPage() {
 
   const resetModelForm = () => {
     setEditingModel(null)
+    setPriceOnly(false)
     setModelForm({ brand_id: '', name: '', description: '', base_price: '', available_colors: '', is_active: true })
   }
 
@@ -395,8 +407,9 @@ export default function AdminProductCatalogPage() {
     setShowBrandModal(true)
   }
 
-  const openEditModel = (model: ProductModel) => {
+  const openEditModel = (model: ProductModel, editPriceOnly = false) => {
     setEditingModel(model)
+    setPriceOnly(editPriceOnly)
     setModelForm({
       brand_id: model.brand_id,
       name: model.name,
@@ -436,7 +449,12 @@ export default function AdminProductCatalogPage() {
   const handleModelSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (editingModel) {
-      if (modelForm.base_price !== (editingModel.base_price?.toString() || '')) {
+      if (priceOnly) {
+        if (enteredPrice === null) return
+        updateModelMutation.mutate({ id: editingModel.id, data: { base_price: modelForm.base_price }, applyPriceToBatches: true })
+        return
+      }
+      if (enteredPrice !== null && enteredPrice !== savedPrice) {
         setShowPriceCascadeConfirm(true)
         return
       }
@@ -448,8 +466,7 @@ export default function AdminProductCatalogPage() {
 
   const confirmCatalogPriceUpdate = () => {
     if (!editingModel) return
-    updateModelMutation.mutate({ id: editingModel.id, data: modelForm })
-    setShowPriceCascadeConfirm(false)
+    updateModelMutation.mutate({ id: editingModel.id, data: modelForm, applyPriceToBatches: true })
   }
 
   const selectedBrand = brands?.find(b => b.id === selectedBrandId)
@@ -647,6 +664,7 @@ export default function AdminProductCatalogPage() {
                         <div className="flex items-center gap-1">
                           <button
                             onClick={() => openEditModel(model)}
+                            aria-label={`Edit ${model.name}`}
                             className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
                           >
                             <Edit2 className="h-4 w-4" />
@@ -664,6 +682,14 @@ export default function AdminProductCatalogPage() {
                         </div>
                       </div>
                     </div>
+                    <button
+                      type="button"
+                      onClick={() => openEditModel(model, true)}
+                      className="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 px-3 py-1.5 text-sm font-medium text-emerald-800 hover:bg-emerald-50"
+                    >
+                      <Tag className="h-4 w-4" />
+                      Update selling price
+                    </button>
                   </div>
                 ))
               )}
@@ -757,81 +783,96 @@ export default function AdminProductCatalogPage() {
             <div className="bg-white rounded-xl max-w-md w-full">
               <div className="p-6 border-b border-slate-200">
                 <h2 className="text-lg font-semibold text-slate-900">
-                  {editingModel ? 'Edit Product Model' : 'New Product Model'}
+                  {priceOnly ? 'Update selling price' : editingModel ? 'Edit Product Model' : 'New Product Model'}
                 </h2>
+                {priceOnly && <p className="mt-1 text-sm text-slate-600">{selectedBrand?.name} {editingModel?.name}</p>}
               </div>
               <form onSubmit={handleModelSubmit} className="p-6 space-y-4">
+                {!priceOnly && (
+                  <>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">Brand *</label>
+                      <select
+                        value={modelForm.brand_id}
+                        onChange={(e) => setModelForm({ ...modelForm, brand_id: parseInt(e.target.value) || '' })}
+                        required
+                        className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      >
+                        <option value="">Select Brand</option>
+                        {brands?.map((brand) => (
+                          <option key={brand.id} value={brand.id}>
+                            {brand.name} ({brand.category?.name})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">Model Name *</label>
+                      <input
+                        type="text"
+                        value={modelForm.name}
+                        onChange={(e) => setModelForm({ ...modelForm, name: e.target.value })}
+                        required
+                        placeholder="e.g., iPhone 15 Pro Max"
+                        className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                  </>
+                )}
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Brand *</label>
-                  <select
-                    value={modelForm.brand_id}
-                    onChange={(e) => setModelForm({ ...modelForm, brand_id: parseInt(e.target.value) || '' })}
-                    required
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="">Select Brand</option>
-                    {brands?.map((brand) => (
-                      <option key={brand.id} value={brand.id}>
-                        {brand.name} ({brand.category?.name})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Model Name *</label>
+                  <label htmlFor="modelBasePrice" className="block text-sm font-medium text-slate-700 mb-1">Default Selling Price (MWK)</label>
                   <input
-                    type="text"
-                    value={modelForm.name}
-                    onChange={(e) => setModelForm({ ...modelForm, name: e.target.value })}
-                    required
-                    placeholder="e.g., iPhone 15 Pro Max"
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Default Selling Price (MWK)</label>
-                  <input
+                    id="modelBasePrice"
                     type="number"
                     value={modelForm.base_price}
                     onChange={(e) => setModelForm({ ...modelForm, base_price: e.target.value })}
                     placeholder="e.g., 850000"
                     min="0"
                     step="0.01"
+                    required={priceOnly}
                     className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
-                  <p className="mt-1 text-xs text-amber-700">Changing this updates matching in-stock batches; completed and reserved sales stay unchanged.</p>
+                  {priceOnly ? (
+                    <p className="mt-2 text-sm text-slate-600">Sets the catalog default and the selling price for all in-stock batches across all branches, even if you keep the current default. Existing sales and reservations keep their recorded prices.</p>
+                  ) : editingModel && (
+                    <p className="mt-1 text-xs text-amber-700">Changing the selling price updates matching in-stock batches.</p>
+                  )}
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Available Colors</label>
-                  <input
-                    type="text"
-                    value={modelForm.available_colors}
-                    onChange={(e) => setModelForm({ ...modelForm, available_colors: e.target.value })}
-                    placeholder="Black, White, Silver (comma-separated)"
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                  <p className="text-xs text-slate-500 mt-1">Enter colors separated by commas</p>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Description</label>
-                  <textarea
-                    value={modelForm.description}
-                    onChange={(e) => setModelForm({ ...modelForm, description: e.target.value })}
-                    rows={2}
-                    placeholder="Model description..."
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    id="modelActive"
-                    checked={modelForm.is_active}
-                    onChange={(e) => setModelForm({ ...modelForm, is_active: e.target.checked })}
-                    className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                  />
-                  <label htmlFor="modelActive" className="text-sm text-slate-700">Active</label>
-                </div>
+                {!priceOnly && (
+                  <>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">Available Colors</label>
+                      <input
+                        type="text"
+                        value={modelForm.available_colors}
+                        onChange={(e) => setModelForm({ ...modelForm, available_colors: e.target.value })}
+                        placeholder="Black, White, Silver (comma-separated)"
+                        className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                      <p className="text-xs text-slate-500 mt-1">Enter colors separated by commas</p>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">Description</label>
+                      <textarea
+                        value={modelForm.description}
+                        onChange={(e) => setModelForm({ ...modelForm, description: e.target.value })}
+                        rows={2}
+                        placeholder="Model description..."
+                        className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        id="modelActive"
+                        checked={modelForm.is_active}
+                        onChange={(e) => setModelForm({ ...modelForm, is_active: e.target.checked })}
+                        className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                      />
+                      <label htmlFor="modelActive" className="text-sm text-slate-700">Active</label>
+                    </div>
+                  </>
+                )}
                 <div className="flex justify-end gap-3 pt-4">
                   <button
                     type="button"
@@ -847,7 +888,7 @@ export default function AdminProductCatalogPage() {
                   >
                     {(createModelMutation.isPending || updateModelMutation.isPending) ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : editingModel ? 'Update' : 'Create'}
+                    ) : priceOnly ? 'Update all in-stock batches' : editingModel ? 'Update' : 'Create'}
                   </button>
                 </div>
               </form>
@@ -859,8 +900,8 @@ export default function AdminProductCatalogPage() {
         isOpen={showPriceCascadeConfirm}
         onClose={() => setShowPriceCascadeConfirm(false)}
         onConfirm={confirmCatalogPriceUpdate}
-        title="Update default selling price?"
-        message={`This will set the default price to MWK ${Number(modelForm.base_price || 0).toLocaleString()} and update all matching in-stock batches. Completed and reserved sales will not change.`}
+        title="Apply selling price to in-stock batches?"
+        message={`This will apply MWK ${enteredPrice?.toLocaleString()} as the default selling price and to all matching in-stock batches across all branches. Completed and reserved sales will not change.`}
         confirmText="Update in-stock batches"
         cancelText="Keep current prices"
         variant="warning"

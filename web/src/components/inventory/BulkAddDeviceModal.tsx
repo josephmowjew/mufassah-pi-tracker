@@ -5,7 +5,9 @@ import type { DeviceCategory, InventoryReceiptData, InventoryReceiptLineData } f
 import { AlertCircle, History, Loader2, PackageCheck, Plus, Trash2, X } from 'lucide-react'
 import apiClient from '@/api/client'
 import { toast } from 'sonner'
-import { useAuthStore } from '@/stores/auth-store'
+import { ROLES, useAuthStore } from '@/stores/auth-store'
+import { Authorize } from '@/components/auth/Authorize'
+import ConfirmDialog from '@/components/ui/ConfirmDialog'
 
 interface BulkAddDeviceModalProps {
   onClose: () => void
@@ -159,8 +161,9 @@ function ReceiptLinePriceFields({ branchId, errors, index, line, updateLine }: R
         )}
       </div>
       <div>
-        <label className="block text-xs font-medium text-slate-600 mb-1">Target Selling Price</label>
+        <label htmlFor={`receipt-selling-price-${index}`} className="block text-xs font-medium text-slate-600 mb-1">Target Selling Price</label>
         <input
+          id={`receipt-selling-price-${index}`}
           type="number"
           min="0"
           step="0.01"
@@ -179,6 +182,23 @@ function ReceiptLinePriceFields({ branchId, errors, index, line, updateLine }: R
           <p className="mt-1 text-xs text-amber-600">
             No previous price for this product — enter one.
           </p>
+        )}
+        {canLookUp && (
+          <Authorize role={ROLES.SUPER_ADMIN}>
+            <label className="mt-2 flex items-start gap-2 text-xs font-medium text-slate-700">
+              <input
+                type="checkbox"
+                checked={line.apply_price_to_in_stock_batches ?? false}
+                disabled={line.target_selling_price === undefined || line.target_selling_price < 0}
+                onChange={(e) => updateLine(index, { apply_price_to_in_stock_batches: e.target.checked })}
+                className="mt-0.5 h-4 w-4 shrink-0 rounded border-slate-300 text-blue-600 disabled:opacity-40"
+              />
+              <span>
+                Apply to all in-stock batches
+                <span className="mt-0.5 block font-normal text-slate-500">Across all branches. Also sets the catalog default.</span>
+              </span>
+            </label>
+          </Authorize>
         )}
       </div>
     </>
@@ -432,6 +452,7 @@ export default function BulkAddDeviceModal({ onClose }: BulkAddDeviceModalProps)
   const queryClient = useQueryClient()
   const currentUser = useAuthStore((state) => state.user)
   const [errors, setErrors] = useState<Record<string, string>>({})
+  const [receiptToConfirm, setReceiptToConfirm] = useState<InventoryReceiptData | null>(null)
   const [receipt, setReceipt] = useState<InventoryReceiptData>({
     branch_id: currentUser?.branch_id || 0,
     supplier: '',
@@ -478,7 +499,7 @@ export default function BulkAddDeviceModal({ onClose }: BulkAddDeviceModalProps)
       const response = await apiClient.post('/admin/inventory/receipts', data)
       return response.data.data
     },
-    onSuccess: (data) => {
+    onSuccess: (data, submittedReceipt) => {
       queryClient.invalidateQueries({ queryKey: ['inventory'] })
       queryClient.invalidateQueries({ queryKey: ['inventory-grouped'] })
       queryClient.invalidateQueries({ queryKey: ['inventory-stats'] })
@@ -486,10 +507,18 @@ export default function BulkAddDeviceModal({ onClose }: BulkAddDeviceModalProps)
       queryClient.invalidateQueries({ queryKey: ['inventory-receipts'] })
       queryClient.invalidateQueries({ queryKey: ['category-stock'] })
       queryClient.invalidateQueries({ queryKey: ['product-options'] })
+      queryClient.invalidateQueries({ queryKey: ['customer-service-product-options'] })
+      queryClient.invalidateQueries({ queryKey: ['inventory-price-suggestion'] })
+      if (submittedReceipt.lines.some(line => line.apply_price_to_in_stock_batches)) {
+        for (const key of ['inventory-batch', 'catalog-models', 'catalog-models-for-receipt-line']) {
+          queryClient.invalidateQueries({ queryKey: [key] })
+        }
+      }
       toast.success(`Received ${data.count} devices into inventory`)
       onClose()
     },
-    onError: (error: any) => {
+    onError: (error: Error & { response?: { data?: { errors?: Record<string, string[]>; message?: string } } }) => {
+      setReceiptToConfirm(null)
       const responseErrors = error.response?.data?.errors
       if (responseErrors) {
         const apiErrors: Record<string, string> = {}
@@ -518,9 +547,13 @@ export default function BulkAddDeviceModal({ onClose }: BulkAddDeviceModalProps)
   }
 
   const updateLine = (index: number, patch: Partial<InventoryReceiptLineData>) => {
+    const resetPriceScope = 'category_id' in patch || 'brand' in patch || 'model' in patch
+      || ('target_selling_price' in patch && patch.target_selling_price === undefined)
     setReceipt(prev => ({
       ...prev,
-      lines: prev.lines.map((line, lineIndex) => lineIndex === index ? { ...line, ...patch } : line),
+      lines: prev.lines.map((line, lineIndex) => lineIndex === index
+        ? { ...line, ...patch, ...(resetPriceScope && { apply_price_to_in_stock_batches: false }) }
+        : line),
     }))
     clearErrors(...Object.keys(patch).map(key => `lines.${index}.${key}`), `lines.${index}.serial_numbers`)
   }
@@ -568,6 +601,9 @@ export default function BulkAddDeviceModal({ onClose }: BulkAddDeviceModalProps)
       if (line.target_selling_price !== undefined && line.target_selling_price < 0) {
         newErrors[`lines.${index}.target_selling_price`] = 'Target selling price cannot be negative'
       }
+      if (line.apply_price_to_in_stock_batches && line.target_selling_price === undefined) {
+        newErrors[`lines.${index}.target_selling_price`] = 'Enter a selling price to apply it across all in-stock batches'
+      }
 
       if (!line.auto_generate_serials) {
         const serials = serialsForLine(line)
@@ -583,13 +619,18 @@ export default function BulkAddDeviceModal({ onClose }: BulkAddDeviceModalProps)
       return
     }
 
-    receiveMutation.mutate({
+    const payload = {
       ...receipt,
       lines: receipt.lines.map(line => ({
         ...line,
         serial_numbers: line.auto_generate_serials ? undefined : serialsForLine(line),
       })),
-    })
+    }
+    if (payload.lines.some(line => line.apply_price_to_in_stock_batches)) {
+      setReceiptToConfirm(payload)
+    } else {
+      receiveMutation.mutate(payload)
+    }
   }
 
   return (
@@ -616,7 +657,7 @@ export default function BulkAddDeviceModal({ onClose }: BulkAddDeviceModalProps)
           </div>
         </div>
 
-        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto">
+        <form id="receive-stock-form" onSubmit={handleSubmit} className="flex-1 overflow-y-auto">
           <div className="p-5 space-y-5">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
@@ -770,7 +811,7 @@ export default function BulkAddDeviceModal({ onClose }: BulkAddDeviceModalProps)
                         <div className="mt-3">
                           <textarea
                             value={Array.isArray(line.serial_numbers) ? line.serial_numbers.join('\n') : line.serial_numbers || ''}
-                            onChange={(e) => updateLine(index, { serial_numbers: e.target.value as any })}
+                            onChange={(e) => updateLine(index, { serial_numbers: e.target.value })}
                             rows={Math.min(line.quantity || 1, 6)}
                             placeholder="SN001&#10;SN002&#10;SN003"
                             className={`w-full px-3 py-2 border rounded-lg font-mono text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
@@ -843,7 +884,7 @@ export default function BulkAddDeviceModal({ onClose }: BulkAddDeviceModalProps)
             </button>
             <button
               type="submit"
-              onClick={handleSubmit}
+              form="receive-stock-form"
               disabled={receiveMutation.isPending}
               className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
             >
@@ -862,6 +903,16 @@ export default function BulkAddDeviceModal({ onClose }: BulkAddDeviceModalProps)
           </div>
         </div>
       </div>
+      <ConfirmDialog
+        isOpen={receiptToConfirm !== null}
+        onClose={() => setReceiptToConfirm(null)}
+        onConfirm={() => receiptToConfirm && receiveMutation.mutate(receiptToConfirm)}
+        title="Receive stock and update selling prices?"
+        message="The selected prices will apply to matching in-stock batches across all branches and become the catalog defaults. Existing sales and reservations keep their recorded prices."
+        confirmText="Receive and update prices"
+        variant="warning"
+        isLoading={receiveMutation.isPending}
+      />
     </>
   )
 }

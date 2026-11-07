@@ -7,7 +7,9 @@ use App\Enums\InventoryStatus;
 use App\Models\Device;
 use App\Models\InventoryBatch;
 use App\Models\InventoryReceipt;
+use App\Models\ProductModel;
 use App\Models\User;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -41,6 +43,7 @@ class InventoryIntakeService
         private readonly InventoryMovementService $movementService,
         private readonly InventoryCatalogResolver $catalogResolver,
         private readonly InventoryPriceResolver $priceResolver,
+        private readonly InventoryBatchPricingService $batchPricing,
     ) {}
 
     /**
@@ -64,6 +67,7 @@ class InventoryIntakeService
      *     color?: string|null,
      *     description?: string|null,
      *     target_selling_price?: float|string|null,
+     *     apply_price_to_in_stock_batches?: bool,
      *     notes?: string|null,
      *     auto_generate_serials?: bool,
      *     serial_numbers?: list<string>,
@@ -85,6 +89,9 @@ class InventoryIntakeService
         string $sellingPriceErrorKeyPattern = 'lines.%d.target_selling_price',
     ): array {
         return DB::transaction(function () use ($header, $lines, $user, $sellingPriceErrorKeyPattern) {
+            $lines = array_map($this->resolveProduct(...), array_values($lines));
+            $lines = $this->applyReceiptPriceUpdates($lines, $user, $sellingPriceErrorKeyPattern);
+
             $receipt = $this->createReceipt([
                 'branch_id' => (int) $header['branch_id'],
                 'supplier' => $header['supplier'] ?? null,
@@ -100,7 +107,7 @@ class InventoryIntakeService
             $batches = [];
             $devices = [];
 
-            foreach (array_values($lines) as $index => $line) {
+            foreach ($lines as $index => $line) {
                 [$batch, $lineDevices] = $this->createBatchWithDevices(
                     (int) $header['branch_id'],
                     $line,
@@ -120,6 +127,63 @@ class InventoryIntakeService
         });
     }
 
+    private function resolveProduct(array $line): array
+    {
+        return array_merge($line, $this->catalogResolver->resolve(
+            (int) $line['category_id'],
+            (string) $line['brand'],
+            (string) $line['model'],
+        ));
+    }
+
+    private function applyReceiptPriceUpdates(array $lines, ?User $user, string $priceErrorKey): array
+    {
+        $prices = [];
+        foreach ($lines as $index => $line) {
+            if (empty($line['apply_price_to_in_stock_batches'])) {
+                continue;
+            }
+
+            if (! $user?->hasRole('super_admin')) {
+                throw new AuthorizationException('Only super admins can update selling prices across all branches.');
+            }
+
+            if (! isset($line['target_selling_price'])) {
+                throw ValidationException::withMessages([
+                    sprintf($priceErrorKey, $index) => 'Enter a selling price to apply it across all in-stock batches.',
+                ]);
+            }
+
+            $prices[$line['product_model_id']] = round((float) $line['target_selling_price'], 2);
+        }
+
+        if ($prices === []) {
+            return $lines;
+        }
+
+        foreach ($lines as $index => $line) {
+            $price = $prices[$line['product_model_id']] ?? null;
+            if ($price === null) {
+                continue;
+            }
+            if (isset($line['target_selling_price']) && round((float) $line['target_selling_price'], 2) !== $price) {
+                throw ValidationException::withMessages([
+                    sprintf($priceErrorKey, $index) => 'Use the same selling price on every receipt line for this product when updating all batches.',
+                ]);
+            }
+            $lines[$index]['target_selling_price'] = $price;
+        }
+
+        // Use the same model lock as catalog edits, in a stable order for receipts with several updates.
+        $models = ProductModel::query()->whereKey(array_keys($prices))->orderBy('id')->lockForUpdate()->get();
+        foreach ($models as $model) {
+            $model->update(['base_price' => $prices[$model->id]]);
+            $this->batchPricing->applyCatalogPrice($model, $user);
+        }
+
+        return $lines;
+    }
+
     /**
      * Receive one product line without a receipt document.
      *
@@ -132,7 +196,7 @@ class InventoryIntakeService
     public function receiveStandaloneBatch(int $branchId, array $line, ?User $user = null): array
     {
         return DB::transaction(function () use ($branchId, $line, $user) {
-            [$batch, $devices] = $this->createBatchWithDevices($branchId, $line, null);
+            [$batch, $devices] = $this->createBatchWithDevices($branchId, $this->resolveProduct($line));
 
             foreach ($devices as $device) {
                 $this->movementService->recordReceipt($device, $batch, null, $user);
@@ -154,19 +218,12 @@ class InventoryIntakeService
      *
      * @throws ValidationException when the price cannot be resolved.
      */
-    public function createBatchWithDevices(
+    private function createBatchWithDevices(
         int $branchId,
         array $line,
         ?InventoryReceipt $receipt = null,
         string $sellingPriceErrorKey = 'target_selling_price',
     ): array {
-        $catalog = $this->catalogResolver->resolve(
-            (int) $line['category_id'],
-            (string) $line['brand'],
-            (string) $line['model'],
-        );
-        $line = array_merge($line, $catalog);
-
         $targetSellingPrice = $line['target_selling_price'] ?? null;
 
         if ($targetSellingPrice === null || $targetSellingPrice === '') {
