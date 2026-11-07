@@ -34,6 +34,8 @@ export function useCurrentShift() {
       return response.data.data
     },
     refetchInterval: 60000, // Refetch every minute
+    staleTime: 0,
+    refetchOnWindowFocus: true,
   })
 }
 

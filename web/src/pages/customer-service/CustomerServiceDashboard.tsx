@@ -14,7 +14,8 @@ import {
 } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import apiClient from '@/api/client'
-import { useCurrentShift, useStartShift, useEndShift, useCancelShift } from '@/hooks/useShifts'
+import { useCurrentShift, useStartShift, useCancelShift } from '@/hooks/useShifts'
+import { ShiftEndModal } from '@/components/shifts/ShiftEndModal'
 import { ShiftBreakControl } from '@/components/shifts/ShiftBreakControl'
 import { differenceInSeconds } from 'date-fns'
 
@@ -82,61 +83,6 @@ function ShiftStartModal({ onClose, onStart, isLoading }: ShiftStartModalProps) 
               className="flex-1 px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 disabled:opacity-50 transition-colors"
             >
               {isLoading ? 'Starting...' : 'Start Shift'}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  )
-}
-
-interface ShiftEndModalProps {
-  onClose: () => void
-  onEnd: (data: { notes?: string }) => void
-  isLoading: boolean
-}
-
-function ShiftEndModal({ onClose, onEnd, isLoading }: ShiftEndModalProps) {
-  const [notes, setNotes] = useState('')
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    onEnd({
-      notes: notes || undefined,
-    })
-  }
-
-  return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl max-w-md w-full p-6">
-        <h2 className="text-xl font-bold text-slate-900 mb-4">End Your Shift</h2>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">
-              Notes (optional)
-            </label>
-            <textarea
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              placeholder="Any notes for this shift..."
-              rows={3}
-              className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500"
-            />
-          </div>
-          <div className="flex gap-3">
-            <button
-              type="button"
-              onClick={onClose}
-              className="flex-1 px-4 py-2 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={isLoading}
-              className="flex-1 px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 disabled:opacity-50 transition-colors"
-            >
-              {isLoading ? 'Ending...' : 'End Shift'}
             </button>
           </div>
         </form>
@@ -232,7 +178,6 @@ export default function CustomerServiceDashboard() {
 
   const { data: currentShift, isLoading: shiftLoading } = useCurrentShift()
   const startShift = useStartShift()
-  const endShift = useEndShift()
   const cancelShift = useCancelShift()
 
   // Live shift counter. The interval only runs while a shift is active, and the
@@ -265,14 +210,6 @@ export default function CustomerServiceDashboard() {
     startShift.mutate(data, {
       onSuccess: () => {
         setShowStartModal(false)
-      },
-    })
-  }
-
-  const handleEndShift = (data: { notes?: string }) => {
-    endShift.mutate(data, {
-      onSuccess: () => {
-        setShowEndModal(false)
       },
     })
   }
@@ -517,13 +454,7 @@ export default function CustomerServiceDashboard() {
         />
       )}
 
-      {showEndModal && (
-        <ShiftEndModal
-          onClose={() => setShowEndModal(false)}
-          onEnd={handleEndShift}
-          isLoading={endShift.isPending}
-        />
-      )}
+      {showEndModal && currentShift && <ShiftEndModal onClose={() => setShowEndModal(false)} />}
 
       {showCancelModal && (
         <ShiftCancelModal

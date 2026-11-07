@@ -9,9 +9,11 @@ use App\Models\InventoryBatch;
 use App\Models\InventoryMovement;
 use App\Models\Invoice;
 use App\Models\Sale;
+use App\Models\Shift;
 use App\Models\User;
 use App\Notifications\InventoryActionApprovalPinNotification;
 use App\Notifications\InvoiceEmailNotification;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Notification;
 
 beforeEach(function () {
@@ -82,6 +84,36 @@ function invoicePayload(Device $device, User $customer, array $overrides = []): 
 }
 
 describe('Admin invoices', function () {
+    it('only attributes invoice redemptions to a shift before its cutoff', function (string $redeemedAt, bool $withinShift) {
+        config(['app.local_timezone' => 'Africa/Blantyre']);
+        Notification::fake();
+        $this->travelTo(Carbon::parse('2026-11-07 14:00:00', 'UTC'));
+        $staff = User::factory()->create(['branch_id' => $this->branch->id]);
+        $staff->assignRole('customer_service');
+        $shift = Shift::create([
+            'user_id' => $staff->id,
+            'branch_id' => $this->branch->id,
+            'started_at' => '2026-11-07 04:30:00',
+            'status' => 'active',
+        ]);
+        $batch = invoiceBatch($this->branch, $this->category, 'INV-SHIFT-CUTOFF');
+        $device = invoiceDevice($batch, $this->branch, $this->category);
+        $id = $this->actingAs($staff)
+            ->postJson('/api/v1/customer-service/invoices', invoicePayload($device, $this->customer))
+            ->assertCreated()->json('data.id');
+
+        $this->travelTo(Carbon::parse($redeemedAt, 'UTC'));
+        $this->postJson("/api/v1/customer-service/invoices/{$id}/redeem", [
+            'payment_method' => 'cash',
+            'payment_amount' => 1500,
+        ])->assertOk();
+
+        expect(Sale::firstOrFail()->shift_id)->toBe($withinShift ? $shift->id : null);
+    })->with([
+        'one second before ten hours' => ['2026-11-07 14:29:59', true],
+        'at ten hours before the scheduled job runs' => ['2026-11-07 14:30:00', false],
+    ]);
+
     it('issues an email-backed price locked invoice and reserves the exact device', function () {
         Notification::fake();
         $batch = invoiceBatch($this->branch, $this->category, 'INV-BATCH-ISSUE', 1200);

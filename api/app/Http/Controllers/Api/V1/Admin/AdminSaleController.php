@@ -165,8 +165,9 @@ class AdminSaleController extends BaseController
             // Get active shift for customer service users
             $activeShift = null;
             if ($user->hasRole('customer_service')) {
-                $activeShift = $user->activeShift()->first();
+                $activeShift = $user->activeShift()->lockForUpdate()->first();
             }
+            $saleDate = now();
 
             $paymentMethod = PaymentMethod::from($validated['payment_method']);
             $requestedStatus = $validated['status'] ?? null;
@@ -178,14 +179,14 @@ class AdminSaleController extends BaseController
                 'customer_id' => $validated['customer_id'],
                 'branch_id' => $branchId,
                 'sold_by_id' => $user->id,
-                'shift_id' => $activeShift?->id,
+                'shift_id' => $activeShift && ! $activeShift->isDueToEnd($saleDate) ? $activeShift->id : null,
                 'payment_method' => $validated['payment_method'],
                 'payment_reference' => $validated['payment_reference'] ?? null,
                 'payment_amount' => $validated['payment_amount'] ?? null,
                 'payment_status' => $shouldComplete ? PaymentStatus::Completed : PaymentStatus::Pending,
                 'status' => $shouldComplete ? SaleStatus::COMPLETED : SaleStatus::DRAFT,
                 'notes' => $validated['notes'] ?? null,
-                'sale_date' => now(),
+                'sale_date' => $saleDate,
                 'vat_applicable' => $validated['vat_applicable'] ?? true,
                 'subtotal' => 0,
                 'tax_amount' => 0,

@@ -11,8 +11,10 @@ use App\Models\DeviceCategory;
 use App\Models\InventoryBatch;
 use App\Models\InventoryMovement;
 use App\Models\Sale;
+use App\Models\Shift;
 use App\Models\User;
 use App\Notifications\NewSaleNotification;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Notification;
 
@@ -55,6 +57,36 @@ function salePayload(Device $device, User $customer, array $overrides = []): arr
 }
 
 describe('Admin Sales', function () {
+    it('only attributes staff sales to a shift before its cutoff', function (string $soldAt, bool $withinShift) {
+        config(['app.local_timezone' => 'Africa/Blantyre']);
+        Notification::fake();
+        $this->travelTo(Carbon::parse($soldAt, 'UTC'));
+        $staff = User::factory()->create(['branch_id' => $this->branch->id]);
+        $staff->assignRole('customer_service');
+        $shift = Shift::create([
+            'user_id' => $staff->id,
+            'branch_id' => $this->branch->id,
+            'started_at' => '2026-11-07 08:00:00',
+            'status' => 'active',
+        ]);
+        $device = Device::factory()->create([
+            'category_id' => $this->category->id,
+            'branch_id' => $this->branch->id,
+            'owner_id' => null,
+            'purchase_price' => 800,
+            'inventory_status' => InventoryStatus::IN_STOCK,
+        ]);
+
+        $id = $this->actingAs($staff)
+            ->postJson('/api/v1/customer-service/sales', salePayload($device, $this->customer))
+            ->assertCreated()->json('data.id');
+
+        expect(Sale::findOrFail($id)->shift_id)->toBe($withinShift ? $shift->id : null);
+    })->with([
+        'one second before closing' => ['2026-11-07 15:59:59', true],
+        'at closing before the scheduled job runs' => ['2026-11-07 16:00:00', false],
+    ]);
+
     it('leaves two units in stock after selling five out of seven', function () {
         Notification::fake();
         $devices = Device::factory()->count(7)->create([

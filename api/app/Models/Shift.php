@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Support\LocalTime;
+use Carbon\Carbon;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -10,6 +12,29 @@ use Illuminate\Database\Eloquent\Model;
 class Shift extends Model
 {
     use HasFactory;
+
+    public const MAX_HOURS = 10;
+
+    public static function closingTime(CarbonInterface $day): Carbon
+    {
+        return LocalTime::instantUtc($day)->setTimezone(config('app.local_timezone'))->setTime(18, 0);
+    }
+
+    public function automaticEndAt(): Carbon
+    {
+        $closing = self::closingTime($this->started_at);
+        if ($this->started_at->greaterThanOrEqualTo($closing)) {
+            // Legacy shifts could start after closing time. Use the next closing.
+            $closing->addDay();
+        }
+
+        return $this->started_at->copy()->addHours(self::MAX_HOURS)->min($closing)->utc();
+    }
+
+    public function isDueToEnd(CarbonInterface $at): bool
+    {
+        return $this->automaticEndAt()->lessThanOrEqualTo($at);
+    }
 
     /**
      * The attributes that are mass assignable.
@@ -167,9 +192,12 @@ class Shift extends Model
      */
     public function getBreakMinutesAttribute(): float
     {
-        return round((float) $this->breaksForAggregate()->sum(function (ShiftBreak $break) {
-            return $break->durationMinutes
-                ?? max(0, (float) $break->started_at->diffInMinutes(now()));
+        $shiftEnd = $this->ended_at ?? now();
+
+        return round((float) $this->breaksForAggregate()->sum(function (ShiftBreak $break) use ($shiftEnd) {
+            $breakEnd = $break->ended_at?->min($shiftEnd) ?? $shiftEnd;
+
+            return max(0, round($break->started_at->diffInMinutes($breakEnd), 2));
         }), 2);
     }
 
@@ -283,9 +311,9 @@ class Shift extends Model
     /**
      * Cancel the shift.
      */
-    public function cancel(): void
+    public function cancel(?CarbonInterface $endedAt = null): void
     {
-        $endedAt = now();
+        $endedAt ??= now();
 
         // Same reasoning as {@see self::complete()}: a cancelled shift must not
         // leave a break running forever.
@@ -305,15 +333,18 @@ class Shift extends Model
      */
     public function closeOpenBreaks(?CarbonInterface $at = null): int
     {
-        $closed = $this->breaks()->whereNull('ended_at')->update([
-            'ended_at' => $at ?? now(),
-        ]);
+        $at ??= now();
+        $openBreaks = $this->breaks()->whereNull('ended_at')->get();
+        foreach ($openBreaks as $break) {
+            // Older records can have a break that began after the shift's cutoff.
+            $break->update(['ended_at' => $at->max($break->started_at)]);
+        }
 
-        if ($closed > 0) {
+        if ($openBreaks->isNotEmpty()) {
             $this->unsetRelation('breaks');
         }
 
-        return $closed;
+        return $openBreaks->count();
     }
 
     /**

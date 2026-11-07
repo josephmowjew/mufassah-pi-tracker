@@ -31,6 +31,7 @@ class ShiftResource extends JsonResource
             'user' => $this->whenLoaded('user', fn () => new UserResource($this->user)),
             'started_at' => $this->started_at?->toLocalIso8601String(),
             'ended_at' => $this->ended_at?->toLocalIso8601String(),
+            'automatic_end_at' => $this->isActive() ? $this->automaticEndAt()->toLocalIso8601String() : null,
             'status' => $this->status,
             'notes' => $this->notes,
             'opening_cash' => (float) $this->opening_cash,

@@ -202,14 +202,15 @@ class InvoiceService
             }
 
             $activeShift = $user->hasRole('customer_service')
-                ? $user->activeShift()->first()
+                ? $user->activeShift()->lockForUpdate()->first()
                 : null;
+            $saleDate = now();
 
             $sale = $this->createSaleWithRetry([
                 'customer_id' => $invoice->customer_id,
                 'branch_id' => $invoice->branch_id,
                 'sold_by_id' => $user->id,
-                'shift_id' => $activeShift?->id,
+                'shift_id' => $activeShift && ! $activeShift->isDueToEnd($saleDate) ? $activeShift->id : null,
                 'subtotal' => $invoice->subtotal,
                 'tax_amount' => $invoice->tax_amount,
                 'discount_amount' => $invoice->discount_amount,
@@ -221,7 +222,7 @@ class InvoiceService
                 'change_due' => $changeDue,
                 'status' => $completed ? SaleStatus::COMPLETED->value : SaleStatus::DRAFT->value,
                 'notes' => $data['notes'] ?? $invoice->notes,
-                'sale_date' => now(),
+                'sale_date' => $saleDate,
                 'vat_applicable' => $invoice->vat_applicable,
             ]);
 

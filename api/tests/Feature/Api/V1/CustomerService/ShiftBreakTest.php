@@ -6,9 +6,12 @@ use App\Models\Branch;
 use App\Models\Shift;
 use App\Models\ShiftBreak;
 use App\Models\User;
+use Illuminate\Support\Carbon;
 use Spatie\Permission\Models\Role;
 
 beforeEach(function () {
+    $this->travelTo(Carbon::parse('2026-11-07 12:00:00', 'UTC'));
+
     Role::firstOrCreate(['name' => 'customer', 'guard_name' => 'api']);
     Role::firstOrCreate(['name' => 'customer_service', 'guard_name' => 'api']);
 
@@ -77,13 +80,14 @@ it('refuses to start a break without an active shift', function () {
 });
 
 it('closes the break when the employee returns', function () {
-    $this->travelTo(now()->subMinutes(30));
+    $resumeAt = now();
+    $this->travelTo($resumeAt->copy()->subMinutes(30));
 
     $this->actingAs($this->agent)
         ->postJson('/api/v1/customer-service/shifts/breaks/start', ['type' => 'tea'])
         ->assertCreated();
 
-    $this->travelBack();
+    $this->travelTo($resumeAt);
 
     $response = $this->actingAs($this->agent)
         ->postJson('/api/v1/customer-service/shifts/breaks/end');

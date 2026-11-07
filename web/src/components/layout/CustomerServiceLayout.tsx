@@ -14,6 +14,7 @@ import {
 import { useAuthStore } from '@/stores/auth-store'
 import { useLogout } from '@/hooks/useAuth'
 import { useState } from 'react'
+import { ShiftClosingNotice } from '@/components/shifts/ShiftClosingNotice'
 
 export default function CustomerServiceLayout() {
   const { user } = useAuthStore()
@@ -163,6 +164,7 @@ export default function CustomerServiceLayout() {
 
         {/* Page Content */}
         <div className="p-6">
+          <ShiftClosingNotice />
           <Outlet />
         </div>
       </main>

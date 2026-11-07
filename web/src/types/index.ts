@@ -1306,6 +1306,7 @@ export interface Shift {
   branch?: Branch
   started_at: string
   ended_at: string | null
+  automatic_end_at: string | null
   status: ShiftStatus
   notes: string | null
   opening_cash: number

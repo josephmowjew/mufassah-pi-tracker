@@ -7,7 +7,9 @@ use App\Http\Controllers\Api\V1\BaseController;
 use App\Http\Resources\ShiftResource;
 use App\Models\CommunicationSettings;
 use App\Models\Shift;
+use App\Models\User;
 use App\Notifications\ShiftEndSummaryNotification;
+use App\Services\ShiftClosingService;
 use App\Support\LocalTime;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -22,12 +24,18 @@ class ShiftController extends BaseController
     /**
      * Get the current active shift for the user.
      */
-    public function current(Request $request): JsonResponse
+    public function current(Request $request, ShiftClosingService $closing): JsonResponse
     {
         $shift = $request->user()->activeShift()->with(['branch', 'breaks'])->first();
 
         if (! $shift) {
             return $this->success(null, 'No active shift');
+        }
+
+        if ($shift->isDueToEnd(now())) {
+            $closing->closeIfDue($shift);
+
+            return $this->success(null, 'Shift ended automatically');
         }
 
         // Load sales relationship to ensure stats are calculated
@@ -41,34 +49,39 @@ class ShiftController extends BaseController
      */
     public function start(Request $request): JsonResponse
     {
-        $user = $request->user();
-        // Reload user from database to ensure branch_id is loaded
-        $user = \App\Models\User::with('branch')->find($user->id);
-
-        // Check if user already has an active shift
-        $activeShift = $user->activeShift()->first();
-        if ($activeShift) {
-            return $this->error(
-                'You already have an active shift. Please end it before starting a new one.',
-                400
-            );
-        }
-
         $validated = $request->validate([
             'opening_cash' => 'nullable|numeric|min:0',
             'notes' => 'nullable|string|max:1000',
         ]);
 
-        $shift = Shift::create([
-            'user_id' => $user->id,
-            'branch_id' => $user->requiredBranchScopeId(),
-            'started_at' => now(),
-            'status' => 'active',
-            'opening_cash' => $validated['opening_cash'] ?? 0,
-            'notes' => $validated['notes'] ?? null,
-        ]);
+        return DB::transaction(function () use ($request, $validated) {
+            $user = User::query()->lockForUpdate()->findOrFail($request->user()->id);
+            $activeShift = $user->activeShift()->lockForUpdate()->first();
+            $startedAt = now();
 
-        return $this->created(new ShiftResource($shift->load(['branch', 'breaks'])), 'Shift started successfully');
+            if ($activeShift?->isDueToEnd($startedAt)) {
+                $activeShift->complete(['ended_at' => $activeShift->automaticEndAt()]);
+                $activeShift = null;
+            }
+
+            if ($activeShift) {
+                return $this->error('You already have an active shift. Please end it before starting a new one.', 400);
+            }
+
+            if ($startedAt->greaterThanOrEqualTo(Shift::closingTime($startedAt))) {
+                return $this->error('Shifts cannot start at or after 6:00 pm Malawi time.', 400);
+            }
+
+            $shift = $user->shifts()->create([
+                'branch_id' => $user->requiredBranchScopeId(),
+                'started_at' => $startedAt,
+                'status' => 'active',
+                'opening_cash' => $validated['opening_cash'] ?? 0,
+                'notes' => $validated['notes'] ?? null,
+            ]);
+
+            return $this->created(new ShiftResource($shift->load(['branch', 'breaks'])), 'Shift started successfully');
+        });
     }
 
     /**
@@ -81,36 +94,37 @@ class ShiftController extends BaseController
     {
         $user = $request->user();
 
-        $shift = $user->activeShift()->first();
-        if (! $shift) {
-            return $this->error('No active shift found', 404);
-        }
-
         $validated = $request->validate([
             'closing_cash' => 'nullable|numeric|min:0',
             'notes' => 'nullable|string|max:1000',
         ]);
 
-        DB::beginTransaction();
         try {
-            $shift->complete([
-                'closing_cash' => $validated['closing_cash'] ?? null,
-                'notes' => $validated['notes'] ?? null,
-            ]);
+            $shift = DB::transaction(function () use ($user, $validated) {
+                $shift = $user->activeShift()->lockForUpdate()->first();
+                if ($shift) {
+                    $shift->complete([
+                        'ended_at' => now()->min($shift->automaticEndAt()),
+                        'closing_cash' => $validated['closing_cash'] ?? null,
+                        'notes' => $validated['notes'] ?? null,
+                    ]);
+                }
 
-            DB::commit();
+                return $shift;
+            });
         } catch (\Exception $e) {
-            DB::rollBack();
-
             // The exception never reaches Laravel's handler, so it is not reported
             // automatically — log it here or the failure is invisible in production.
             Log::error('Failed to end shift', [
                 'user_id' => $user->id,
-                'shift_id' => $shift->id,
                 'error' => $e->getMessage(),
             ]);
 
             return $this->error('Failed to end shift. Please try again.', 500);
+        }
+
+        if (! $shift) {
+            return $this->error('No active shift found', 404);
         }
 
         // Send notification to admin emails if enabled
@@ -134,25 +148,30 @@ class ShiftController extends BaseController
     {
         $user = $request->user();
 
-        $shift = $user->activeShift()->first();
-        if (! $shift) {
-            return $this->error('No active shift found', 404);
-        }
-
         $validated = $request->validate([
             'notes' => 'nullable|string|max:1000',
         ]);
 
-        $shift->cancel();
+        return DB::transaction(function () use ($user, $validated) {
+            $shift = $user->activeShift()->lockForUpdate()->first();
+            if (! $shift) {
+                return $this->error('No active shift found', 404);
+            }
 
-        if (! empty($validated['notes'])) {
-            $shift->update(['notes' => $validated['notes']]);
-        }
+            $endedAt = now();
+            if ($shift->isDueToEnd($endedAt)) {
+                $shift->complete(['ended_at' => $shift->automaticEndAt()]);
 
-        return $this->success(
-            new ShiftResource($shift->load(['branch', 'breaks'])),
-            'Shift cancelled'
-        );
+                return $this->success(new ShiftResource($shift->load(['branch', 'breaks'])), 'Shift ended automatically');
+            }
+
+            $shift->cancel($endedAt);
+            if (! empty($validated['notes'])) {
+                $shift->update(['notes' => $validated['notes']]);
+            }
+
+            return $this->success(new ShiftResource($shift->load(['branch', 'breaks'])), 'Shift cancelled');
+        });
     }
 
     /**
@@ -182,7 +201,8 @@ class ShiftController extends BaseController
                     ->lockForUpdate()
                     ->first();
 
-                if (! $shift) {
+                $startedAt = now();
+                if (! $shift || $shift->isDueToEnd($startedAt)) {
                     abort(404, 'No active shift found');
                 }
 
@@ -192,7 +212,7 @@ class ShiftController extends BaseController
 
                 $shift->breaks()->create([
                     'type' => $validated['type'] ?? ShiftBreakType::OTHER,
-                    'started_at' => now(),
+                    'started_at' => $startedAt,
                     'notes' => $validated['notes'] ?? null,
                 ]);
 
@@ -236,7 +256,8 @@ class ShiftController extends BaseController
                     ->lockForUpdate()
                     ->first();
 
-                if (! $shift) {
+                $now = now();
+                if (! $shift || $shift->isDueToEnd($now)) {
                     abort(404, 'No active shift found');
                 }
 
@@ -247,7 +268,7 @@ class ShiftController extends BaseController
                 }
 
                 // Guard against a backwards clock making the break negative.
-                $endedAt = now()->lessThan($break->started_at) ? $break->started_at->copy() : now();
+                $endedAt = $now->max($break->started_at);
 
                 $break->update([
                     'ended_at' => $endedAt,
