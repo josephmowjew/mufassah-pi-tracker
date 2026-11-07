@@ -36,3 +36,23 @@ it('allows customer service to create customer without email or password', funct
         ->and($customer->branch_id)->toBe($this->branch->id)
         ->and($customer->hasRole('customer'))->toBeTrue();
 });
+
+it('answers a duplicate customer phone number with a field error, not a 500', function () {
+    $this->actingAs($this->agent)
+        ->postJson('/api/v1/customer-service/customers', [
+            'name' => 'First Customer',
+            'phone_number' => '+265888000333',
+        ])->assertCreated();
+
+    // users.phone_number is unique in the database, so the second attempt has
+    // to fail validation with a readable error rather than a 500.
+    $this->actingAs($this->agent)
+        ->postJson('/api/v1/customer-service/customers', [
+            'name' => 'Second Customer',
+            'phone_number' => '+265888000333',
+        ])
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors('phone_number');
+
+    expect(User::where('phone_number', '+265888000333')->count())->toBe(1);
+});

@@ -96,7 +96,11 @@ class CustomerServiceController extends BaseController
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'email' => ['nullable', 'string', 'email', 'max:255', 'unique:users,email'],
-            'phone_number' => ['nullable', 'string', 'max:20'],
+            // users.phone_number carries a unique index, so without this rule a
+            // duplicate reaches MySQL and surfaces as a 500 instead of telling
+            // the operator which field is wrong. Walk-in customers sharing a
+            // phone number is a common front-desk mistake.
+            'phone_number' => ['nullable', 'string', 'max:20', 'unique:users,phone_number'],
             'password' => ['nullable', 'confirmed', Password::defaults()],
             'national_id' => ['nullable', 'string', 'max:50', 'unique:users,national_id'],
         ]);
