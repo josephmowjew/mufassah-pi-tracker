@@ -740,11 +740,9 @@ class AdminSaleController extends BaseController
         }
 
         $device->loadMissing('inventoryBatch');
-        if ($device->inventoryBatch?->target_selling_price !== null) {
-            $batchPrice = (float) $device->inventoryBatch->target_selling_price;
-            if ($batchPrice > 0) {
-                return round($batchPrice, 2);
-            }
+        $batchPrice = $device->inventoryBatch?->sellingPrice();
+        if ($batchPrice !== null) {
+            return $batchPrice;
         }
 
         $purchaseCost = $device->purchase_price;

@@ -89,7 +89,7 @@ const CustomerServiceDashboard = lazy(() => import('@/pages/customer-service/Cus
 const CustomerServiceSalesPage = lazy(() => import('@/pages/customer-service/CustomerServiceSalesPage'))
 const CustomerServiceNewSalePage = lazy(() => import('@/pages/customer-service/CustomerServiceNewSalePage'))
 const CustomerServiceSaleDetailPage = lazy(() => import('@/pages/customer-service/SaleDetailPage'))
-const CustomerServiceDevicesPage = lazy(() => import('@/pages/customer-service/CustomerServiceDevicesPage'))
+const CustomerServiceProductsPage = lazy(() => import('@/pages/customer-service/CustomerServiceProductsPage'))
 const CustomerServiceCustomersPage = lazy(() => import('@/pages/customer-service/CustomerServiceCustomersPage'))
 const CustomerServiceWarrantiesPage = lazy(() => import('@/pages/customer-service/CustomerServiceWarrantiesPage'))
 const ShiftHistoryPage = lazy(() => import('@/pages/customer-service/ShiftHistoryPage'))
@@ -206,7 +206,8 @@ function App() {
                 <Route path="/customer-service/laybys" element={<LaybysPage />} />
                 <Route path="/customer-service/sales/new" element={<CustomerServiceNewSalePage />} />
                 <Route path="/customer-service/sales/:id" element={<CustomerServiceSaleDetailPage />} />
-                <Route path="/customer-service/devices" element={<CustomerServiceDevicesPage />} />
+                <Route path="/customer-service/products" element={<CustomerServiceProductsPage />} />
+                <Route path="/customer-service/devices" element={<Navigate to="/customer-service/products" replace />} />
                 <Route path="/customer-service/customers" element={<CustomerServiceCustomersPage />} />
                 <Route path="/customer-service/warranties" element={<CustomerServiceWarrantiesPage />} />
                 <Route path="/customer-service/profile" element={<ProfilePage />} />

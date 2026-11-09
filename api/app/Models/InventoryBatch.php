@@ -41,6 +41,13 @@ class InventoryBatch extends Model
         ];
     }
 
+    public function sellingPrice(): ?float
+    {
+        $price = (float) $this->target_selling_price;
+
+        return $price > 0 ? $price : null;
+    }
+
     public function branch(): BelongsTo
     {
         return $this->belongsTo(Branch::class);

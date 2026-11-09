@@ -257,8 +257,7 @@ class AdminInventoryController extends BaseController
         // Base query: available devices in the selected category and branch
         $baseQuery = Device::where('category_id', $categoryId)
             ->when($branchId, fn ($q) => $q->where('branch_id', $branchId))
-            ->whereNull('stock_transfer_request_id')
-            ->available();
+            ->availableForSale();
 
         // Get brands (filtered by category only)
         $brands = (clone $baseQuery)
@@ -785,9 +784,9 @@ class AdminInventoryController extends BaseController
     /** @return array{0: float|null, 1: string|null} */
     private function resolveProductOptionPrice(Device $device): array
     {
-        $batchPrice = $device->inventoryBatch?->target_selling_price;
-        if ($batchPrice !== null && (float) $batchPrice > 0) {
-            return [round((float) $batchPrice, 2), 'batch_target_selling_price'];
+        $batchPrice = $device->inventoryBatch?->sellingPrice();
+        if ($batchPrice !== null) {
+            return [$batchPrice, 'batch_target_selling_price'];
         }
 
         $purchaseCost = $device->purchase_price;

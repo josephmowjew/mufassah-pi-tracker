@@ -3,7 +3,7 @@ import {
   LayoutDashboard,
   ShoppingCart,
   Users,
-  Smartphone,
+  Package,
   FileText,
   LogOut,
   Menu,
@@ -47,9 +47,9 @@ export default function CustomerServiceLayout() {
       icon: ReceiptText,
     },
     {
-      name: 'Devices',
-      path: '/customer-service/devices',
-      icon: Smartphone,
+      name: 'Products',
+      path: '/customer-service/products',
+      icon: Package,
     },
     {
       name: 'Customers',

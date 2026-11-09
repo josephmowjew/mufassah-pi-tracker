@@ -269,10 +269,10 @@ export default function CustomerServiceDashboard() {
       color: 'from-teal-400 to-teal-600',
     },
     {
-      label: 'View Devices',
-      description: 'Browse all devices',
+      label: 'Browse Products',
+      description: 'Check branch stock and prices',
       icon: Package,
-      href: '/customer-service/devices',
+      href: '/customer-service/products',
       color: 'from-purple-400 to-purple-600',
     },
     {

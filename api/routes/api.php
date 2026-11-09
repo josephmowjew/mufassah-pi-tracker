@@ -23,6 +23,7 @@ use App\Http\Controllers\Api\V1\Auth\PasswordResetController;
 use App\Http\Controllers\Api\V1\CommunityAlertController;
 use App\Http\Controllers\Api\V1\CustomerService\CustomerServiceController;
 use App\Http\Controllers\Api\V1\CustomerService\CustomerServiceDeviceController;
+use App\Http\Controllers\Api\V1\CustomerService\CustomerServiceProductController;
 use App\Http\Controllers\Api\V1\CustomerService\CustomerServiceSaleController;
 use App\Http\Controllers\Api\V1\CustomerService\ShiftController;
 use App\Http\Controllers\Api\V1\DeviceCategoryController;
@@ -723,6 +724,9 @@ Route::middleware(['auth:sanctum', 'not.suspended'])->group(function () {
         });
 
         Route::get('/inventory/product-options', [AdminInventoryController::class, 'productOptions'])->name('inventory.product-options');
+
+        Route::get('/products', [CustomerServiceProductController::class, 'index'])->name('products.index');
+        Route::get('/products/{device}/units', [CustomerServiceProductController::class, 'units'])->name('products.units');
 
         // Devices (read-only access)
         Route::prefix('devices')->name('devices.')->group(function () {

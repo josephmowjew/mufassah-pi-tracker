@@ -281,6 +281,11 @@ class Device extends Model
         ]);
     }
 
+    public function scopeAvailableForSale($query)
+    {
+        return $query->available()->whereNull('stock_transfer_request_id');
+    }
+
     /**
      * Scope a query to filter by branch.
      */
