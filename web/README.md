@@ -1,5 +1,32 @@
 # React + TypeScript + Vite
 
+## Deploying the frontend behind Nginx
+
+Open tabs can keep running an older Vite entry script and request its route bundles
+after a release. Publish the new `dist/assets/` files to the served assets directory
+before switching `index.html` into place with an atomic rename. Retain the assets
+for recent releases during rollout and rollback. Apply any cleanup separately from
+the upload, after the chosen retention window.
+
+In the existing HTTPS server block, use these locations with the frontend document
+root. The SPA fallback should route browser navigation to `/index.html`.
+
+```nginx
+location ^~ /assets/ {
+    try_files $uri =404;
+    add_header Cache-Control "public, max-age=31536000, immutable";
+}
+
+location = /index.html {
+    add_header Cache-Control "no-cache" always;
+}
+```
+
+Keep any existing security headers when adding these location-level headers. After
+rollout, confirm that `/admin/users` returns HTML with `Cache-Control: no-cache`,
+that current and retained bundle URLs return JavaScript, and that an unknown
+`/assets/*.js` URL returns HTTP 404.
+
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
 
 Currently, two official plugins are available:
