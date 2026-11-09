@@ -134,7 +134,7 @@ class AdminShiftController extends BaseController
         // SQL, joining only shifts that match the same filters.
         $saleAggregates = \App\Models\Sale::query()
             ->whereIn('shift_id', (clone $query)->select('id'))
-            ->where('status', 'completed')
+            ->completedForReporting()
             ->selectRaw('COUNT(*) as sales_count, COALESCE(SUM(total_amount), 0) as revenue')
             ->first();
 

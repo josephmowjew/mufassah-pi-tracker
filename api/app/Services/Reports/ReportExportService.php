@@ -99,6 +99,9 @@ class ReportExportService
             'POS sales (transactions)' => Cell::number($summary['pos_sales_count']),
             'POS revenue ('.$this->currency().')' => Cell::boldMoney($summary['pos_revenue']),
             'POS gross profit ('.$this->currency().')' => Cell::boldMoney($summary['pos_gross_profit']),
+            'Layby returns (transactions)' => Cell::number($summary['layby_return_count']),
+            'Layby return value ('.$this->currency().')' => Cell::money($summary['layby_return_value']),
+            'POS value after layby returns ('.$this->currency().')' => Cell::money($summary['pos_value_after_layby_returns']),
             'Units sold' => Cell::number($summary['units_sold']),
             'Average sale value ('.$this->currency().')' => Cell::money($summary['average_sale_value']),
             'Administrative sales (transactions)' => Cell::number($summary['administrative_sales_count']),
@@ -188,6 +191,20 @@ class ReportExportService
                 Cell::money($row['gross_profit']),
                 Cell::text($row['payment_method'].' / '.$row['payment_status']),
             ]);
+        }
+
+        if ($summary['layby_return_count'] > 0) {
+            $returns = $book->addSheet('Layby returns');
+            $returns->setColumnWidths([30, 14, 14, 20]);
+            $returns->addHeaderRow(['Layby reference', 'Return date', 'Branch ID', 'Return value']);
+            foreach ($this->reports->laybyReturns($filters)->orderBy('returned_at')->get() as $row) {
+                $returns->addRow([
+                    Cell::text($row->reference),
+                    Cell::date($row->returned_at->toLocalDateString()),
+                    Cell::number($row->branch_id),
+                    Cell::money($row->total_minor / 100),
+                ]);
+            }
         }
 
         $administrative = $book->addSheet('Administrative sales');

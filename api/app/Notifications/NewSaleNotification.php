@@ -49,7 +49,7 @@ class NewSaleNotification extends Notification implements ShouldQueue
             ->line("- Staff: {$staffName}")
             ->line("- Branch: {$branchName}")
             ->line('- Total Amount: MWK '.number_format($this->sale->total_amount, 2))
-            ->line('- Payment Method: '.str_replace('_', ' ', ucfirst($this->sale->payment_method->value)))
+            ->line('- Payment Method: '.($this->sale->payment_method ? str_replace('_', ' ', ucfirst($this->sale->payment_method->value)) : 'Layby'))
             ->line("- Items Sold: {$this->sale->items->count()}")
             ->line("- Date: {$this->sale->created_at->toLocalFormat('Y-m-d H:i')}")
             ->action('View Sale Details', $frontendUrl."/admin/sales/{$this->sale->id}")

@@ -6,9 +6,11 @@ use App\Enums\DeviceStatus;
 use App\Http\Controllers\Api\V1\BaseController;
 use App\Http\Resources\DeviceResource;
 use App\Models\Device;
+use App\Models\Sale;
 use App\Services\InventoryCatalogResolver;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 
 class AdminDeviceController extends BaseController
@@ -124,21 +126,33 @@ class AdminDeviceController extends BaseController
             'category_id' => ['sometimes', Rule::exists('device_categories', 'id')->whereNull('deleted_at')],
         ]);
 
-        if (array_key_exists('category_id', $validated)
-            || array_key_exists('brand', $validated)
-            || array_key_exists('model', $validated)) {
-            $catalog = $this->catalogResolver->resolve(
-                (int) ($validated['category_id'] ?? $device->category_id),
-                $validated['brand'] ?? $device->brand,
-                $validated['model'] ?? $device->model,
-            );
-            $validated = array_merge($validated, $catalog);
-        }
+        return DB::transaction(function () use ($request, $device, $validated) {
+            $device = Device::query()->lockForUpdate()->findOrFail($device->id);
+            $this->authorizeDeviceBranch($request, $device);
+            $device->assertNotHeldForLayby();
+            if (isset($validated['serial_number']) && $validated['serial_number'] !== $device->serial_number
+                && $device->isSold() && Sale::query()->whereKey($device->sale_id)->whereNull('payment_method')->exists()) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'serial_number' => 'The serial on a fulfilled layby cannot be changed.',
+                ]);
+            }
 
-        $device->update($validated);
-        $device->load(['category', 'owner', 'iotModule', 'lastLocation']);
+            if (array_key_exists('category_id', $validated)
+                || array_key_exists('brand', $validated)
+                || array_key_exists('model', $validated)) {
+                $catalog = $this->catalogResolver->resolve(
+                    (int) ($validated['category_id'] ?? $device->category_id),
+                    $validated['brand'] ?? $device->brand,
+                    $validated['model'] ?? $device->model,
+                );
+                $validated = array_merge($validated, $catalog);
+            }
 
-        return $this->success(new DeviceResource($device), 'Device updated successfully');
+            $device->update($validated);
+            $device->load(['category', 'owner', 'iotModule', 'lastLocation']);
+
+            return $this->success(new DeviceResource($device), 'Device updated successfully');
+        });
     }
 
     /**
@@ -152,17 +166,22 @@ class AdminDeviceController extends BaseController
             'notes' => 'nullable|string|max:500',
         ]);
 
-        $oldStatus = $device->status;
-        $device->update(['status' => $validated['status']]);
+        return DB::transaction(function () use ($request, $device, $validated) {
+            $device = Device::query()->lockForUpdate()->findOrFail($device->id);
+            $this->authorizeDeviceBranch($request, $device);
+            $device->assertNotHeldForLayby();
+            $oldStatus = $device->status;
+            $device->update(['status' => $validated['status']]);
 
-        // Log the status change if notes provided
-        if (isset($validated['notes'])) {
-            $device->update(['notes' => $validated['notes']]);
-        }
+            // Log the status change if notes provided
+            if (isset($validated['notes'])) {
+                $device->update(['notes' => $validated['notes']]);
+            }
 
-        $device->load(['category', 'owner', 'iotModule', 'lastLocation']);
+            $device->load(['category', 'owner', 'iotModule', 'lastLocation']);
 
-        return $this->success(new DeviceResource($device), 'Device status updated successfully');
+            return $this->success(new DeviceResource($device), 'Device status updated successfully');
+        });
     }
 
     /**

@@ -45,6 +45,7 @@ class ShiftResource extends JsonResource
             'revenue' => (float) ($this->revenue ?? 0),
             'sales_count' => $this->sales_count ?? 0,
             'cash_sales' => (float) ($this->cash_sales ?? 0),
+            'layby_tender_totals_minor' => $this->laybyTenderTotals(),
             'created_at' => $this->created_at?->toLocalIso8601String(),
             'updated_at' => $this->updated_at?->toLocalIso8601String(),
         ];

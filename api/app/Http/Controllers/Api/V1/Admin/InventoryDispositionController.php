@@ -770,6 +770,7 @@ class InventoryDispositionController extends BaseController
 
     private function assertAdministrativeSaleEligible(Device $device): void
     {
+        $device->assertNotHeldForLayby();
         if ($device->stock_transfer_request_id) {
             throw ValidationException::withMessages(['device' => ['This device is awaiting transfer approval.']]);
         }

@@ -25,6 +25,9 @@ interface SalesData {
     pos_sales_count: number
     pos_revenue: number
     pos_gross_profit: number
+    layby_return_count?: number
+    layby_return_value?: number
+    pos_value_after_layby_returns?: number
     administrative_sales_count: number
     administrative_sale_value: number
     administrative_sale_profit: number
@@ -610,6 +613,12 @@ export default function AdminReportsPage() {
                 </div>
               </div>
 
+              {!!salesData?.summary.layby_return_count && (
+                <p className="rounded-lg bg-slate-50 px-4 py-3 text-sm text-slate-700">
+                  Layby returns in period {formatCurrency(salesData.summary.layby_return_value || 0)} ·
+                  POS value after layby returns {formatCurrency(salesData.summary.pos_value_after_layby_returns || 0)}
+                </p>
+              )}
               <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
                 <div>
                   <div className="flex items-center gap-2 mb-3">

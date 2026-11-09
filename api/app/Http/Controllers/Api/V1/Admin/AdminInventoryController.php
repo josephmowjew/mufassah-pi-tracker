@@ -657,32 +657,37 @@ class AdminInventoryController extends BaseController
             'notes' => 'nullable|string|max:500',
         ]);
 
-        // Cannot change status of sold device without proper refund
-        if ($device->isSold() && $validated['inventory_status'] !== InventoryStatus::SOLD->value) {
-            return $this->error('Cannot change status of sold device. Process a refund instead.', 400);
-        }
+        return DB::transaction(function () use ($request, $device, $validated) {
+            $device = Device::query()->lockForUpdate()->findOrFail($device->id);
+            $this->authorizeInventoryBranch($request, $device->branch_id);
+            $device->assertNotHeldForLayby();
+            // Cannot change status of sold device without proper refund
+            if ($device->isSold() && $validated['inventory_status'] !== InventoryStatus::SOLD->value) {
+                return $this->error('Cannot change status of sold device. Process a refund instead.', 400);
+            }
 
-        $previousStatus = $device->inventory_status?->value;
+            $previousStatus = $device->inventory_status?->value;
 
-        $device->update([
-            'inventory_status' => $validated['inventory_status'],
-            'notes' => $validated['notes'] ?? $device->notes,
-        ]);
-        $this->movementService->recordStatusChange(
-            $device->fresh(),
-            $previousStatus,
-            $validated['inventory_status'],
-            $request->user(),
-            'Manual inventory status update',
-            $validated['notes'] ?? null
-        );
-        $this->logActivity($device, $request->user(), 'inventory_status_updated', 'Inventory status updated', [
-            'inventory_status' => $validated['inventory_status'],
-        ]);
+            $device->update([
+                'inventory_status' => $validated['inventory_status'],
+                'notes' => $validated['notes'] ?? $device->notes,
+            ]);
+            $this->movementService->recordStatusChange(
+                $device->fresh(),
+                $previousStatus,
+                $validated['inventory_status'],
+                $request->user(),
+                'Manual inventory status update',
+                $validated['notes'] ?? null
+            );
+            $this->logActivity($device, $request->user(), 'inventory_status_updated', 'Inventory status updated', [
+                'inventory_status' => $validated['inventory_status'],
+            ]);
 
-        $device->load(['category', 'iotModule']);
+            $device->load(['category', 'iotModule']);
 
-        return $this->success(new DeviceResource($device), 'Inventory status updated successfully');
+            return $this->success(new DeviceResource($device), 'Inventory status updated successfully');
+        });
     }
 
     /**
@@ -692,35 +697,40 @@ class AdminInventoryController extends BaseController
     {
         $this->authorizeInventoryBranch($request, $device->branch_id);
 
-        if ($device->isSold()) {
-            return $this->error('Cannot mark sold device as faulty. Process a return first.', 400);
-        }
+        return DB::transaction(function () use ($request, $device, $validated) {
+            $device = Device::query()->lockForUpdate()->findOrFail($device->id);
+            $this->authorizeInventoryBranch($request, $device->branch_id);
+            $device->assertNotHeldForLayby();
+            if ($device->isSold()) {
+                return $this->error('Cannot mark sold device as faulty. Process a return first.', 400);
+            }
 
-        $validated = $request->validate([
-            'notes' => 'required|string|max:1000',
-        ]);
+            $validated = $request->validate([
+                'notes' => 'required|string|max:1000',
+            ]);
 
-        $previousStatus = $device->inventory_status?->value;
+            $previousStatus = $device->inventory_status?->value;
 
-        $device->update([
-            'inventory_status' => InventoryStatus::FAULTY,
-            'notes' => $validated['notes'],
-        ]);
-        $this->movementService->recordStatusChange(
-            $device->fresh(),
-            $previousStatus,
-            InventoryStatus::FAULTY->value,
-            $request->user(),
-            'Device marked faulty',
-            $validated['notes']
-        );
-        $this->logActivity($device, $request->user(), 'inventory_status_updated', 'Device marked faulty', [
-            'inventory_status' => InventoryStatus::FAULTY->value,
-        ]);
+            $device->update([
+                'inventory_status' => InventoryStatus::FAULTY,
+                'notes' => $validated['notes'],
+            ]);
+            $this->movementService->recordStatusChange(
+                $device->fresh(),
+                $previousStatus,
+                InventoryStatus::FAULTY->value,
+                $request->user(),
+                'Device marked faulty',
+                $validated['notes']
+            );
+            $this->logActivity($device, $request->user(), 'inventory_status_updated', 'Device marked faulty', [
+                'inventory_status' => InventoryStatus::FAULTY->value,
+            ]);
 
-        $device->load(['category', 'iotModule']);
+            $device->load(['category', 'iotModule']);
 
-        return $this->success(new DeviceResource($device), 'Device marked as faulty');
+            return $this->success(new DeviceResource($device), 'Device marked as faulty');
+        });
     }
 
     private function resolveInventoryBranchId(Request $request, ?int $requestedBranchId): ?int

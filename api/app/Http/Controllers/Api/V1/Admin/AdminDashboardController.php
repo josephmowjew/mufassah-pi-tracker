@@ -4,7 +4,6 @@ namespace App\Http\Controllers\Api\V1\Admin;
 
 use App\Enums\DeviceStatus;
 use App\Enums\PaymentStatus;
-use App\Enums\SaleStatus;
 use App\Enums\SubscriptionStatus;
 use App\Enums\TheftReportStatus;
 use App\Http\Controllers\Controller;
@@ -455,7 +454,7 @@ class AdminDashboardController extends Controller
     private function buildSalesSummary(?int $branchId, Carbon $from, Carbon $to): array
     {
         $posQuery = $this->salesQuery($branchId)
-            ->where('status', SaleStatus::COMPLETED)
+            ->completedForReporting()
             ->whereBetween('sale_date', [$from, $to]);
         $administrativeQuery = $this->administrativeSalesQuery($branchId)
             ->whereBetween('created_at', [$from, $to]);
@@ -499,7 +498,7 @@ class AdminDashboardController extends Controller
     private function completedSalesQuery(?int $branchId, Carbon $from, Carbon $to): Builder
     {
         return $this->salesQuery($branchId)
-            ->where('status', SaleStatus::COMPLETED)
+            ->completedForReporting()
             ->whereBetween('sale_date', [$from, $to]);
     }
 

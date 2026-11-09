@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom'
 import { formatMalawiDate, malawiCalendarDate } from '@/lib/datetime'
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -1736,7 +1737,12 @@ export default function SalesPage() {
                       </button>
                     </Authorize>
                   )}
-                  {selectedSale.status.value === 'completed' && (
+                  {selectedSale.layby_id && (
+                    <Link to={`/admin/laybys?agreement=${selectedSale.layby_id}`} className="btn btn-secondary gap-2 px-4 py-2">
+                      <Receipt className="h-4 w-4 shrink-0" aria-hidden="true" /> Open layby agreement
+                    </Link>
+                  )}
+                  {!selectedSale.layby_id && selectedSale.status.value === 'completed' && (
                     <Authorize permission={PERMISSIONS.MANAGE_SALES}>
                       <button
                         onClick={() => {

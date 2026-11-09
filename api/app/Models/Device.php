@@ -55,6 +55,7 @@ class Device extends Model
         'inventory_status',
         'sale_id',
         'reserved_invoice_id',
+        'reserved_layby_id',
         'sold_at',
         'sold_by_id',
         'notes',
@@ -274,7 +275,7 @@ class Device extends Model
      */
     public function scopeAvailable($query)
     {
-        return $query->whereIn('inventory_status', [
+        return $query->whereNull('reserved_layby_id')->whereIn('inventory_status', [
             InventoryStatus::IN_STOCK,
             InventoryStatus::RETURNED,
         ]);
@@ -312,9 +313,18 @@ class Device extends Model
     /**
      * Check if the device is in stock.
      */
+    public function assertNotHeldForLayby(): void
+    {
+        if ($this->reserved_layby_id !== null) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'device' => 'This device is reserved for a layby agreement.',
+            ]);
+        }
+    }
+
     public function isInStock(): bool
     {
-        return $this->inventory_status === InventoryStatus::IN_STOCK;
+        return ! $this->reserved_layby_id && $this->inventory_status === InventoryStatus::IN_STOCK;
     }
 
     /**

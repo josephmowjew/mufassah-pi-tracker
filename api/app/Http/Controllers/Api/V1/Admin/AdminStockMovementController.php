@@ -112,6 +112,7 @@ class AdminStockMovementController extends BaseController
             $movements = collect();
             foreach ($devices as $device) {
                 $this->authorizeTransferSource($request, $device);
+                $device->assertNotHeldForLayby();
 
                 if (! in_array($device->inventory_status, [InventoryStatus::IN_STOCK, InventoryStatus::RETURNED], true)) {
                     throw ValidationException::withMessages([
@@ -190,6 +191,7 @@ class AdminStockMovementController extends BaseController
             $movements = collect();
             foreach ($devices as $device) {
                 $this->authorizeTransferSource($request, $device);
+                $device->assertNotHeldForLayby();
 
                 if ($device->stock_transfer_request_id) {
                     throw ValidationException::withMessages(['device_ids' => ["Device {$device->serial_number} is awaiting transfer approval."]]);

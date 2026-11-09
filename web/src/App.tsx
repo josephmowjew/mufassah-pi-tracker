@@ -80,6 +80,7 @@ const AdminVacanciesPage = lazy(() => import('@/pages/admin/AdminVacanciesPage')
 const DeviceManagementPage = lazy(() => import('@/pages/management/DeviceManagementPage'))
 const IoTModulesPage = lazy(() => import('@/pages/management/IoTModulesPage'))
 const SalesPage = lazy(() => import('@/pages/sales/SalesPage'))
+const LaybysPage = lazy(() => import('@/pages/laybys/LaybysPage'))
 const InvoicesPage = lazy(() => import('@/pages/invoices/InvoicesPage'))
 const AdminTrackingPage = lazy(() => import('@/pages/admin/AdminTrackingPage'))
 
@@ -178,6 +179,7 @@ function App() {
                 <Route path="/admin/stock-movements" element={<AdminStockMovementsPage />} />
                 <Route path="/admin/sales" element={<SalesPage />} />
                  <Route path="/admin/invoices" element={<InvoicesPage />} />
+                <Route path="/admin/laybys" element={<LaybysPage />} />
                 <Route path="/admin/shifts" element={<AdminShiftsPage />} />
                 <Route path="/admin/notifications" element={<NotificationsPage />} />
                 <Route path="/admin/theft-reports" element={<AdminTheftReportsPage />} />
@@ -201,6 +203,7 @@ function App() {
                 <Route path="/customer-service" element={<CustomerServiceDashboard />} />
                 <Route path="/customer-service/sales" element={<CustomerServiceSalesPage />} />
                  <Route path="/customer-service/invoices" element={<InvoicesPage />} />
+                <Route path="/customer-service/laybys" element={<LaybysPage />} />
                 <Route path="/customer-service/sales/new" element={<CustomerServiceNewSalePage />} />
                 <Route path="/customer-service/sales/:id" element={<CustomerServiceSaleDetailPage />} />
                 <Route path="/customer-service/devices" element={<CustomerServiceDevicesPage />} />

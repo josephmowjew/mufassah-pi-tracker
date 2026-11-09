@@ -42,6 +42,11 @@ export default function CustomerServiceLayout() {
       icon: ReceiptText,
     },
     {
+      name: 'Layby',
+      path: '/customer-service/laybys',
+      icon: ReceiptText,
+    },
+    {
       name: 'Devices',
       path: '/customer-service/devices',
       icon: Smartphone,

@@ -497,7 +497,10 @@
             <div class="payment-grid">
                 <div class="payment-item">
                     <label>Payment Method</label>
-                    <span>{{ $sale->payment_method->label() }}</span>
+                    <span>{{ $sale->tenderLabel() }}</span>
+                    @foreach ($sale->tenderBreakdown() as $tender => $minor)
+                        <div>{{ ucwords(str_replace('_', ' ', $tender)) }} · MWK {{ number_format($minor / 100, 2) }}</div>
+                    @endforeach
                 </div>
                 <div class="payment-item">
                     <label>Payment Status</label>

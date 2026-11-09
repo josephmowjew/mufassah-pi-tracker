@@ -248,6 +248,12 @@ export default function ReceiptModal({ sale, onClose }: ReceiptModalProps) {
                   {typeof sale.payment_method === 'string' ? sale.payment_method : sale.payment_method?.label || 'N/A'}
                 </span>
               </div>
+              {Object.entries(sale.tender_breakdown_minor ?? {}).map(([tender, amount]) => (
+                <div key={tender} className="flex justify-between">
+                  <span className="capitalize text-slate-600">{tender.replaceAll('_', ' ')}</span>
+                  <span>MWK {(amount / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                </div>
+              ))}
             </div>
 
             {/* Items */}

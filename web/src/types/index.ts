@@ -838,7 +838,7 @@ export interface InventoryMovementSummary {
 
 // Sale types
 export type SaleStatusValue = 'draft' | 'completed' | 'cancelled' | 'refunded'
-export type SalePaymentStatusValue = 'pending' | 'completed' | 'partial' | 'failed' | 'refunded' | 'cancelled'
+export type SalePaymentStatusValue = 'pending' | 'completed' | 'partial' | 'failed' | 'refunded' | 'cancelled' | 'refund_processing'
 export type SalePaymentMethodValue = 'cash' | 'mobile_money' | 'card' | 'bank_transfer' | 'credit'
 
 export interface StatusObject<T = string> {
@@ -857,7 +857,9 @@ export interface Sale {
   tax_amount: number | string
   discount_amount: number | string
   total_amount: number | string
-  payment_method: StatusObject<SalePaymentMethodValue>
+  payment_method: StatusObject<SalePaymentMethodValue | 'layby'>
+  layby_id?: number
+  tender_breakdown_minor?: Record<string, number>
   payment_status: StatusObject<SalePaymentStatusValue>
   payment_reference: string | null
   payment_amount?: number | string | null
@@ -1321,6 +1323,7 @@ export interface Shift {
   revenue: number
   sales_count: number
   cash_sales: number
+  layby_tender_totals_minor?: Record<string, Partial<Record<'collection' | 'refund' | 'correction', number>>>
   created_at: string
   updated_at: string
   user?: User

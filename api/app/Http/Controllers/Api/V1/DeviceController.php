@@ -134,13 +134,18 @@ class DeviceController extends BaseController
     {
         $this->authorize('update', $device);
 
-        $device->update($request->validated());
-        $device->load(['category', 'owner', 'iotModule', 'lastLocation']);
+        return DB::transaction(function () use ($request, $device) {
+            $device = Device::query()->lockForUpdate()->findOrFail($device->id);
+            $this->authorize('update', $device);
+            $device->assertNotHeldForLayby();
+            $device->update($request->validated());
+            $device->load(['category', 'owner', 'iotModule', 'lastLocation']);
 
-        return $this->success(
-            new DeviceResource($device),
-            'Device updated successfully.'
-        );
+            return $this->success(
+                new DeviceResource($device),
+                'Device updated successfully.'
+            );
+        });
     }
 
     /**
@@ -160,17 +165,22 @@ class DeviceController extends BaseController
     {
         $this->authorize('updateStatus', $device);
 
-        $device->update([
-            'status' => $request->status,
-            'notes' => $request->notes ?? $device->notes,
-        ]);
+        return DB::transaction(function () use ($request, $device) {
+            $device = Device::query()->lockForUpdate()->findOrFail($device->id);
+            $this->authorize('updateStatus', $device);
+            $device->assertNotHeldForLayby();
+            $device->update([
+                'status' => $request->status,
+                'notes' => $request->notes ?? $device->notes,
+            ]);
 
-        $device->load(['category', 'owner', 'iotModule']);
+            $device->load(['category', 'owner', 'iotModule']);
 
-        return $this->success(
-            new DeviceResource($device),
-            'Device status updated successfully.'
-        );
+            return $this->success(
+                new DeviceResource($device),
+                'Device status updated successfully.'
+            );
+        });
     }
 
     /**
@@ -249,6 +259,9 @@ class DeviceController extends BaseController
         }
 
         DB::transaction(function () use ($device, $newOwner, $request) {
+            $device = Device::query()->lockForUpdate()->findOrFail($device->id);
+            $this->authorize('transfer', $device);
+            $device->assertNotHeldForLayby();
             $previousOwnerId = $device->owner_id;
 
             // Update device owner
@@ -265,7 +278,7 @@ class DeviceController extends BaseController
             ]);
         });
 
-        $device->load(['category', 'owner']);
+        $device->refresh()->load(['category', 'owner']);
 
         return $this->success(
             new DeviceResource($device),

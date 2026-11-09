@@ -118,7 +118,7 @@ class InventoryMovementService
         ]);
     }
 
-    public function recordRefund(Device $device, Sale $sale, ?SaleItem $saleItem = null, ?User $user = null, ?string $reason = null): InventoryMovement
+    public function recordRefund(Device $device, Sale $sale, ?SaleItem $saleItem = null, ?User $user = null, ?string $reason = null, InventoryStatus $newStatus = InventoryStatus::IN_STOCK): InventoryMovement
     {
         return $this->recordDeviceMovement($device, [
             'movement_type' => InventoryMovement::TYPE_REFUND,
@@ -126,7 +126,7 @@ class InventoryMovementService
             'sale_item_id' => $saleItem?->id,
             'branch_id' => $device->branch_id,
             'previous_status' => InventoryStatus::SOLD->value,
-            'new_status' => InventoryStatus::IN_STOCK->value,
+            'new_status' => $newStatus->value,
             'previous_owner_id' => $sale->customer_id,
             'new_owner_id' => null,
             'reference_type' => Sale::class,

@@ -107,6 +107,7 @@ class BranchController extends Controller
             'devices' => $branch->devices()->count(),
             'users' => $branch->users()->count(),
             'sales' => $branch->sales()->count(),
+            'laybys' => \App\Models\Layby::where('branch_id', $branch->id)->count(),
             'receipts' => InventoryReceipt::where('branch_id', $branch->id)->count(),
             'inventory_batches' => InventoryBatch::where('branch_id', $branch->id)->count(),
             'stock_movements' => InventoryMovement::where(function ($query) use ($branch) {

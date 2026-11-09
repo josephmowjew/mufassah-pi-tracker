@@ -1,3 +1,4 @@
+import { LaybyShiftTotals } from '@/components/shifts/LaybyShiftTotals'
 import { formatMalawiDateTime, formatMalawiTime } from '@/lib/datetime'
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
@@ -590,6 +591,8 @@ function ShiftDetailModal({ shift, onClose }: ShiftDetailModalProps) {
                   <p className="text-xl font-bold text-purple-700">{shiftDetail.sales_count}</p>
                 </div>
               </div>
+
+              <LaybyShiftTotals totals={shiftDetail.layby_tender_totals_minor} />
 
               {/* Notes */}
               {shiftDetail.notes && (

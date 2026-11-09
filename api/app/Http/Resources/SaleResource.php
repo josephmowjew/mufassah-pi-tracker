@@ -18,9 +18,11 @@ class SaleResource extends JsonResource
             'discount_amount' => $this->discount_amount,
             'total_amount' => $this->total_amount,
             'payment_method' => [
-                'value' => $this->payment_method->value,
-                'label' => $this->payment_method->label(),
+                'value' => $this->payment_method?->value ?? 'layby',
+                'label' => $this->tenderLabel(),
             ],
+            'layby_id' => $this->when($this->payment_method === null, fn () => $this->layby?->id),
+            'tender_breakdown_minor' => $this->when($this->payment_method === null, fn () => $this->tenderBreakdown()),
             'payment_status' => [
                 'value' => $this->payment_status->value,
                 'label' => $this->payment_status->label(),

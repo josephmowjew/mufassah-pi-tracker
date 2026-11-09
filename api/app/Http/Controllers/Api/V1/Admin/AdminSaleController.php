@@ -9,12 +9,10 @@ use App\Enums\SaleStatus;
 use App\Http\Controllers\Api\V1\BaseController;
 use App\Http\Resources\SaleResource;
 use App\Models\ActivityLog;
-use App\Models\CommunicationSettings;
 use App\Models\Device;
 use App\Models\InventoryMovement;
 use App\Models\Sale;
 use App\Models\SaleItem;
-use App\Notifications\NewSaleNotification;
 use App\Services\InventoryMovementService;
 use App\Services\ReceiptService;
 use App\Services\SuperAdminSaleNotificationService;
@@ -25,7 +23,6 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -340,7 +337,7 @@ class AdminSaleController extends BaseController
             $sale->load(['customer', 'soldBy', 'branch', 'items.device.category']);
 
             if ($shouldComplete) {
-                $this->notifyCompletedSale($sale);
+                $this->superAdminSaleNotificationService->notifyPosSale($sale);
             }
 
             return $this->success(new SaleResource($sale), 'Sale created successfully', 201);
@@ -375,8 +372,8 @@ class AdminSaleController extends BaseController
                 return $this->error('Sale is already completed', 400);
             }
 
-            if ($sale->status === SaleStatus::CANCELLED) {
-                return $this->error('Cannot complete a cancelled sale', 400);
+            if ($sale->status !== SaleStatus::DRAFT) {
+                return $this->error('Only draft sales can be completed.', 400);
             }
 
             // Calculate change due for cash payments
@@ -407,7 +404,7 @@ class AdminSaleController extends BaseController
             foreach ($sale->items()->with('device')->get() as $item) {
                 $device = Device::whereKey($item->device_id)->lockForUpdate()->firstOrFail();
 
-                if ($device->sale_id !== $sale->id || $device->inventory_status !== InventoryStatus::RESERVED) {
+                if ($device->reserved_layby_id || $device->sale_id !== $sale->id || $device->inventory_status !== InventoryStatus::RESERVED) {
                     throw ValidationException::withMessages([
                         'items' => ["Device {$device->serial_number} is no longer reserved for this sale."],
                     ]);
@@ -430,7 +427,7 @@ class AdminSaleController extends BaseController
 
             $sale->load(['customer', 'soldBy', 'branch', 'items.device.category']);
 
-            $this->notifyCompletedSale($sale);
+            $this->superAdminSaleNotificationService->notifyPosSale($sale);
 
             return $this->success(new SaleResource($sale), 'Sale completed successfully');
         });
@@ -457,14 +454,14 @@ class AdminSaleController extends BaseController
                 return $this->error('Cannot cancel a completed sale. Use refund instead.', 400);
             }
 
-            if ($sale->status === SaleStatus::CANCELLED) {
-                return $this->error('Sale is already cancelled', 400);
+            if ($sale->status !== SaleStatus::DRAFT) {
+                return $this->error('Only draft sales can be cancelled.', 400);
             }
 
             // Return devices to stock
             foreach ($sale->items()->with('device')->get() as $item) {
                 $device = Device::whereKey($item->device_id)->lockForUpdate()->firstOrFail();
-                if ($device->sale_id !== $sale->id || $device->inventory_status !== InventoryStatus::RESERVED) {
+                if ($device->reserved_layby_id || $device->sale_id !== $sale->id || $device->inventory_status !== InventoryStatus::RESERVED) {
                     throw ValidationException::withMessages([
                         'items' => ["Device {$device->serial_number} is no longer reserved for this sale."],
                     ]);
@@ -510,6 +507,9 @@ class AdminSaleController extends BaseController
             $sale = Sale::whereKey($sale->id)->lockForUpdate()->firstOrFail();
             $this->authorizeSaleMutation($request, $sale);
 
+            if ($sale->layby()->exists()) {
+                return $this->error('Refund this sale through its layby agreement.', 422);
+            }
             if ($sale->status !== SaleStatus::COMPLETED) {
                 return $this->error('Can only refund completed sales', 400);
             }
@@ -517,7 +517,7 @@ class AdminSaleController extends BaseController
             // Return devices to stock and remove ownership
             foreach ($sale->items()->with('device')->get() as $item) {
                 $device = Device::whereKey($item->device_id)->lockForUpdate()->firstOrFail();
-                if ($device->sale_id !== $sale->id || $device->inventory_status !== InventoryStatus::SOLD) {
+                if ($device->reserved_layby_id || $device->sale_id !== $sale->id || $device->inventory_status !== InventoryStatus::SOLD) {
                     throw ValidationException::withMessages([
                         'items' => ["Device {$device->serial_number} is no longer sold under this sale."],
                     ]);
@@ -569,7 +569,7 @@ class AdminSaleController extends BaseController
             // Return devices to stock
             foreach ($sale->items()->with('device')->get() as $item) {
                 $device = Device::whereKey($item->device_id)->lockForUpdate()->firstOrFail();
-                if ($device->sale_id !== $sale->id || $device->inventory_status !== InventoryStatus::RESERVED) {
+                if ($device->reserved_layby_id || $device->sale_id !== $sale->id || $device->inventory_status !== InventoryStatus::RESERVED) {
                     throw ValidationException::withMessages([
                         'items' => ["Device {$device->serial_number} is no longer reserved for this sale."],
                     ]);
@@ -941,31 +941,6 @@ class AdminSaleController extends BaseController
                 'event' => $event,
                 'error' => $e->getMessage(),
             ]);
-        }
-    }
-
-    private function notifyCompletedSale(Sale $sale): void
-    {
-        $this->superAdminSaleNotificationService->notifySale($sale);
-
-        $settings = CommunicationSettings::current();
-
-        if (! $settings->sale_notifications_enabled) {
-            return;
-        }
-
-        $emails = [
-            ...$settings->getEmailsArray(),
-            config('inventory.approval_email'),
-        ];
-
-        $recipients = array_values(array_unique(array_filter(
-            array_map(fn ($email) => trim((string) $email), $emails),
-            fn (string $email): bool => filter_var($email, FILTER_VALIDATE_EMAIL) !== false,
-        )));
-
-        foreach ($recipients as $email) {
-            Notification::route('mail', $email)->notify(new NewSaleNotification($sale));
         }
     }
 }

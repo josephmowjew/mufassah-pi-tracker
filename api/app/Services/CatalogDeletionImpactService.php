@@ -178,7 +178,9 @@ class CatalogDeletionImpactService
         if ($device->inventory_status === InventoryStatus::SOLD) {
             $reasons[] = 'already sold';
         }
-        if ($device->inventory_status === InventoryStatus::RESERVED) {
+        if ($device->reserved_layby_id) {
+            $reasons[] = 'reserved for layby';
+        } elseif ($device->inventory_status === InventoryStatus::RESERVED) {
             $reasons[] = 'reserved against a pending sale';
         }
         if ($device->sale_id) {

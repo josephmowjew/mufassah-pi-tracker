@@ -58,6 +58,27 @@ class Sale extends Model
     /**
      * Get the customer who made the purchase.
      */
+    public function layby(): \Illuminate\Database\Eloquent\Relations\HasOne
+    {
+        return $this->hasOne(Layby::class);
+    }
+
+    public function tenderLabel(): string
+    {
+        return $this->payment_method?->label() ?? 'Layby';
+    }
+
+    public function tenderBreakdown(): array
+    {
+        return $this->payment_method === null ? ($this->layby?->tenderBreakdown() ?? []) : [];
+    }
+
+    public function scopeCompletedForReporting($query)
+    {
+        return $query->where(fn ($sales) => $sales->where('status', SaleStatus::COMPLETED)
+            ->orWhere(fn ($returned) => $returned->where('status', SaleStatus::REFUNDED)->whereNull('payment_method')));
+    }
+
     public function customer(): BelongsTo
     {
         return $this->belongsTo(User::class, 'customer_id');
@@ -110,6 +131,7 @@ class Sale extends Model
     {
         $year = now()->format('Y');
         $lastSale = static::whereYear('created_at', $year)
+            ->where('sale_number', 'like', 'SALE-%')
             ->orderByDesc('id')
             ->first();
 

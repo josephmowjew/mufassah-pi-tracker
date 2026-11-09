@@ -376,3 +376,35 @@ The system uses Spatie Laravel Permission for role-based access control:
 ## License
 
 This project is proprietary software. All rights reserved.
+
+## Layby pilot
+
+Run the API migrations before deploying the updated web client. Layby opens are
+disabled at every branch by default. After finance and the business owner
+approve the terms, VAT timing, and MRA EIS workflow, a super admin can record
+that approval reference and enable one branch under **Layby → Branch policy**.
+
+- The cashier needs an active shift at the originating branch. A deposit uses
+  cash. Later non-cash payments require dedicated merchant channels and a
+  supervisor who verifies the actual settlement before posting. Use distinct
+  layby merchant accounts or terminals and reconcile them against the ledger.
+- Print the agreement and payment receipts from the agreement screen. Record
+  applicable EIS invoice and credit-note references against the relevant ledger
+  events. The internal printouts are operational receipts.
+- For a refund, a supervisor approves the original collection and a different
+  operator claims it before paying. Confirm the result against the payout
+  evidence. For an uncertain payout, leave the claim locked and have a separate
+  supervisor reconcile the original attempt before any retry.
+- Reconcile till activity, merchant settlements, open deposits, outstanding
+  refunds, physical reservations, and fiscal references before expanding the
+  pilot. Turning off new agreements leaves existing agreements available for
+  settlement. Keep the migration and ledger in place after accepting deposits.
+
+The MySQL race test requires PHP PCNTL and a disposable, local MySQL database
+named `mufassah_layby_test`. It rebuilds that database and uses concurrent
+connections to test stock claims, final payments, handover, and payout claims.
+
+```sh
+DB_CONNECTION=mysql DB_DATABASE=mufassah_layby_test DB_SOCKET=/path/to/test/mysql.sock \
+  php vendor/bin/pest tests/Integration/LaybyConcurrencyTest.php
+```

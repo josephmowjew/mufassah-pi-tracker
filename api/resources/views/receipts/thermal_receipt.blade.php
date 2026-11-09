@@ -260,7 +260,10 @@
         <div class="payment-section">
             <div class="total-row">
                 <span>Paid by:</span>
-                <span>{{ $sale->payment_method->label() }}</span>
+                <span>{{ $sale->tenderLabel() }}</span>
+                    @foreach ($sale->tenderBreakdown() as $tender => $minor)
+                        <div>{{ ucwords(str_replace('_', ' ', $tender)) }} · MWK {{ number_format($minor / 100, 2) }}</div>
+                    @endforeach
             </div>
             @if($sale->payment_reference)
                 <div class="total-row">

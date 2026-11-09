@@ -33,6 +33,7 @@ use App\Http\Controllers\Api\V1\FamilyMemberController;
 use App\Http\Controllers\Api\V1\GeofenceController;
 use App\Http\Controllers\Api\V1\Iot\IotLocationController;
 use App\Http\Controllers\Api\V1\IotModuleController;
+use App\Http\Controllers\Api\V1\LaybyController;
 use App\Http\Controllers\Api\V1\NotificationController;
 use App\Http\Controllers\Api\V1\PaymentController;
 use App\Http\Controllers\Api\V1\PublicBranchController;
@@ -115,6 +116,18 @@ Route::get('/public/vacancies', [PublicVacancyController::class, 'index'])
 // 'not.suspended' must run after 'auth:sanctum' so the resolved user is available;
 // it rejects any request made by a suspended account, even with a valid token.
 Route::middleware(['auth:sanctum', 'not.suspended'])->group(function () {
+    Route::prefix('laybys')->middleware('role:super_admin|store_admin|customer_service')->group(function () {
+        Route::get('/', [LaybyController::class, 'index']);
+        Route::get('/lookup', [LaybyController::class, 'lookup'])->middleware('throttle:30,1');
+        Route::get('/report', [LaybyController::class, 'report'])->middleware('role:super_admin|store_admin');
+        Route::get('/policy/{branch}', [LaybyController::class, 'policy']);
+        Route::put('/policy/{branch}', [LaybyController::class, 'updatePolicy'])->middleware('role:super_admin');
+        Route::post('/quote', [LaybyController::class, 'quote'])->middleware('throttle:60,1');
+        Route::post('/quote/preview', [LaybyController::class, 'preview'])->middleware('throttle:60,1');
+        Route::post('/', [LaybyController::class, 'store'])->middleware('role:customer_service');
+        Route::get('/{layby}', [LaybyController::class, 'show']);
+        Route::post('/{layby}/{action}', [LaybyController::class, 'action']);
+    });
 
     // -------------------------------------------------------------------------
     // Auth Routes

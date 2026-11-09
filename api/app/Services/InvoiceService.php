@@ -229,7 +229,7 @@ class InvoiceService
             foreach ($invoice->items()->with('device')->get() as $invoiceItem) {
                 $device = Device::query()->whereKey($invoiceItem->device_id)->lockForUpdate()->firstOrFail();
 
-                if ($device->reserved_invoice_id !== $invoice->id || $device->inventory_status !== InventoryStatus::RESERVED) {
+                if ($device->reserved_layby_id || $device->reserved_invoice_id !== $invoice->id || $device->inventory_status !== InventoryStatus::RESERVED) {
                     throw ValidationException::withMessages([
                         'invoice' => ["Device {$device->serial_number} is no longer reserved for invoice {$invoice->invoice_number}."],
                     ]);
@@ -377,7 +377,7 @@ class InvoiceService
         foreach ($invoice->items()->with('device')->get() as $invoiceItem) {
             $device = Device::query()->whereKey($invoiceItem->device_id)->lockForUpdate()->firstOrFail();
 
-            if ($device->reserved_invoice_id !== $invoice->id || $device->inventory_status !== InventoryStatus::RESERVED) {
+            if ($device->reserved_layby_id || $device->reserved_invoice_id !== $invoice->id || $device->inventory_status !== InventoryStatus::RESERVED) {
                 continue;
             }
 
@@ -419,6 +419,7 @@ class InvoiceService
             ->whereIn('inventory_status', [InventoryStatus::IN_STOCK->value, InventoryStatus::RETURNED->value])
             ->whereNull('sale_id')
             ->whereNull('reserved_invoice_id')
+            ->whereNull('reserved_layby_id')
             ->when($branchId, fn ($q) => $q->where('branch_id', $branchId))
             ->orderByRaw('purchase_date IS NULL')
             ->orderBy('purchase_date')
@@ -437,6 +438,7 @@ class InvoiceService
 
     private function assertDeviceCanBeReserved(Device $device, ?int $branchId): void
     {
+        $device->assertNotHeldForLayby();
         if (! in_array($device->inventory_status, [InventoryStatus::IN_STOCK, InventoryStatus::RETURNED], true)
             || $device->sale_id !== null
             || $device->reserved_invoice_id !== null) {

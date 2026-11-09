@@ -144,7 +144,7 @@ class StockTransferRequestController extends BaseController
             }
 
             foreach ($devices as $device) {
-                if ($device->stock_transfer_request_id
+                if ($device->reserved_layby_id || $device->stock_transfer_request_id
                     || ! in_array($device->inventory_status, [InventoryStatus::IN_STOCK, InventoryStatus::RETURNED], true)) {
                     throw ValidationException::withMessages(['device_ids' => ["{$device->serial_number} is no longer available for transfer."]]);
                 }
@@ -325,7 +325,7 @@ class StockTransferRequestController extends BaseController
 
     private function assertTransferDevicesEligible($devices, StockTransferRequest $transfer): void
     {
-        if ($devices->contains(fn ($device) => $device->stock_transfer_request_id !== $transfer->id
+        if ($devices->contains(fn ($device) => $device->reserved_layby_id || $device->stock_transfer_request_id !== $transfer->id
             || (int) $device->branch_id !== (int) $transfer->from_branch_id
             || ! in_array($device->inventory_status, [InventoryStatus::IN_STOCK, InventoryStatus::RETURNED], true))) {
             throw ValidationException::withMessages(['request' => ['One or more devices are no longer eligible.']]);
@@ -367,6 +367,7 @@ class StockTransferRequestController extends BaseController
                 ->where('brand', $group['brand'])
                 ->where('model', $group['model'])
                 ->whereNull('stock_transfer_request_id')
+                ->whereNull('reserved_layby_id')
                 ->whereIn('inventory_status', [InventoryStatus::IN_STOCK, InventoryStatus::RETURNED])
                 ->orderBy('id')
                 ->lockForUpdate();

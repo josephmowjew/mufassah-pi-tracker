@@ -1,3 +1,4 @@
+import { LaybyShiftTotals } from '@/components/shifts/LaybyShiftTotals'
 import { useParams, Link } from 'react-router-dom'
 import { ArrowLeft, Clock, TrendingUp, ShoppingCart, User, Building2, DollarSign } from 'lucide-react'
 import { useShift } from '@/hooks/useShifts'
@@ -92,6 +93,8 @@ export default function ShiftDetailPage() {
           <p className="text-2xl font-bold text-slate-900">{formatDuration(shift.duration_minutes)}</p>
         </div>
       </div>
+
+      <LaybyShiftTotals totals={shift.layby_tender_totals_minor} />
 
       {/* Shift Details */}
       <div className="bg-white rounded-xl border border-slate-200 p-6">

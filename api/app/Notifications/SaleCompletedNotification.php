@@ -35,7 +35,7 @@ class SaleCompletedNotification extends Notification
             'branch_name' => $branchName,
             'sold_by_id' => $this->sale->sold_by_id,
             'sold_by_name' => $sellerName,
-            'payment_method' => $this->sale->payment_method?->value,
+            'payment_method' => $this->sale->payment_method?->value ?? 'layby',
             'status' => $this->sale->status?->value,
         ];
     }

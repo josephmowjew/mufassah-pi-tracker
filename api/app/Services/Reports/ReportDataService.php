@@ -5,13 +5,13 @@ namespace App\Services\Reports;
 use App\Enums\DeviceStatus;
 use App\Enums\InventoryStatus;
 use App\Enums\PaymentStatus;
-use App\Enums\SaleStatus;
 use App\Enums\SubscriptionStatus;
 use App\Enums\TheftReportStatus;
 use App\Models\Branch;
 use App\Models\Device;
 use App\Models\InventoryBatch;
 use App\Models\InventoryMovement;
+use App\Models\Layby;
 use App\Models\Payment;
 use App\Models\Sale;
 use App\Models\Shift;
@@ -65,6 +65,8 @@ class ReportDataService
     {
         $sales = $this->completedSales($filters);
         $administrative = $this->administrativeSales($filters);
+        $returns = $this->laybyReturns($filters);
+        $returnValue = (int) (clone $returns)->sum('total_minor') / 100;
 
         $posRevenue = round((float) $sales->sum(fn (Sale $sale) => $sale->items->sum('total_price')), 2);
         $posProfit = round((float) $sales->sum(fn (Sale $sale) => $sale->items->sum('profit_amount')), 2);
@@ -80,6 +82,9 @@ class ReportDataService
                 'pos_sales_count' => $posCount,
                 'pos_revenue' => $posRevenue,
                 'pos_gross_profit' => $posProfit,
+                'layby_return_count' => $returns->count(),
+                'layby_return_value' => $returnValue,
+                'pos_value_after_layby_returns' => round($posRevenue - $returnValue, 2),
                 'administrative_sales_count' => $administrativeCount,
                 'administrative_sale_value' => $administrativeValue,
                 'administrative_sale_profit' => $administrativeProfit,
@@ -103,6 +108,14 @@ class ReportDataService
     public function salesDetail(ReportFilters $filters): array
     {
         return $this->saleRows($this->completedSales($filters))->values()->all();
+    }
+
+    public function laybyReturns(ReportFilters $filters): Builder
+    {
+        return Layby::query()->whereNotNull('returned_at')
+            ->when($filters->branchId, fn ($q) => $q->where('branch_id', $filters->branchId))
+            ->when($filters->from, fn ($q) => $q->where('returned_at', '>=', $filters->from))
+            ->when($filters->to, fn ($q) => $q->where('returned_at', '<=', $filters->to));
     }
 
     /**
@@ -215,7 +228,7 @@ class ReportDataService
             ->when($to, fn ($q) => $q->where('created_at', '<=', $to));
 
         $posItemScope = fn () => \App\Models\SaleItem::query()->whereHas('sale', function ($q) use ($branchId, $from, $to) {
-            $q->where('status', SaleStatus::COMPLETED)
+            $q->completedForReporting()
                 ->when($branchId, fn ($sale) => $sale->where('branch_id', $branchId))
                 ->when($from, fn ($sale) => $sale->where('sale_date', '>=', $from))
                 ->when($to, fn ($sale) => $sale->where('sale_date', '<=', $to));
@@ -698,11 +711,11 @@ class ReportDataService
     private function completedSales(ReportFilters $filters): Collection
     {
         return Sale::query()
-            ->where('status', SaleStatus::COMPLETED)
+            ->completedForReporting()
             ->when($filters->branchId, fn ($q) => $q->where('branch_id', $filters->branchId))
             ->when($filters->from, fn ($q) => $q->where('sale_date', '>=', $filters->from))
             ->when($filters->to, fn ($q) => $q->where('sale_date', '<=', $filters->to))
-            ->with(['branch:id,name,code', 'customer:id,name', 'soldBy:id,name', 'items.device.category:id,name'])
+            ->with(['branch:id,name,code', 'customer:id,name', 'soldBy:id,name', 'items.device.category:id,name', 'layby.entries'])
             ->orderBy('sale_date')
             ->get();
     }
@@ -739,7 +752,9 @@ class ReportDataService
             'tax_amount' => round((float) $sale->tax_amount, 2),
             'total_amount' => round((float) $sale->total_amount, 2),
             'gross_profit' => round((float) $sale->items->sum('profit_amount'), 2),
-            'payment_method' => $sale->payment_method?->label() ?? '—',
+            'payment_method' => $sale->tenderLabel().collect($sale->tenderBreakdown())->map(
+                fn ($minor, $tender) => ' · '.ucwords(str_replace('_', ' ', $tender)).' MWK '.number_format($minor / 100, 2)
+            )->implode(''),
             'payment_status' => $sale->payment_status?->label() ?? '—',
         ]);
     }

@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\SaleStatus;
 use App\Support\LocalTime;
 use Carbon\Carbon;
 use Carbon\CarbonInterface;
@@ -121,13 +122,11 @@ class Shift extends Model
     {
         if ($this->relationLoaded('sales')) {
             return $this->sales
-                ->where('status', 'completed')
+                ->filter(fn (Sale $sale) => $sale->isCompleted() || ($sale->payment_method === null && $sale->status === SaleStatus::REFUNDED))
                 ->sum('total_amount');
         }
 
-        return $this->sales()
-            ->where('status', 'completed')
-            ->sum('total_amount');
+        return $this->sales()->completedForReporting()->sum('total_amount');
     }
 
     /**
@@ -143,6 +142,14 @@ class Shift extends Model
         }
 
         return $this->sales()->count();
+    }
+
+    public function laybyTenderTotals(): array
+    {
+        return LaybyEntry::query()->where('shift_id', $this->id)->whereIn('kind', ['collection', 'refund', 'correction'])
+            ->selectRaw('tender, kind, SUM(amount_minor) as amount_minor')
+            ->groupBy('tender', 'kind')->get()->groupBy('tender')
+            ->map(fn ($rows) => $rows->mapWithKeys(fn ($row) => [$row->kind => (int) $row->amount_minor])->all())->all();
     }
 
     /**
