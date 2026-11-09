@@ -78,7 +78,9 @@ return new class extends Migration
             $table->text('evidence')->nullable();
             $table->json('details')->nullable();
             $table->timestamp('occurred_at')->nullable();
-            $table->timestamp('created_at');
+            // Nullable so MariaDB strict mode accepts the column; the model
+            // sets created_at through Eloquent on every insert.
+            $table->timestamp('created_at')->nullable();
             $table->index(['layby_id', 'kind']);
             $table->index(['branch_id', 'created_at']);
             $table->index(['shift_id', 'kind']);
