@@ -94,3 +94,7 @@ logs/
 
 # Playwright MCP snapshots
 .playwright-mcp/
+# Session analysis artifacts
+FEATURE_DOCUMENTATION.md
+GAP_ANALYSIS.md
+Docs/
