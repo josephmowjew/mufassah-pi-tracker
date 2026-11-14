@@ -14,8 +14,10 @@ import { devicesApi } from '@/api/devices'
 import { formatMalawiDateTime, malawiDateInput } from '@/lib/datetime'
 import { useAuthStore } from '@/stores/auth-store'
 import type { ProductOptions } from '@/types'
+import LaybyReceiptModal from '@/components/laybys/LaybyReceiptModal'
+import LaybyPaymentReceiptModal from '@/components/laybys/LaybyPaymentReceiptModal'
 import {
-  errorMessage, minorUnits, money, postOnce, printLayby, tenderLabels,
+  errorMessage, minorUnits, money, postOnce, tenderLabels,
   type ActionData, type Layby, type LaybyPolicy, type LaybyQuote, type LedgerEntry, type Page, type Tender,
 } from './layby-api'
 
@@ -50,12 +52,6 @@ function ErrorMessage({ error }: { error: unknown }) {
   return error ? <p role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-800">{errorMessage(error)}</p> : null
 }
 
-function PrintButton({ title, lines, children }: { title: string; lines: [string, string][]; children: ReactNode }) {
-  const [error, setError] = useState<unknown>(null)
-  return <div><ActionButton type="button" icon={Printer} variant="secondary" onClick={() => {
-    try { printLayby(title, lines); setError(null) } catch (failure) { setError(failure) }
-  }}>{children}</ActionButton><ErrorMessage error={error} /></div>
-}
 
 type LaybyCustomer = { id: number; name: string; phone_number?: string }
 type LookupResult = { device_id: number; serial_number: string; description: string | null; customers: LaybyCustomer[] }
@@ -447,6 +443,8 @@ function Agreement({ agreement, cashier, actorId, onChange }: { agreement: Layby
   const [command, setCommand] = useState<Command>()
   const [tender, setTender] = useState<Tender>('cash')
   const [localError, setLocalError] = useState<unknown>(null)
+  const [showAgreementReceipt, setShowAgreementReceipt] = useState(false)
+  const [paymentReceiptEntry, setPaymentReceiptEntry] = useState<LedgerEntry | null>(null)
   const action = useMutation({
     mutationFn: ({ name, body }: { name: string; body: ActionData }) => postOnce(`/laybys/${agreement.id}/${name}`, body, actorId),
     onSuccess: () => { setCommand(undefined); onChange() },
@@ -503,10 +501,9 @@ function Agreement({ agreement, cashier, actorId, onChange }: { agreement: Layby
         <div key={label}><dt className="text-xs text-slate-600">{label}</dt><dd className="font-semibold">{value}</dd></div>)}
     </dl>
     <div className="flex flex-wrap gap-2">
-      <PrintButton title="Mufassah layby agreement" lines={[...summary,
-        ['Accepted', date(agreement.created_at)], ['Total', money(agreement.total_minor)],
-        ['Original payment deadline', agreement.original_due_date], ['Current payment deadline', agreement.due_date],
-        ['Terms accepted', agreement.accepted_terms]]}>Print agreement</PrintButton>
+      <ActionButton type="button" icon={Printer} variant="secondary" onClick={() => setShowAgreementReceipt(true)}>
+        Print agreement
+      </ActionButton>
       {cashier && agreement.status === 'active' && !agreement.overdue && offer('collect', 'Record instalment')}
       {cashier && agreement.status === 'ready' && offer('handover', 'Confirm physical pickup')}
       {!cashier && agreement.status === 'active' && offer('extend', 'Extend deadline')}
@@ -575,16 +572,23 @@ function Agreement({ agreement, cashier, actorId, onChange }: { agreement: Layby
               && ((cashier && entry.tender === 'cash') || (!cashier && entry.tender !== 'cash')) && offer('refund-claim', 'Claim payout', entry)}
             {entry.kind === 'collection' && claim && (canConfirm || canReconcile) && offer('refund-result', 'Record or reconcile payout result', entry, claim)}
             {!cashier && ['collection', 'refund', 'correction', 'handover', 'return'].includes(entry.kind) && offer('fiscal-reference', 'Link fiscal document', entry)}
-            {['collection', 'refund'].includes(entry.kind) && <PrintButton
-              title={entry.kind === 'collection' ? 'Mufassah layby payment receipt' : 'Mufassah layby refund receipt'}
-              lines={[...summary, ['Receipt number', `LB-R-${entry.id}`], ['Recorded', date(entry.occurred_at ?? entry.created_at)], ['Amount', money(entry.amount_minor)],
-                ['Tender', entry.tender ? tenderLabels[entry.tender] : ''],
-                ...(entry.kind === 'collection' ? [['Balance after payment', money(entry.details?.balance_minor ?? 0)], ['Deadline at payment', entry.details?.due_date ?? agreement.due_date]] as [string, string][] : []),
-                ['Document', 'Layby payment record. Fiscal documents are issued through the approved fiscal workflow.']]}>Print receipt</PrintButton>}
+            {['collection', 'refund'].includes(entry.kind) && <ActionButton type="button" icon={Printer} variant="secondary" onClick={() => setPaymentReceiptEntry(entry)}>
+              Print receipt
+            </ActionButton>}
           </div>
         </li>
       })}
     </ul>
+    {showAgreementReceipt && (
+      <LaybyReceiptModal agreement={agreement} onClose={() => setShowAgreementReceipt(false)} />
+    )}
+    {paymentReceiptEntry && (
+      <LaybyPaymentReceiptModal
+        agreement={agreement}
+        entry={paymentReceiptEntry}
+        onClose={() => setPaymentReceiptEntry(null)}
+      />
+    )}
   </section>
 }
 
