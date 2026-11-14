@@ -2,20 +2,25 @@
 
 namespace App\Http\Controllers\Api\V1\CustomerService;
 
+use App\Support\LikePattern;
 use App\Http\Controllers\Api\V1\BaseController;
 use App\Http\Resources\UserResource;
 use App\Models\Device;
 use App\Models\Sale;
 use App\Models\User;
 use App\Support\LocalTime;
+use App\Traits\PaginatesLists;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Password;
 
 class CustomerServiceController extends BaseController
 {
+    use PaginatesLists;
+
     /**
      * Get dashboard stats for the current customer service representative.
      */
@@ -64,29 +69,44 @@ class CustomerServiceController extends BaseController
     {
         $user = $request->user();
         $userId = $user->id;
+        $branchId = $user->requiredBranchScopeId();
 
-        $query = User::role('customer', 'api')
-            ->withCount(['salesAsCustomer' => function ($query) use ($userId) {
+        $request->validate([
+            'search' => ['nullable', 'string', 'max:100'],
+            'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
+            'sort' => ['nullable', Rule::in(['created_at', 'name', 'phone_number'])],
+            'direction' => ['nullable', Rule::in(['asc', 'desc'])],
+        ]);
+
+        // `customers` rather than `role:customer` so accounts predating the
+        // role backfill are listed too - the same definition the admin toggle
+        // uses. Branch scoping keeps the desk to the customers it serves.
+        $query = User::query()
+            ->customers()
+            ->where('branch_id', $branchId)
+            ->withCount(['salesAsCustomer as served_sales_count' => function ($query) use ($userId) {
                 $query->where('sold_by_id', $userId);
             }]);
 
-        // Search by name or email
-        if ($request->has('search')) {
-            $search = $request->search;
+        // Search by name, email, or phone. The counter searches by the number on
+        // the customer's phone more often than by name.
+        if ($request->filled('search')) {
+            $search = $request->string('search')->trim()->value();
             $query->where(function ($q) use ($search) {
-                $q->where('name', 'like', "%{$search}%")
-                    ->orWhere('email', 'like', "%{$search}%");
+                $q->whereRaw('name LIKE ? '.LikePattern::SQL_ESCAPE, [LikePattern::contains($search)])
+                    ->orWhereRaw('email LIKE ? '.LikePattern::SQL_ESCAPE, [LikePattern::contains($search)])
+                    ->orWhereRaw('phone_number LIKE ? '.LikePattern::SQL_ESCAPE, [LikePattern::contains($search)]);
             });
         }
 
-        // Sort
-        $sortField = $request->get('sort', 'created_at');
-        $sortDirection = $request->get('direction', 'desc');
-        $query->orderBy($sortField, $sortDirection);
+        // Sort against a whitelist: an unknown column used to reach orderBy()
+        // and surface as a 500 instead of a validation error.
+        $query->orderBy(
+            $request->input('sort', 'created_at'),
+            $request->input('direction', 'desc')
+        );
 
-        // Paginate
-        $perPage = $request->get('per_page', 15);
-        $customers = $query->paginate($perPage);
+        $customers = $query->paginate($this->perPage($request));
 
         return $this->paginated(UserResource::collection($customers));
     }

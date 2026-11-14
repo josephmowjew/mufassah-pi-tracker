@@ -5,10 +5,18 @@ import { Search, Users, Loader2, Mail, Phone, ShoppingBag } from 'lucide-react'
 import apiClient from '@/api/client'
 import type { User } from '@/types'
 
+/**
+ * The desk list asks the API for `withCount('salesAsCustomer')`, so each row
+ * carries the number of sales this representative served for that customer.
+ */
+interface ServedCustomer extends User {
+  served_sales_count?: number
+}
+
 interface ApiResponse {
   success: boolean
   message: string
-  data: User[]
+  data: ServedCustomer[]
   meta: {
     current_page: number
     last_page: number
@@ -50,7 +58,7 @@ export default function CustomerServiceCustomersPage() {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Customers</h1>
-          <p className="text-sm text-slate-500">View customers you've served</p>
+          <p className="text-sm text-slate-500">Customers registered at your branch, with the sales you have served</p>
         </div>
       </div>
 
@@ -60,7 +68,7 @@ export default function CustomerServiceCustomersPage() {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
           <input
             type="text"
-            placeholder="Search by name or email..."
+            placeholder="Search by name, phone, or email..."
             value={search}
             onChange={(e) => {
               setSearch(e.target.value)
@@ -87,7 +95,7 @@ export default function CustomerServiceCustomersPage() {
             <Users className="h-12 w-12 text-slate-300 mb-4" />
             <p className="text-slate-500">No customers found</p>
             <p className="text-sm text-slate-400 mt-1">
-              {search ? 'Try adjusting your search' : "You haven't served any customers yet"}
+              {search ? 'Try a different name, phone number, or email' : 'No customers are registered at this branch yet'}
             </p>
           </div>
         ) : (
@@ -103,10 +111,10 @@ export default function CustomerServiceCustomersPage() {
                       Contact
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">
-                      Purchases
+                      Served
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">
-                      First Purchase
+                      Registered
                     </th>
                   </tr>
                 </thead>
@@ -144,7 +152,7 @@ export default function CustomerServiceCustomersPage() {
                         <div className="flex items-center gap-2">
                           <ShoppingBag className="h-4 w-4 text-slate-400" />
                           <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-teal-50 text-teal-700">
-                            {(customer as any).sales_count || 0} purchases
+                            {customer.served_sales_count ?? 0} served
                           </span>
                         </div>
                       </td>
