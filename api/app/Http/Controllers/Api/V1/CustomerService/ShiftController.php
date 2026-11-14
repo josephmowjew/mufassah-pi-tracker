@@ -11,8 +11,8 @@ use App\Models\User;
 use App\Notifications\ShiftEndSummaryNotification;
 use App\Services\ShiftClosingService;
 use App\Support\LocalTime;
-use App\Traits\SortsLists;
 use App\Traits\PaginatesLists;
+use App\Traits\SortsLists;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -24,7 +24,6 @@ use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 class ShiftController extends BaseController
 {
     use PaginatesLists;
-
     use SortsLists;
 
     /** @var array<int, string> */

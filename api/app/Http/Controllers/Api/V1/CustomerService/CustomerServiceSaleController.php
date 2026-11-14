@@ -2,20 +2,19 @@
 
 namespace App\Http\Controllers\Api\V1\CustomerService;
 
-use App\Support\LikePattern;
 use App\Http\Controllers\Api\V1\BaseController;
 use App\Http\Resources\SaleResource;
 use App\Models\Sale;
+use App\Support\LikePattern;
 use App\Support\LocalTime;
-use App\Traits\SortsLists;
 use App\Traits\PaginatesLists;
+use App\Traits\SortsLists;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class CustomerServiceSaleController extends BaseController
 {
     use PaginatesLists;
-
     use SortsLists;
 
     /** @var array<int, string> */

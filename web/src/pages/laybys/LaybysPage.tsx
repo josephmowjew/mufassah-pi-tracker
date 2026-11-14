@@ -4,14 +4,16 @@ import { Link, useSearchParams } from 'react-router-dom'
 import {
   ArrowDownToLine, ArrowUpRight, Banknote, Ban, CalendarClock, ChartNoAxesCombined, Check, ChevronLeft, ChevronRight,
   ClipboardCheck, Copy, FileCheck2, FilePlus2, FileText, Filter, ListChecks, PackageCheck,
-  Printer, ReceiptText, RotateCcw, Save, Search, Settings2, Undo2, UserPlus, Wallet, X, type LucideIcon,
+  Printer, ReceiptText, RotateCcw, Save, Search, Settings2, Smartphone, Undo2, UserPlus, Wallet, X, type LucideIcon,
 } from 'lucide-react'
 import Button, { type ButtonProps } from '@/components/ui/Button'
 import CreateCustomerDialog from '@/components/customers/CreateCustomerDialog'
 import type { CustomerSummary } from '@/api/customers'
 import apiClient from '@/api/client'
+import { devicesApi } from '@/api/devices'
 import { formatMalawiDateTime, malawiDateInput } from '@/lib/datetime'
 import { useAuthStore } from '@/stores/auth-store'
+import type { ProductOptions } from '@/types'
 import {
   errorMessage, minorUnits, money, postOnce, printLayby, tenderLabels,
   type ActionData, type Layby, type LaybyPolicy, type LaybyQuote, type LedgerEntry, type Page, type Tender,
@@ -56,12 +58,14 @@ function PrintButton({ title, lines, children }: { title: string; lines: [string
 }
 
 type LaybyCustomer = { id: number; name: string; phone_number?: string }
-type LookupResult = { device_id: number; customers: LaybyCustomer[] }
+type LookupResult = { device_id: number; serial_number: string; description: string | null; customers: LaybyCustomer[] }
 
 /** The lookup treats a digits-only term as a phone number, so it prefills that way. */
 const looksLikePhone = (term: string) => /^[+\d][\d\s-]{5,}$/.test(term.trim())
 
 function OpenLayby({ cashier, actorId, onOpen }: { cashier: boolean; actorId: number; onOpen: (layby: Layby) => void }) {
+  const currentUser = useAuthStore((state) => state.user)
+  const inventoryScopeKey = `${currentUser?.id ?? 'anonymous'}:${currentUser?.branch_id ?? 'unassigned'}`
   const [selection, setSelection] = useState<LookupResult>()
   const [customerId, setCustomerId] = useState('')
   const [searchTerm, setSearchTerm] = useState('')
@@ -69,8 +73,58 @@ function OpenLayby({ cashier, actorId, onOpen }: { cashier: boolean; actorId: nu
   const [addingCustomer, setAddingCustomer] = useState(false)
   const [quote, setQuote] = useState<LaybyQuote>()
   const [copied, setCopied] = useState(false)
+
+  // Lookup mode: product picker or serial number
+  const [lookupMode, setLookupMode] = useState<'product' | 'serial'>('product')
+
+  // Cascading picker state
+  const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(null)
+  const [selectedBrand, setSelectedBrand] = useState<string>('')
+  const [selectedModel, setSelectedModel] = useState<string>('')
+  const [selectedColor, setSelectedColor] = useState<string | null>(null)
+
+  // Categories query (shared cache key with sales page)
+  const { data: categoriesData, isLoading: categoriesLoading } = useQuery({
+    queryKey: ['customer-service-device-categories-with-stock', inventoryScopeKey],
+    queryFn: () => devicesApi.getCategories({ withStock: true }),
+    staleTime: 1000 * 60 * 5,
+  })
+
+  // Product options query (shared cache key with sales page)
+  const { data: productOptions, isLoading: productOptionsLoading } = useQuery({
+    queryKey: ['customer-service-product-options', inventoryScopeKey, selectedCategoryId, selectedBrand, selectedModel],
+    queryFn: async () => {
+      if (!selectedCategoryId) return null
+      const params = new URLSearchParams()
+      params.append('category_id', selectedCategoryId.toString())
+      if (selectedBrand) params.append('brand', selectedBrand)
+      if (selectedModel) params.append('model', selectedModel)
+      const response = await apiClient.get<{ success: boolean; data: ProductOptions }>(
+        `/customer-service/inventory/product-options?${params.toString()}`
+      )
+      return response.data.data
+    },
+    enabled: !!selectedCategoryId,
+    staleTime: 0,
+  })
+
+  const categories = categoriesData ?? []
+  const brands = productOptions?.brands ?? []
+  const models = productOptions?.models ?? []
+  const colors = productOptions?.colors ?? []
+  const hasColors = productOptions?.has_colors ?? false
+  const availableCount = productOptions?.available_count ?? 0
+  const sellingPrice = productOptions?.selling_price !== null && productOptions?.selling_price !== undefined
+    ? Number(productOptions.selling_price)
+    : null
+  const hasValidSellingPrice = sellingPrice !== null && Number.isFinite(sellingPrice) && sellingPrice > 0
+
+  // Product is fully specified when category + brand + model are selected, and color if applicable
+  const productFullySpecified = !!selectedCategoryId && !!selectedBrand && !!selectedModel &&
+    (!hasColors || selectedColor !== null) && availableCount > 0 && hasValidSellingPrice
+
   const lookup = useMutation({
-    mutationFn: async (params: { serial_number: string; customer: string }) =>
+    mutationFn: async (params: Record<string, string | number | null>) =>
       (await apiClient.get<LookupResult>('/laybys/lookup', { params })).data,
     onSuccess: (result) => { setSelection(result); setCustomerId('') },
   })
@@ -81,6 +135,19 @@ function OpenLayby({ cashier, actorId, onOpen }: { cashier: boolean; actorId: nu
   })
   const open = useMutation({ mutationFn: (body: ActionData) => postOnce('/laybys', body, actorId), onSuccess: onOpen })
   const [error, setError] = useState<unknown>(null)
+
+  function buildLookupParams(customerTerm: string): Record<string, string | number | null> {
+    if (lookupMode === 'serial') {
+      return { serial_number: serialTerm, customer: customerTerm }
+    }
+    return {
+      category_id: selectedCategoryId!,
+      brand: selectedBrand,
+      model: selectedModel,
+      color: selectedColor ?? '',
+      customer: customerTerm,
+    }
+  }
 
   function prepareQuote(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -98,20 +165,190 @@ function OpenLayby({ cashier, actorId, onOpen }: { cashier: boolean; actorId: nu
 
   return <section className={card}>
     <h2 className="text-lg font-semibold">{cashier ? 'Open an agreement' : 'Prepare a pricing approval'}</h2>
-    <form className="grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end" onSubmit={(event) => {
-      event.preventDefault()
-      const form = new FormData(event.currentTarget)
-      setSelection(undefined)
-      setQuote(undefined)
-      setSearchTerm(text(form, 'customer'))
-      setSerialTerm(text(form, 'serial_number'))
-      lookup.mutate({ serial_number: text(form, 'serial_number'), customer: text(form, 'customer') })
-    }}>
-      <Field label="Device serial"><input className={input} name="serial_number" required maxLength={100} /></Field>
-      <Field label="Customer name, email, or phone"><input className={input} name="customer" required maxLength={100} /></Field>
-      <ActionButton icon={Search} disabled={lookup.isPending}>Find device and customer</ActionButton>
-    </form>
+
+    {/* Lookup mode toggle */}
+    <div className="flex gap-2">
+      <button type="button" onClick={() => setLookupMode('product')}
+        className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${lookupMode === 'product' ? 'bg-teal-700 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}>
+        <Smartphone className="h-4 w-4" aria-hidden="true" /> Select product
+      </button>
+      <button type="button" onClick={() => setLookupMode('serial')}
+        className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${lookupMode === 'serial' ? 'bg-teal-700 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}>
+        <Search className="h-4 w-4" aria-hidden="true" /> Lookup by serial
+      </button>
+    </div>
+
+    {lookupMode === 'serial' ? (
+      /* Serial number lookup form */
+      <form className="grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end" onSubmit={(event) => {
+        event.preventDefault()
+        const form = new FormData(event.currentTarget)
+        setSelection(undefined)
+        setQuote(undefined)
+        setSearchTerm(text(form, 'customer'))
+        setSerialTerm(text(form, 'serial_number'))
+        lookup.mutate({ serial_number: text(form, 'serial_number'), customer: text(form, 'customer') })
+      }}>
+        <Field label="Device serial"><input className={input} name="serial_number" required maxLength={100} /></Field>
+        <Field label="Customer name, email, or phone"><input className={input} name="customer" required maxLength={100} /></Field>
+        <ActionButton icon={Search} disabled={lookup.isPending}>Find device and customer</ActionButton>
+      </form>
+    ) : (
+      /* Product picker + customer search */
+      <div className="space-y-4">
+        {/* Cascading dropdowns */}
+        <div className="space-y-3">
+          <p className="text-sm font-medium text-slate-700">
+            <Smartphone className="inline h-4 w-4 mr-1" aria-hidden="true" />
+            Select product
+          </p>
+
+          {/* Category Dropdown */}
+          <div>
+            <label className="block text-xs text-slate-500 mb-1">Category *</label>
+            <select
+              value={selectedCategoryId ?? ''}
+              onChange={(e) => {
+                setSelectedCategoryId(e.target.value ? parseInt(e.target.value) : null)
+                setSelectedBrand('')
+                setSelectedModel('')
+                setSelectedColor(null)
+              }}
+              className={input}
+              disabled={categoriesLoading}
+            >
+              <option value="">Select category...</option>
+              {categories.map((cat) => (
+                <option key={cat.id} value={cat.id} disabled={(cat.available_count ?? 0) === 0}>
+                  {cat.name} ({cat.available_count ?? 0} available)
+                </option>
+              ))}
+            </select>
+            <p className="mt-1 text-xs text-slate-500">Availability is limited to your assigned branch.</p>
+          </div>
+
+          {/* Brand Dropdown */}
+          {selectedCategoryId && (
+            <div>
+              <label className="block text-xs text-slate-500 mb-1">Brand *</label>
+              <select
+                value={selectedBrand}
+                onChange={(e) => {
+                  setSelectedBrand(e.target.value)
+                  setSelectedModel('')
+                  setSelectedColor(null)
+                }}
+                className={input}
+                disabled={productOptionsLoading || brands.length === 0}
+              >
+                <option value="">Select brand...</option>
+                {brands.map((b) => (
+                  <option key={b.name} value={b.name ?? ''}>
+                    {b.name} ({b.count} available)
+                  </option>
+                ))}
+              </select>
+              {!productOptionsLoading && brands.length === 0 && (
+                <p className="mt-1 text-xs text-amber-700">No available products from this category are stocked in your branch.</p>
+              )}
+            </div>
+          )}
+
+          {/* Model Dropdown */}
+          {selectedBrand && (
+            <div>
+              <label className="block text-xs text-slate-500 mb-1">Model *</label>
+              <select
+                value={selectedModel}
+                onChange={(e) => {
+                  setSelectedModel(e.target.value)
+                  setSelectedColor(null)
+                }}
+                className={input}
+                disabled={productOptionsLoading || models.length === 0}
+              >
+                <option value="">Select model...</option>
+                {models.map((m) => (
+                  <option key={m.name} value={m.name ?? ''}>
+                    {m.name} ({m.count} available)
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {/* Color Dropdown (conditional) */}
+          {selectedModel && hasColors && (
+            <div>
+              <label className="block text-xs text-slate-500 mb-1">Color</label>
+              <select
+                value={selectedColor === null ? '' : selectedColor}
+                onChange={(e) => setSelectedColor(e.target.value || null)}
+                className={input}
+                disabled={productOptionsLoading}
+              >
+                <option value="">Select color...</option>
+                {colors.filter((c) => c.name !== null).map((c) => (
+                  <option key={c.name} value={c.name ?? ''}>
+                    {c.name} ({c.count} available)
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {/* Stock info & price */}
+          {selectedModel && (
+            <div className="p-3 bg-teal-50 rounded-lg space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-slate-600">Available:</span>
+                <span className="text-sm font-medium text-slate-900">{availableCount} unit{availableCount !== 1 ? 's' : ''}</span>
+              </div>
+              {hasValidSellingPrice && (
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-slate-600">
+                    {productOptions?.pricing_source === 'purchase_cost' ? 'Price (purchase cost):' : 'Price:'}
+                  </span>
+                  <span className="text-sm font-medium text-slate-900">
+                    MWK {sellingPrice!.toLocaleString()}
+                  </span>
+                </div>
+              )}
+              {selectedModel && !productOptionsLoading && !hasValidSellingPrice && (
+                <p className="text-xs text-red-600">No valid batch selling price or purchase cost is available.</p>
+              )}
+              {availableCount === 0 && !productOptionsLoading && (
+                <p className="text-xs text-red-600">No stock available at your branch for this specification.</p>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Customer search (appears after product is fully specified) */}
+        {productFullySpecified && (
+          <form className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end" onSubmit={(event) => {
+            event.preventDefault()
+            const form = new FormData(event.currentTarget)
+            const customerTerm = text(form, 'customer')
+            setSelection(undefined)
+            setQuote(undefined)
+            setSearchTerm(customerTerm)
+            lookup.mutate(buildLookupParams(customerTerm))
+          }}>
+            <Field label="Customer name, email, or phone"><input className={input} name="customer" required maxLength={100} /></Field>
+            <ActionButton icon={Search} disabled={lookup.isPending}>Find device and customer</ActionButton>
+          </form>
+        )}
+      </div>
+    )}
+
     {selection && <form onSubmit={prepareQuote} className="grid gap-3 sm:grid-cols-2">
+      {selection.serial_number && (
+        <div className="col-span-full rounded-lg bg-slate-50 p-3 text-sm">
+          <span className="font-medium text-slate-700">Resolved device: </span>
+          <span>{selection.description ?? 'Unknown'} · {selection.serial_number}</span>
+        </div>
+      )}
       <div className="space-y-1">
         <div className="flex items-center justify-between gap-2">
           <span className="text-sm font-medium text-slate-700">Customer</span>
@@ -125,7 +362,7 @@ function OpenLayby({ cashier, actorId, onOpen }: { cashier: boolean; actorId: nu
           {selection.customers.map((customer) => <option key={customer.id} value={customer.id}>{customer.name} {customer.phone_number ?? ''}</option>)}
         </select>
         {selection.customers.length === 0 && <p className="text-xs text-amber-800">
-          Nobody is on file for “{searchTerm}”. Create the customer to continue.
+          Nobody is on file for "{searchTerm}". Create the customer to continue.
         </p>}
       </div>
       {!cashier && <>
@@ -172,7 +409,7 @@ function OpenLayby({ cashier, actorId, onOpen }: { cashier: boolean; actorId: nu
       initialName={looksLikePhone(searchTerm) ? '' : searchTerm}
       initialPhone={looksLikePhone(searchTerm) ? searchTerm : ''}
       onClose={() => setAddingCustomer(false)}
-      onConflict={() => { setAddingCustomer(false); lookup.mutate({ serial_number: serialTerm, customer: searchTerm }) }}
+      onConflict={() => { setAddingCustomer(false); lookup.mutate(buildLookupParams(searchTerm)) }}
       onCreated={(customer: CustomerSummary) => {
         setSelection((current) => current
           ? { ...current, customers: [
@@ -186,6 +423,7 @@ function OpenLayby({ cashier, actorId, onOpen }: { cashier: boolean; actorId: nu
     />}
   </section>
 }
+
 
 const commandStyles = {
   collect: { icon: Banknote, variant: 'primary' },

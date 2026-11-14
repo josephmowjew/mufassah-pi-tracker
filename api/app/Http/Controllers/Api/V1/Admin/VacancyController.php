@@ -2,12 +2,12 @@
 
 namespace App\Http\Controllers\Api\V1\Admin;
 
-use App\Support\LikePattern;
 use App\Http\Controllers\Api\V1\BaseController;
 use App\Http\Requests\Api\V1\Admin\StoreVacancyRequest;
 use App\Http\Requests\Api\V1\Admin\UpdateVacancyRequest;
 use App\Http\Resources\VacancyResource;
 use App\Models\Vacancy;
+use App\Support\LikePattern;
 use App\Traits\PaginatesLists;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;

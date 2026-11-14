@@ -2,13 +2,13 @@
 
 namespace App\Http\Controllers\Api\V1;
 
-use App\Support\LikePattern;
 use App\Http\Requests\Api\V1\DeviceCategory\StoreCategoryRequest;
 use App\Http\Requests\Api\V1\DeviceCategory\UpdateCategoryRequest;
 use App\Http\Resources\DeviceCategoryResource;
 use App\Models\DeviceCategory;
 use App\Models\InventoryBatch;
 use App\Models\InventoryMovement;
+use App\Support\LikePattern;
 use App\Traits\PaginatesLists;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;

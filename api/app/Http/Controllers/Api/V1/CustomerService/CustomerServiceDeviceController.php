@@ -2,19 +2,18 @@
 
 namespace App\Http\Controllers\Api\V1\CustomerService;
 
-use App\Support\LikePattern;
 use App\Http\Controllers\Api\V1\BaseController;
 use App\Http\Resources\DeviceResource;
 use App\Models\Device;
-use App\Traits\SortsLists;
+use App\Support\LikePattern;
 use App\Traits\PaginatesLists;
+use App\Traits\SortsLists;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class CustomerServiceDeviceController extends BaseController
 {
     use PaginatesLists;
-
     use SortsLists;
 
     /** @var array<int, string> */

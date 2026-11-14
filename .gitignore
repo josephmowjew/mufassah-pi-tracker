@@ -91,3 +91,6 @@ logs/
 .arts/
 .freebuff/
 .workbuddy-ai/
+
+# Playwright MCP snapshots
+.playwright-mcp/

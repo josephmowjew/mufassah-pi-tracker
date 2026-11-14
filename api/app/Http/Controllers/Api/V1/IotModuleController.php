@@ -2,13 +2,13 @@
 
 namespace App\Http\Controllers\Api\V1;
 
-use App\Support\LikePattern;
 use App\Http\Requests\Api\V1\IotModule\StoreIotModuleRequest;
 use App\Http\Requests\Api\V1\IotModule\UpdateIotModuleRequest;
 use App\Http\Resources\IotModuleResource;
 use App\Models\IotModule;
-use App\Traits\SortsLists;
+use App\Support\LikePattern;
 use App\Traits\PaginatesLists;
+use App\Traits\SortsLists;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
@@ -21,7 +21,6 @@ use Illuminate\Support\Str;
 class IotModuleController extends BaseController
 {
     use PaginatesLists;
-
     use SortsLists;
 
     /** @var array<int, string> */

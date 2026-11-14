@@ -2,17 +2,18 @@
 
 namespace App\Http\Controllers\Api\V1;
 
-use App\Support\LikePattern;
 use App\Http\Controllers\Controller;
 use App\Models\Branch;
 use App\Models\Device;
 use App\Models\Layby;
 use App\Models\LaybyBranchPolicy;
 use App\Services\LaybyService;
+use App\Support\LikePattern;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 class LaybyController extends Controller
 {
@@ -82,17 +83,50 @@ class LaybyController extends Controller
 
     public function lookup(Request $request): JsonResponse
     {
-        $data = $request->validate(['serial_number' => 'required|string|max:100', 'customer' => 'required|string|max:100']);
+        $data = $request->validate([
+            'serial_number' => 'sometimes|string|max:100',
+            'category_id' => 'sometimes|integer|min:1',
+            'brand' => 'sometimes|string|max:100',
+            'model' => 'sometimes|string|max:150',
+            'color' => 'sometimes|nullable|string|max:50',
+            'customer' => 'required|string|max:100',
+        ]);
+
+        if (empty($data['serial_number']) && (empty($data['category_id']) || empty($data['brand']) || empty($data['model']))) {
+            throw ValidationException::withMessages(['serial_number' => 'Provide either a serial number or product specification (category, brand, model).']);
+        }
+
         $actor = $request->user();
-        $device = Device::query()
-            ->when(! $actor->hasRole('super_admin'), fn ($query) => $query->where('branch_id', $actor->requiredBranchScopeId()))
-            ->where('serial_number', $data['serial_number'])->available()->firstOrFail();
+        $branchScope = ! $actor->hasRole('super_admin') ? $actor->requiredBranchScopeId() : null;
+
+        if (! empty($data['serial_number'])) {
+            $device = Device::query()
+                ->when($branchScope, fn ($query) => $query->where('branch_id', $branchScope))
+                ->where('serial_number', $data['serial_number'])
+                ->available()
+                ->firstOrFail();
+        } else {
+            $device = Device::query()
+                ->when($branchScope, fn ($query) => $query->where('branch_id', $branchScope))
+                ->where('category_id', $data['category_id'])
+                ->where('brand', $data['brand'])
+                ->where('model', $data['model'])
+                ->when(! empty($data['color']), fn ($query) => $query->where('color', $data['color']))
+                ->availableForSale()
+                ->firstOrFail();
+        }
+
         $customers = \App\Models\User::role('customer')->where(function ($query) use ($data) {
             $query->whereRaw('name LIKE ? '.LikePattern::SQL_ESCAPE, [LikePattern::contains($data['customer'])])
                 ->orWhere('phone_number', $data['customer'])->orWhere('email', $data['customer']);
         })->orderBy('name')->limit(15)->get(['id', 'name', 'phone_number']);
 
-        return response()->json(['device_id' => $device->id, 'customers' => $customers]);
+        return response()->json([
+            'device_id' => $device->id,
+            'serial_number' => $device->serial_number,
+            'description' => $device->description,
+            'customers' => $customers,
+        ]);
     }
 
     public function store(Request $request): JsonResponse

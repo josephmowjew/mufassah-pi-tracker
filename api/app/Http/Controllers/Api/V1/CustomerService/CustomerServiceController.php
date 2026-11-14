@@ -2,12 +2,12 @@
 
 namespace App\Http\Controllers\Api\V1\CustomerService;
 
-use App\Support\LikePattern;
 use App\Http\Controllers\Api\V1\BaseController;
 use App\Http\Resources\UserResource;
 use App\Models\Device;
 use App\Models\Sale;
 use App\Models\User;
+use App\Support\LikePattern;
 use App\Support\LocalTime;
 use App\Traits\PaginatesLists;
 use Illuminate\Http\JsonResponse;

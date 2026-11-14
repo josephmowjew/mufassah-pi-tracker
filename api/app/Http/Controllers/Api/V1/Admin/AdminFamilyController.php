@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers\Api\V1\Admin;
 
-use App\Support\LikePattern;
 use App\Enums\FamilyMemberStatus;
 use App\Enums\FamilyRole;
 use App\Http\Controllers\Controller;
@@ -10,8 +9,9 @@ use App\Http\Resources\FamilyMemberResource;
 use App\Http\Resources\UserResource;
 use App\Models\Family;
 use App\Models\FamilyMember;
-use App\Traits\SortsLists;
+use App\Support\LikePattern;
 use App\Traits\PaginatesLists;
+use App\Traits\SortsLists;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -25,7 +25,6 @@ use Illuminate\Validation\Rule;
 class AdminFamilyController extends Controller
 {
     use PaginatesLists;
-
     use SortsLists;
 
     /** @var array<int, string> */

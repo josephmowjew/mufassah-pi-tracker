@@ -2,13 +2,13 @@
 
 namespace App\Http\Controllers\Api\V1\CustomerService;
 
-use App\Support\LikePattern;
 use App\Enums\InventoryStatus;
 use App\Http\Controllers\Api\V1\BaseController;
 use App\Models\Branch;
 use App\Models\Device;
 use App\Models\DeviceCategory;
 use App\Models\InventoryBatch;
+use App\Support\LikePattern;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;

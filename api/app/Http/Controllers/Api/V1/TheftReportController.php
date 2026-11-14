@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers\Api\V1;
 
-use App\Support\LikePattern;
 use App\Enums\DeviceStatus;
 use App\Enums\TheftReportStatus;
 use App\Http\Controllers\Controller;
@@ -16,6 +15,7 @@ use App\Http\Resources\TheftReportUpdateResource;
 use App\Models\Device;
 use App\Models\TheftReport;
 use App\Models\TheftReportUpdate;
+use App\Support\LikePattern;
 use App\Traits\PaginatesLists;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;

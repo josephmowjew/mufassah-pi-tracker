@@ -2,14 +2,14 @@
 
 namespace App\Http\Controllers\Api\V1\Admin;
 
-use App\Support\LikePattern;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\AdminUserResource;
 use App\Models\Branch;
 use App\Models\User;
 use App\Notifications\PasswordChangedNotification;
-use App\Traits\SortsLists;
+use App\Support\LikePattern;
 use App\Traits\PaginatesLists;
+use App\Traits\SortsLists;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -29,7 +29,6 @@ use Spatie\Permission\Models\Role;
 class AdminUserController extends Controller
 {
     use PaginatesLists;
-
     use SortsLists;
 
     /** @var array<int, string> */

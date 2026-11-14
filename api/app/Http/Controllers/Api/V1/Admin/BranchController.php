@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers\Api\V1\Admin;
 
-use App\Support\LikePattern;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreBranchRequest;
 use App\Http\Requests\UpdateBranchRequest;
@@ -14,6 +13,7 @@ use App\Models\InventoryReceipt;
 use App\Models\Shift;
 use App\Models\StockTransferRequest;
 use App\Models\User;
+use App\Support\LikePattern;
 use App\Traits\PaginatesLists;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;

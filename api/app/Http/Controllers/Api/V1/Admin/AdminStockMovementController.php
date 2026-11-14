@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers\Api\V1\Admin;
 
-use App\Support\LikePattern;
 use App\Enums\InventoryStatus;
 use App\Http\Controllers\Api\V1\BaseController;
 use App\Http\Resources\DeviceResource;
@@ -11,6 +10,7 @@ use App\Models\Branch;
 use App\Models\Device;
 use App\Models\InventoryMovement;
 use App\Services\InventoryMovementService;
+use App\Support\LikePattern;
 use App\Support\LocalTime;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;

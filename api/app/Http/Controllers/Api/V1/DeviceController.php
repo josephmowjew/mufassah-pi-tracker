@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers\Api\V1;
 
-use App\Support\LikePattern;
 use App\Enums\DeviceStatus;
 use App\Http\Requests\Api\V1\Device\LinkIotModuleRequest;
 use App\Http\Requests\Api\V1\Device\StoreDeviceRequest;
@@ -15,8 +14,9 @@ use App\Models\Device;
 use App\Models\DeviceOwnershipHistory;
 use App\Models\IotModule;
 use App\Models\User;
-use App\Traits\SortsLists;
+use App\Support\LikePattern;
 use App\Traits\PaginatesLists;
+use App\Traits\SortsLists;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -30,7 +30,6 @@ use Illuminate\Support\Facades\Storage;
 class DeviceController extends BaseController
 {
     use PaginatesLists;
-
     use SortsLists;
 
     /** @var array<int, string> */

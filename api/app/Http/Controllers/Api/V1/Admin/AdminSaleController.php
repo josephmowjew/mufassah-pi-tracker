@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers\Api\V1\Admin;
 
-use App\Support\LikePattern;
 use App\Enums\InventoryStatus;
 use App\Enums\PaymentMethod;
 use App\Enums\PaymentStatus;
@@ -17,9 +16,10 @@ use App\Models\SaleItem;
 use App\Services\InventoryMovementService;
 use App\Services\ReceiptService;
 use App\Services\SuperAdminSaleNotificationService;
+use App\Support\LikePattern;
 use App\Support\LocalTime;
-use App\Traits\SortsLists;
 use App\Traits\PaginatesLists;
+use App\Traits\SortsLists;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
@@ -33,7 +33,6 @@ use Illuminate\Validation\ValidationException;
 class AdminSaleController extends BaseController
 {
     use PaginatesLists;
-
     use SortsLists;
 
     /** @var array<int, string> */

@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers\Api\V1\Admin;
 
-use App\Support\LikePattern;
 use App\Http\Controllers\Api\V1\BaseController;
 use App\Models\Brand;
 use App\Models\Device;
@@ -12,6 +11,7 @@ use App\Rules\UniqueUnlessDeleted;
 use App\Services\CatalogDeletionImpactService;
 use App\Services\InventoryActionApprovalService;
 use App\Services\InventoryBatchPricingService;
+use App\Support\LikePattern;
 use Closure;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;

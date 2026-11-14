@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers\Api\V1;
 
-use App\Support\LikePattern;
 use App\Enums\WarrantyClaimStatus;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\V1\Warranty\ProcessClaimRequest;
@@ -10,6 +9,7 @@ use App\Http\Requests\Api\V1\Warranty\StoreWarrantyClaimRequest;
 use App\Http\Resources\WarrantyClaimResource;
 use App\Models\Warranty;
 use App\Models\WarrantyClaim;
+use App\Support\LikePattern;
 use App\Traits\PaginatesLists;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
