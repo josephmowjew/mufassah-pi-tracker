@@ -2,14 +2,24 @@
 
 namespace App\Http\Controllers\Api\V1\CustomerService;
 
+use App\Support\LikePattern;
 use App\Http\Controllers\Api\V1\BaseController;
 use App\Http\Resources\DeviceResource;
 use App\Models\Device;
+use App\Traits\SortsLists;
+use App\Traits\PaginatesLists;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class CustomerServiceDeviceController extends BaseController
 {
+    use PaginatesLists;
+
+    use SortsLists;
+
+    /** @var array<int, string> */
+    private const SORTABLE = ['serial_number', 'brand', 'model', 'created_at', 'updated_at'];
+
     /**
      * List all devices (read-only access).
      */
@@ -33,19 +43,17 @@ class CustomerServiceDeviceController extends BaseController
         if ($request->has('search')) {
             $search = $request->search;
             $query->where(function ($q) use ($search) {
-                $q->where('serial_number', 'like', "%{$search}%")
-                    ->orWhere('brand', 'like', "%{$search}%")
-                    ->orWhere('model', 'like', "%{$search}%");
+                $q->whereRaw('serial_number LIKE ? '.LikePattern::SQL_ESCAPE, [LikePattern::contains($search)])
+                    ->orWhereRaw('brand LIKE ? '.LikePattern::SQL_ESCAPE, [LikePattern::contains($search)])
+                    ->orWhereRaw('model LIKE ? '.LikePattern::SQL_ESCAPE, [LikePattern::contains($search)]);
             });
         }
 
         // Sort
-        $sortField = $request->get('sort', 'created_at');
-        $sortDirection = $request->get('direction', 'desc');
-        $query->orderBy($sortField, $sortDirection);
+        $this->applySort($query, $request, self::SORTABLE, ['created_at', 'desc']);
 
         // Paginate
-        $perPage = $request->get('per_page', 15);
+        $perPage = $this->perPage($request);
         $devices = $query->paginate($perPage);
 
         return $this->paginated(DeviceResource::collection($devices));

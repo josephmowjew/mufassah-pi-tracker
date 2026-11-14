@@ -2,10 +2,13 @@
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Support\LikePattern;
 use App\Http\Requests\Api\V1\IotModule\StoreIotModuleRequest;
 use App\Http\Requests\Api\V1\IotModule\UpdateIotModuleRequest;
 use App\Http\Resources\IotModuleResource;
 use App\Models\IotModule;
+use App\Traits\SortsLists;
+use App\Traits\PaginatesLists;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
@@ -17,6 +20,13 @@ use Illuminate\Support\Str;
  */
 class IotModuleController extends BaseController
 {
+    use PaginatesLists;
+
+    use SortsLists;
+
+    /** @var array<int, string> */
+    private const SORTABLE = ['module_id', 'modem_type', 'status', 'battery_level', 'signal_strength', 'created_at'];
+
     /**
      * List all IoT modules (admin only).
      */
@@ -55,18 +65,16 @@ class IotModuleController extends BaseController
         if ($request->has('search')) {
             $search = $request->search;
             $query->where(function ($q) use ($search) {
-                $q->where('module_id', 'like', "%{$search}%")
-                    ->orWhere('sim_number', 'like', "%{$search}%")
-                    ->orWhere('imei', 'like', "%{$search}%");
+                $q->whereRaw('module_id LIKE ? '.LikePattern::SQL_ESCAPE, [LikePattern::contains($search)])
+                    ->orWhereRaw('sim_number LIKE ? '.LikePattern::SQL_ESCAPE, [LikePattern::contains($search)])
+                    ->orWhereRaw('imei LIKE ? '.LikePattern::SQL_ESCAPE, [LikePattern::contains($search)]);
             });
         }
 
         // Sort
-        $sortBy = $request->get('sort_by', 'created_at');
-        $sortOrder = $request->get('sort_order', 'desc');
-        $query->orderBy($sortBy, $sortOrder);
+        $this->applySort($query, $request, self::SORTABLE, ['created_at', 'desc']);
 
-        $modules = $query->paginate($request->get('per_page', 15));
+        $modules = $query->paginate($this->perPage($request));
 
         return $this->paginated(IotModuleResource::collection($modules));
     }

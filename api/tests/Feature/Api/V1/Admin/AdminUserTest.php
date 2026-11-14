@@ -576,3 +576,46 @@ describe('Privilege Boundaries', function () {
             ->assertJsonPath('data.name', 'Renamed By Super Admin');
     });
 });
+
+/**
+ * The layby desk creates walk-in customers through this endpoint.
+ *
+ * The dialog posts the identity fields the operator filled in and nothing else,
+ * sending `null` for the optional ones, so the contract has to keep accepting
+ * that shape without falling back to "email is required".
+ */
+describe('Walk-in customer from the counter', function () {
+    it('accepts the minimal payload a store admin sends when opening a layby', function () {
+        $this->actingAs($this->storeAdmin)
+            ->postJson('/api/v1/admin/users', [
+                'name' => 'Walk-in Customer',
+                'phone_number' => '+265999111222',
+                'email' => null,
+                'national_id' => null,
+                'role' => 'customer',
+            ])
+            ->assertCreated()
+            ->assertJsonPath('data.name', 'Walk-in Customer')
+            ->assertJsonPath('data.phone_number', '+265999111222');
+
+        $customer = User::where('phone_number', '+265999111222')->first();
+
+        expect($customer)->not->toBeNull()
+            ->and($customer->hasRole('customer'))->toBeTrue()
+            // The branch comes from the actor, not from the payload.
+            ->and($customer->branch_id)->toBe($this->branch->id);
+    });
+
+    it('reports a duplicate phone number as a field error so the desk can search instead', function () {
+        User::factory()->create(['phone_number' => '+265999333444']);
+
+        $this->actingAs($this->storeAdmin)
+            ->postJson('/api/v1/admin/users', [
+                'name' => 'Duplicate',
+                'phone_number' => '+265999333444',
+                'role' => 'customer',
+            ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('phone_number');
+    });
+});

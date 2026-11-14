@@ -2,12 +2,14 @@
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Support\LikePattern;
 use App\Http\Requests\Api\V1\DeviceCategory\StoreCategoryRequest;
 use App\Http\Requests\Api\V1\DeviceCategory\UpdateCategoryRequest;
 use App\Http\Resources\DeviceCategoryResource;
 use App\Models\DeviceCategory;
 use App\Models\InventoryBatch;
 use App\Models\InventoryMovement;
+use App\Traits\PaginatesLists;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -18,6 +20,8 @@ use Illuminate\Http\Request;
  */
 class DeviceCategoryController extends BaseController
 {
+    use PaginatesLists;
+
     /**
      * List all active device categories.
      */
@@ -51,13 +55,13 @@ class DeviceCategoryController extends BaseController
         if ($request->has('search')) {
             $search = $request->search;
             $query->where(function ($q) use ($search) {
-                $q->where('name', 'like', "%{$search}%")
-                    ->orWhere('description', 'like', "%{$search}%");
+                $q->whereRaw('name LIKE ? '.LikePattern::SQL_ESCAPE, [LikePattern::contains($search)])
+                    ->orWhereRaw('description LIKE ? '.LikePattern::SQL_ESCAPE, [LikePattern::contains($search)]);
             });
         }
 
         // Check if pagination is requested
-        $perPage = $request->get('per_page', 15);
+        $perPage = $this->perPage($request);
 
         if ($request->has('page') || $request->has('per_page')) {
             $categories = $query->orderBy('name')->paginate($perPage);

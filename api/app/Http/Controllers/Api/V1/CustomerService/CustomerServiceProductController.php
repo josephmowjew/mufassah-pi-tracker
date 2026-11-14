@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\V1\CustomerService;
 
+use App\Support\LikePattern;
 use App\Enums\InventoryStatus;
 use App\Http\Controllers\Api\V1\BaseController;
 use App\Models\Branch;
@@ -45,9 +46,12 @@ class CustomerServiceProductController extends BaseController
             $groups->where('devices.category_id', $filters['category_id']);
         }
         foreach (preg_split('/\s+/u', $filters['search'] ?? '', -1, PREG_SPLIT_NO_EMPTY) ?: [] as $word) {
-            $pattern = '%'.$word.'%';
-            $groups->havingRaw('MAX(CASE WHEN devices.brand LIKE ? OR devices.model LIKE ? OR devices.serial_number LIKE ?
-                OR devices.unique_device_code LIKE ? THEN 1 ELSE 0 END) = 1', array_fill(0, 4, $pattern));
+            $pattern = LikePattern::contains($word);
+            $groups->havingRaw('MAX(CASE WHEN devices.brand LIKE ? '.LikePattern::SQL_ESCAPE.'
+                OR devices.model LIKE ? '.LikePattern::SQL_ESCAPE.'
+                OR devices.serial_number LIKE ? '.LikePattern::SQL_ESCAPE.'
+                OR devices.unique_device_code LIKE ? '.LikePattern::SQL_ESCAPE.'
+                THEN 1 ELSE 0 END) = 1', array_fill(0, 4, $pattern));
         }
         if (isset($filters['availability'])) {
             $groups->havingRaw($filters['availability'] === 'available' ? 'COUNT(sellable.id) > 0' : 'COUNT(sellable.id) = 0');
@@ -118,9 +122,10 @@ class CustomerServiceProductController extends BaseController
             ->leftJoinSub($available, 'sellable', 'sellable.id', '=', 'devices.id')
             ->select('devices.*')->selectRaw('sellable.id IS NOT NULL AS available')
             ->when(isset($filters['search']), function ($query) use ($filters) {
-                $pattern = '%'.$filters['search'].'%';
-                $query->where(fn ($query) => $query->where('serial_number', 'like', $pattern)
-                    ->orWhere('unique_device_code', 'like', $pattern)->orWhere('color', 'like', $pattern));
+                $pattern = LikePattern::contains($filters['search']);
+                $query->where(fn ($query) => $query->whereRaw('serial_number LIKE ? '.LikePattern::SQL_ESCAPE, [$pattern])
+                    ->orWhereRaw('unique_device_code LIKE ? '.LikePattern::SQL_ESCAPE, [$pattern])
+                    ->orWhereRaw('color LIKE ? '.LikePattern::SQL_ESCAPE, [$pattern]));
             })
             ->with(['owner:id,name', 'inventoryBatch:id,batch_number,target_selling_price'])
             ->orderByDesc('available')->orderBy('devices.serial_number')->paginate(15);

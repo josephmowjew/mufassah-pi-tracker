@@ -9,6 +9,7 @@ use App\Http\Requests\Api\V1\Warranty\UpdateWarrantyRequest;
 use App\Http\Resources\WarrantyResource;
 use App\Models\Device;
 use App\Models\Warranty;
+use App\Traits\PaginatesLists;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -19,6 +20,8 @@ use Illuminate\Http\Request;
  */
 class WarrantyController extends Controller
 {
+    use PaginatesLists;
+
     public function index(Request $request): JsonResponse
     {
         $this->authorize('viewAny', Warranty::class);
@@ -47,7 +50,7 @@ class WarrantyController extends Controller
             $query->where('device_id', $request->device_id);
         }
 
-        $warranties = $query->latest()->paginate($request->get('per_page', 15));
+        $warranties = $query->latest()->paginate($this->perPage($request));
 
         return response()->json([
             'success' => true,

@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Support\LikePattern;
 use App\Enums\WarrantyClaimStatus;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\V1\Warranty\ProcessClaimRequest;
@@ -9,6 +10,7 @@ use App\Http\Requests\Api\V1\Warranty\StoreWarrantyClaimRequest;
 use App\Http\Resources\WarrantyClaimResource;
 use App\Models\Warranty;
 use App\Models\WarrantyClaim;
+use App\Traits\PaginatesLists;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -20,6 +22,8 @@ use Illuminate\Support\Facades\Storage;
  */
 class WarrantyClaimController extends Controller
 {
+    use PaginatesLists;
+
     public function index(Request $request): JsonResponse
     {
         $this->authorize('viewAny', WarrantyClaim::class);
@@ -45,10 +49,10 @@ class WarrantyClaimController extends Controller
 
         // Search by claim number
         if ($request->has('search')) {
-            $query->where('claim_number', 'like', '%'.$request->search.'%');
+            $query->whereRaw('claim_number LIKE ? '.LikePattern::SQL_ESCAPE, [LikePattern::contains($request->search)]);
         }
 
-        $claims = $query->latest()->paginate($request->get('per_page', 15));
+        $claims = $query->latest()->paginate($this->perPage($request));
 
         return response()->json([
             'success' => true,

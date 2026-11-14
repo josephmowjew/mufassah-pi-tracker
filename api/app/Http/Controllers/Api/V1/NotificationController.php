@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Http\Resources\NotificationResource;
+use App\Traits\PaginatesLists;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -14,6 +15,8 @@ use Illuminate\Http\Request;
  */
 class NotificationController extends Controller
 {
+    use PaginatesLists;
+
     /**
      * Get all notifications for the authenticated user.
      */
@@ -32,7 +35,7 @@ class NotificationController extends Controller
                 $query->where('data->type', $request->input('type'));
             })
             ->latest()
-            ->paginate($request->input('per_page', 15));
+            ->paginate($this->perPage($request));
 
         return response()->json([
             'success' => true,

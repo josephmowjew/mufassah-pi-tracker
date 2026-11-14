@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Support\LikePattern;
 use App\Enums\DeviceStatus;
 use App\Http\Requests\Api\V1\Device\LinkIotModuleRequest;
 use App\Http\Requests\Api\V1\Device\StoreDeviceRequest;
@@ -14,6 +15,8 @@ use App\Models\Device;
 use App\Models\DeviceOwnershipHistory;
 use App\Models\IotModule;
 use App\Models\User;
+use App\Traits\SortsLists;
+use App\Traits\PaginatesLists;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -26,6 +29,13 @@ use Illuminate\Support\Facades\Storage;
  */
 class DeviceController extends BaseController
 {
+    use PaginatesLists;
+
+    use SortsLists;
+
+    /** @var array<int, string> */
+    private const SORTABLE = ['serial_number', 'brand', 'model', 'status', 'created_at', 'updated_at'];
+
     /**
      * List user's devices with optional filtering.
      */
@@ -50,19 +60,17 @@ class DeviceController extends BaseController
         if ($request->has('search')) {
             $search = $request->search;
             $query->where(function ($q) use ($search) {
-                $q->where('serial_number', 'like', "%{$search}%")
-                    ->orWhere('brand', 'like', "%{$search}%")
-                    ->orWhere('model', 'like', "%{$search}%")
-                    ->orWhere('unique_device_code', 'like', "%{$search}%");
+                $q->whereRaw('serial_number LIKE ? '.LikePattern::SQL_ESCAPE, [LikePattern::contains($search)])
+                    ->orWhereRaw('brand LIKE ? '.LikePattern::SQL_ESCAPE, [LikePattern::contains($search)])
+                    ->orWhereRaw('model LIKE ? '.LikePattern::SQL_ESCAPE, [LikePattern::contains($search)])
+                    ->orWhereRaw('unique_device_code LIKE ? '.LikePattern::SQL_ESCAPE, [LikePattern::contains($search)]);
             });
         }
 
         // Sort
-        $sortBy = $request->get('sort_by', 'created_at');
-        $sortOrder = $request->get('sort_order', 'desc');
-        $query->orderBy($sortBy, $sortOrder);
+        $this->applySort($query, $request, self::SORTABLE, ['created_at', 'desc']);
 
-        $devices = $query->paginate($request->get('per_page', 15));
+        $devices = $query->paginate($this->perPage($request));
 
         return $this->paginated(DeviceResource::collection($devices));
     }

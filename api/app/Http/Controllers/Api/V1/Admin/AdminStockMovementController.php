@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\V1\Admin;
 
+use App\Support\LikePattern;
 use App\Enums\InventoryStatus;
 use App\Http\Controllers\Api\V1\BaseController;
 use App\Http\Resources\DeviceResource;
@@ -262,18 +263,18 @@ class AdminStockMovementController extends BaseController
         if ($request->filled('search')) {
             $search = $request->string('search')->toString();
             $query->where(function ($q) use ($search) {
-                $q->where('movement_number', 'like', "%{$search}%")
-                    ->orWhere('brand', 'like', "%{$search}%")
-                    ->orWhere('model', 'like', "%{$search}%")
-                    ->orWhere('color', 'like', "%{$search}%")
-                    ->orWhere('reason', 'like', "%{$search}%")
+                $q->whereRaw('movement_number LIKE ? '.LikePattern::SQL_ESCAPE, [LikePattern::contains($search)])
+                    ->orWhereRaw('brand LIKE ? '.LikePattern::SQL_ESCAPE, [LikePattern::contains($search)])
+                    ->orWhereRaw('model LIKE ? '.LikePattern::SQL_ESCAPE, [LikePattern::contains($search)])
+                    ->orWhereRaw('color LIKE ? '.LikePattern::SQL_ESCAPE, [LikePattern::contains($search)])
+                    ->orWhereRaw('reason LIKE ? '.LikePattern::SQL_ESCAPE, [LikePattern::contains($search)])
                     ->orWhereHas('device', function ($deviceQuery) use ($search) {
-                        $deviceQuery->where('serial_number', 'like', "%{$search}%")
-                            ->orWhere('unique_device_code', 'like', "%{$search}%");
+                        $deviceQuery->whereRaw('serial_number LIKE ? '.LikePattern::SQL_ESCAPE, [LikePattern::contains($search)])
+                            ->orWhereRaw('unique_device_code LIKE ? '.LikePattern::SQL_ESCAPE, [LikePattern::contains($search)]);
                     })
-                    ->orWhereHas('batch', fn ($batchQuery) => $batchQuery->where('batch_number', 'like', "%{$search}%"))
-                    ->orWhereHas('receipt', fn ($receiptQuery) => $receiptQuery->where('receipt_number', 'like', "%{$search}%"))
-                    ->orWhereHas('sale', fn ($saleQuery) => $saleQuery->where('sale_number', 'like', "%{$search}%"));
+                    ->orWhereHas('batch', fn ($batchQuery) => $batchQuery->whereRaw('batch_number LIKE ? '.LikePattern::SQL_ESCAPE, [LikePattern::contains($search)]))
+                    ->orWhereHas('receipt', fn ($receiptQuery) => $receiptQuery->whereRaw('receipt_number LIKE ? '.LikePattern::SQL_ESCAPE, [LikePattern::contains($search)]))
+                    ->orWhereHas('sale', fn ($saleQuery) => $saleQuery->whereRaw('sale_number LIKE ? '.LikePattern::SQL_ESCAPE, [LikePattern::contains($search)]));
             });
         }
     }

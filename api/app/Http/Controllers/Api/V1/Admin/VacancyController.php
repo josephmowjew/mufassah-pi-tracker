@@ -2,16 +2,20 @@
 
 namespace App\Http\Controllers\Api\V1\Admin;
 
+use App\Support\LikePattern;
 use App\Http\Controllers\Api\V1\BaseController;
 use App\Http\Requests\Api\V1\Admin\StoreVacancyRequest;
 use App\Http\Requests\Api\V1\Admin\UpdateVacancyRequest;
 use App\Http\Resources\VacancyResource;
 use App\Models\Vacancy;
+use App\Traits\PaginatesLists;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class VacancyController extends BaseController
 {
+    use PaginatesLists;
+
     public function index(Request $request): JsonResponse
     {
         $query = Vacancy::query();
@@ -19,8 +23,8 @@ class VacancyController extends BaseController
         if ($request->filled('search')) {
             $search = $request->string('search')->toString();
             $query->where(fn ($vacancies) => $vacancies
-                ->where('title', 'like', "%{$search}%")
-                ->orWhere('location', 'like', "%{$search}%"));
+                ->whereRaw('title LIKE ? '.LikePattern::SQL_ESCAPE, [LikePattern::contains($search)])
+                ->orWhereRaw('location LIKE ? '.LikePattern::SQL_ESCAPE, [LikePattern::contains($search)]));
         }
 
         if ($request->has('is_published')) {
@@ -31,7 +35,7 @@ class VacancyController extends BaseController
             ->orderBy('sort_order')
             ->orderByDesc('published_at')
             ->orderByDesc('created_at')
-            ->paginate((int) $request->input('per_page', 15));
+            ->paginate($this->perPage($request));
 
         return $this->paginated(VacancyResource::collection($vacancies));
     }

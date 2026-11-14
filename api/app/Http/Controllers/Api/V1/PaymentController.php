@@ -2,12 +2,14 @@
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Support\LikePattern;
 use App\Enums\PaymentStatus;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\PaymentResource;
 use App\Models\Payment;
 use App\Services\PayChanguService;
 use App\Services\PaymentRefundService;
+use App\Traits\PaginatesLists;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -19,6 +21,8 @@ use Illuminate\Support\Facades\Log;
  */
 class PaymentController extends Controller
 {
+    use PaginatesLists;
+
     public function __construct(
         protected PayChanguService $payChanguService,
         protected PaymentRefundService $refundService,
@@ -47,10 +51,10 @@ class PaymentController extends Controller
         }
 
         if ($request->has('search')) {
-            $query->where('payment_number', 'like', '%'.$request->search.'%');
+            $query->whereRaw('payment_number LIKE ? '.LikePattern::SQL_ESCAPE, [LikePattern::contains($request->search)]);
         }
 
-        $payments = $query->latest()->paginate($request->get('per_page', 15));
+        $payments = $query->latest()->paginate($this->perPage($request));
 
         return response()->json([
             'success' => true,
@@ -74,7 +78,7 @@ class PaymentController extends Controller
             $query->where('status', $request->status);
         }
 
-        $payments = $query->latest()->paginate($request->get('per_page', 15));
+        $payments = $query->latest()->paginate($this->perPage($request));
 
         return response()->json([
             'success' => true,

@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\V1\Admin;
 
+use App\Support\LikePattern;
 use App\Http\Controllers\Api\V1\BaseController;
 use App\Models\Brand;
 use App\Models\Device;
@@ -51,7 +52,7 @@ class AdminProductCatalogController extends BaseController
 
         // Search by name
         if ($request->has('search')) {
-            $query->where('name', 'like', "%{$request->search}%");
+            $query->whereRaw('name LIKE ? '.LikePattern::SQL_ESCAPE, [LikePattern::contains($request->search)]);
         }
 
         // Include product models count
@@ -231,7 +232,7 @@ class AdminProductCatalogController extends BaseController
 
         // Search by name
         if ($request->has('search')) {
-            $query->where('name', 'like', "%{$request->search}%");
+            $query->whereRaw('name LIKE ? '.LikePattern::SQL_ESCAPE, [LikePattern::contains($request->search)]);
         }
 
         // Include devices count

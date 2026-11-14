@@ -9,6 +9,7 @@ use App\Http\Resources\GeofenceEventResource;
 use App\Http\Resources\GeofenceResource;
 use App\Models\Device;
 use App\Models\Geofence;
+use App\Traits\PaginatesLists;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -21,6 +22,8 @@ use Illuminate\Support\Facades\Gate;
  */
 class GeofenceController extends Controller
 {
+    use PaginatesLists;
+
     /**
      * List all geofences for the authenticated user.
      *
@@ -57,7 +60,7 @@ class GeofenceController extends Controller
             })
             ->withCount('events')
             ->latest()
-            ->paginate($request->input('per_page', 15));
+            ->paginate($this->perPage($request));
 
         return GeofenceResource::collection($geofences);
     }
@@ -164,7 +167,7 @@ class GeofenceController extends Controller
                 $query->where('event_time', '<=', $request->input('to'));
             })
             ->latest('event_time')
-            ->paginate($request->input('per_page', 15));
+            ->paginate($this->perPage($request));
 
         return GeofenceEventResource::collection($events);
     }

@@ -2,15 +2,25 @@
 
 namespace App\Http\Controllers\Api\V1\Admin;
 
+use App\Support\LikePattern;
 use App\Http\Controllers\Api\V1\BaseController;
 use App\Http\Resources\ShiftResource;
 use App\Models\Shift;
 use App\Support\LocalTime;
+use App\Traits\SortsLists;
+use App\Traits\PaginatesLists;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class AdminShiftController extends BaseController
 {
+    use PaginatesLists;
+
+    use SortsLists;
+
+    /** @var array<int, string> */
+    private const SORTABLE = ['started_at', 'ended_at', 'created_at'];
+
     /**
      * List all shifts with filtering.
      */
@@ -55,18 +65,16 @@ class AdminShiftController extends BaseController
         if ($request->has('search')) {
             $search = $request->search;
             $query->whereHas('user', function ($q) use ($search) {
-                $q->where('name', 'like', "%{$search}%")
-                    ->orWhere('email', 'like', "%{$search}%");
+                $q->whereRaw('name LIKE ? '.LikePattern::SQL_ESCAPE, [LikePattern::contains($search)])
+                    ->orWhereRaw('email LIKE ? '.LikePattern::SQL_ESCAPE, [LikePattern::contains($search)]);
             });
         }
 
         // Sort
-        $sortField = $request->get('sort', 'started_at');
-        $sortDirection = $request->get('direction', 'desc');
-        $query->orderBy($sortField, $sortDirection);
+        $this->applySort($query, $request, self::SORTABLE, ['started_at', 'desc']);
 
         // Paginate
-        $perPage = $request->get('per_page', 15);
+        $perPage = $this->perPage($request);
         $shifts = $query->paginate($perPage);
 
         return $this->paginated(ShiftResource::collection($shifts));

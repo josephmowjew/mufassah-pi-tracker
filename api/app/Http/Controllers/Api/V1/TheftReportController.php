@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Support\LikePattern;
 use App\Enums\DeviceStatus;
 use App\Enums\TheftReportStatus;
 use App\Http\Controllers\Controller;
@@ -15,6 +16,7 @@ use App\Http\Resources\TheftReportUpdateResource;
 use App\Models\Device;
 use App\Models\TheftReport;
 use App\Models\TheftReportUpdate;
+use App\Traits\PaginatesLists;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -27,6 +29,8 @@ use Illuminate\Support\Facades\Storage;
  */
 class TheftReportController extends Controller
 {
+    use PaginatesLists;
+
     public function index(Request $request): JsonResponse
     {
         $this->authorize('viewAny', TheftReport::class);
@@ -63,13 +67,13 @@ class TheftReportController extends Controller
         if ($request->has('search')) {
             $search = $request->search;
             $query->where(function ($q) use ($search) {
-                $q->where('theft_location', 'like', "%{$search}%")
-                    ->orWhere('police_report_number', 'like', "%{$search}%")
-                    ->orWhere('police_station', 'like', "%{$search}%");
+                $q->whereRaw('theft_location LIKE ? '.LikePattern::SQL_ESCAPE, [LikePattern::contains($search)])
+                    ->orWhereRaw('police_report_number LIKE ? '.LikePattern::SQL_ESCAPE, [LikePattern::contains($search)])
+                    ->orWhereRaw('police_station LIKE ? '.LikePattern::SQL_ESCAPE, [LikePattern::contains($search)]);
             });
         }
 
-        $reports = $query->latest()->paginate($request->get('per_page', 15));
+        $reports = $query->latest()->paginate($this->perPage($request));
 
         return response()->json([
             'success' => true,

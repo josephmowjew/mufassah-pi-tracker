@@ -2,15 +2,25 @@
 
 namespace App\Http\Controllers\Api\V1\CustomerService;
 
+use App\Support\LikePattern;
 use App\Http\Controllers\Api\V1\BaseController;
 use App\Http\Resources\SaleResource;
 use App\Models\Sale;
 use App\Support\LocalTime;
+use App\Traits\SortsLists;
+use App\Traits\PaginatesLists;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class CustomerServiceSaleController extends BaseController
 {
+    use PaginatesLists;
+
+    use SortsLists;
+
+    /** @var array<int, string> */
+    private const SORTABLE = ['sale_number', 'sale_date', 'total_amount', 'status', 'created_at'];
+
     /**
      * List sales for the current customer service representative.
      */
@@ -56,21 +66,19 @@ class CustomerServiceSaleController extends BaseController
         if ($request->has('search')) {
             $search = $request->search;
             $query->where(function ($q) use ($search) {
-                $q->where('sale_number', 'like', "%{$search}%")
+                $q->whereRaw('sale_number LIKE ? '.LikePattern::SQL_ESCAPE, [LikePattern::contains($search)])
                     ->orWhereHas('customer', function ($customerQuery) use ($search) {
-                        $customerQuery->where('name', 'like', "%{$search}%")
-                            ->orWhere('email', 'like', "%{$search}%");
+                        $customerQuery->whereRaw('name LIKE ? '.LikePattern::SQL_ESCAPE, [LikePattern::contains($search)])
+                            ->orWhereRaw('email LIKE ? '.LikePattern::SQL_ESCAPE, [LikePattern::contains($search)]);
                     });
             });
         }
 
         // Sort
-        $sortField = $request->get('sort', 'created_at');
-        $sortDirection = $request->get('direction', 'desc');
-        $query->orderBy($sortField, $sortDirection);
+        $this->applySort($query, $request, self::SORTABLE, ['created_at', 'desc']);
 
         // Paginate
-        $perPage = $request->get('per_page', 15);
+        $perPage = $this->perPage($request);
         $sales = $query->paginate($perPage);
 
         return $this->paginated(SaleResource::collection($sales));

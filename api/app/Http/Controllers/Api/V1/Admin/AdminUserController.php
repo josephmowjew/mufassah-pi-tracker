@@ -2,11 +2,14 @@
 
 namespace App\Http\Controllers\Api\V1\Admin;
 
+use App\Support\LikePattern;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\AdminUserResource;
 use App\Models\Branch;
 use App\Models\User;
 use App\Notifications\PasswordChangedNotification;
+use App\Traits\SortsLists;
+use App\Traits\PaginatesLists;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -25,6 +28,13 @@ use Spatie\Permission\Models\Role;
  */
 class AdminUserController extends Controller
 {
+    use PaginatesLists;
+
+    use SortsLists;
+
+    /** @var array<int, string> */
+    private const SORTABLE = ['name', 'email', 'phone_number', 'branch_id', 'created_at', 'updated_at'];
+
     /**
      * List all users with filtering and pagination.
      *
@@ -47,9 +57,9 @@ class AdminUserController extends Controller
             ->when($request->filled('search'), function ($query) use ($request) {
                 $search = $request->input('search');
                 $query->where(function ($q) use ($search) {
-                    $q->where('name', 'like', "%{$search}%")
-                        ->orWhere('email', 'like', "%{$search}%")
-                        ->orWhere('phone_number', 'like', "%{$search}%");
+                    $q->whereRaw('name LIKE ? '.LikePattern::SQL_ESCAPE, [LikePattern::contains($search)])
+                        ->orWhereRaw('email LIKE ? '.LikePattern::SQL_ESCAPE, [LikePattern::contains($search)])
+                        ->orWhereRaw('phone_number LIKE ? '.LikePattern::SQL_ESCAPE, [LikePattern::contains($search)]);
                 });
             })
             ->when($request->filled('role'), function ($query) use ($request) {
@@ -72,13 +82,11 @@ class AdminUserController extends Controller
                 }
             })
             ->when($request->filled('sort'), function ($query) use ($request) {
-                $sortField = $request->input('sort');
-                $sortDirection = $request->input('direction', 'asc');
-                $query->orderBy($sortField, $sortDirection);
+                $this->applySort($query, $request, self::SORTABLE, ['created_at', 'desc']);
             }, function ($query) {
                 $query->latest();
             })
-            ->paginate($request->input('per_page', 15));
+            ->paginate($this->perPage($request));
 
         return AdminUserResource::collection($users);
     }

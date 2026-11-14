@@ -12,6 +12,7 @@ use App\Models\User;
 use App\Notifications\StockTransferDecisionNotification;
 use App\Notifications\StockTransferRequestNotification;
 use App\Services\InventoryMovementService;
+use App\Traits\PaginatesLists;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -21,6 +22,8 @@ use Illuminate\Validation\ValidationException;
 
 class StockTransferRequestController extends BaseController
 {
+    use PaginatesLists;
+
     public function index(Request $request): JsonResponse
     {
         $user = $request->user();
@@ -43,7 +46,7 @@ class StockTransferRequestController extends BaseController
             $query->where('from_branch_id', $branchId);
         }
 
-        return $this->paginated(StockTransferRequestResource::collection($query->paginate(min((int) $request->get('per_page', 15), 100))));
+        return $this->paginated(StockTransferRequestResource::collection($query->paginate($this->perPage($request))));
     }
 
     public function show(Request $request, StockTransferRequest $transferRequest): JsonResponse

@@ -22,6 +22,7 @@ use App\Models\CommunityHero;
 use App\Models\CommunityTip;
 use App\Models\SuccessStory;
 use App\Models\TheftReport;
+use App\Traits\PaginatesLists;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -34,6 +35,8 @@ use Illuminate\Support\Facades\Gate;
  */
 class CommunityAlertController extends Controller
 {
+    use PaginatesLists;
+
     /**
      * List active community alerts.
      *
@@ -61,7 +64,7 @@ class CommunityAlertController extends Controller
             $query->withBounty();
         }
 
-        $alerts = $query->latest()->paginate($request->input('per_page', 15));
+        $alerts = $query->latest()->paginate($this->perPage($request));
 
         return CommunityAlertResource::collection($alerts);
     }
@@ -76,7 +79,7 @@ class CommunityAlertController extends Controller
             ->where('created_by', $request->user()->id)
             ->withCount(['tips', 'claims'])
             ->latest()
-            ->paginate($request->input('per_page', 15));
+            ->paginate($this->perPage($request));
 
         return CommunityAlertResource::collection($alerts);
     }
@@ -261,7 +264,7 @@ class CommunityAlertController extends Controller
                 $query->where('status', $request->input('status'));
             })
             ->latest()
-            ->paginate($request->input('per_page', 15));
+            ->paginate($this->perPage($request));
 
         return CommunityTipResource::collection($tips);
     }
@@ -354,7 +357,7 @@ class CommunityAlertController extends Controller
                 $query->where('status', $request->input('status'));
             })
             ->latest()
-            ->paginate($request->input('per_page', 15));
+            ->paginate($this->perPage($request));
 
         return BountyClaimResource::collection($claims);
     }
@@ -523,7 +526,7 @@ class CommunityAlertController extends Controller
         }
 
         return SuccessStoryResource::collection(
-            $query->paginate($request->input('per_page', 10))
+            $query->paginate($this->perPage($request, 10))
         );
     }
 
@@ -574,7 +577,7 @@ class CommunityAlertController extends Controller
                 $query->where('community_alert_id', $request->input('alert_id'));
             })
             ->latest()
-            ->paginate($request->input('per_page', 15));
+            ->paginate($this->perPage($request));
 
         return CommunityTipResource::collection($tips);
     }
@@ -593,7 +596,7 @@ class CommunityAlertController extends Controller
                 $query->where('community_alert_id', $request->input('alert_id'));
             })
             ->latest()
-            ->paginate($request->input('per_page', 15));
+            ->paginate($this->perPage($request));
 
         return BountyClaimResource::collection($claims);
     }
@@ -617,7 +620,7 @@ class CommunityAlertController extends Controller
             $query->withBounty();
         }
 
-        $alerts = $query->latest()->paginate($request->input('per_page', 15));
+        $alerts = $query->latest()->paginate($this->perPage($request));
 
         return CommunityAlertResource::collection($alerts);
     }
@@ -652,7 +655,7 @@ class CommunityAlertController extends Controller
         }
 
         return SuccessStoryResource::collection(
-            $query->paginate($request->input('per_page', 15))
+            $query->paginate($this->perPage($request))
         );
     }
 

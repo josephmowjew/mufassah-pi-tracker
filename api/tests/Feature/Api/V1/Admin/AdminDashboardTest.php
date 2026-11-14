@@ -237,8 +237,14 @@ describe('Dashboard Statistics', function () {
             'code' => 'SSB',
             'is_active' => true,
         ]);
-        $from = now()->subDays(3)->toDateString();
-        $to = now()->subDay()->toDateString();
+        $from = '2026-01-13';
+        $to = '2026-01-15';
+
+        // Fixed instant on the last day of the range. Using `now()->subDay()`
+        // made this test pass or fail depending on the hour: a sale stamped
+        // just after Malawi midnight falls on the next UTC day and drops out
+        // of the UTC window that a date-only filter covers.
+        $saleDate = '2026-01-15 10:00:00';
 
         foreach ([
             ['number' => 'SALE-DASHBOARD-01', 'branch_id' => $this->branch->id, 'amount' => 125],
@@ -252,7 +258,7 @@ describe('Dashboard Statistics', function () {
                 'payment_method' => PaymentMethod::Cash,
                 'payment_status' => PaymentStatus::Completed,
                 'status' => SaleStatus::COMPLETED,
-                'sale_date' => now()->subDay(),
+                'sale_date' => $saleDate,
                 'subtotal' => $saleData['amount'],
                 'tax_amount' => 0,
                 'discount_amount' => 0,
@@ -268,7 +274,7 @@ describe('Dashboard Statistics', function () {
             'payment_method' => PaymentMethod::Cash,
             'payment_status' => PaymentStatus::Completed,
             'status' => SaleStatus::COMPLETED,
-            'sale_date' => now()->subDays(10),
+            'sale_date' => '2025-12-20 10:00:00',
             'subtotal' => 999,
             'tax_amount' => 0,
             'discount_amount' => 0,
@@ -281,8 +287,8 @@ describe('Dashboard Statistics', function () {
             'branch_id' => $otherBranch->id,
             'quantity' => 1,
             'total_amount' => 80,
-            'created_at' => now()->subDay(),
-            'updated_at' => now()->subDay(),
+            'created_at' => $saleDate,
+            'updated_at' => $saleDate,
         ]);
 
         $response = $this->actingAs($this->admin)

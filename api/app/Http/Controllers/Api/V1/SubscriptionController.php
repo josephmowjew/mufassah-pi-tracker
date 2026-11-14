@@ -11,6 +11,7 @@ use App\Http\Resources\SubscriptionResource;
 use App\Models\Subscription;
 use App\Models\SubscriptionPlan;
 use App\Services\PayChanguService;
+use App\Traits\PaginatesLists;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -21,6 +22,8 @@ use Illuminate\Http\Request;
  */
 class SubscriptionController extends Controller
 {
+    use PaginatesLists;
+
     public function __construct(protected PayChanguService $payChanguService) {}
 
     public function index(Request $request): JsonResponse
@@ -45,7 +48,7 @@ class SubscriptionController extends Controller
             $query->active();
         }
 
-        $subscriptions = $query->latest()->paginate($request->get('per_page', 15));
+        $subscriptions = $query->latest()->paginate($this->perPage($request));
 
         return response()->json([
             'success' => true,

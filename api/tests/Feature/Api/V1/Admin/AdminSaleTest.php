@@ -863,7 +863,11 @@ describe('Admin Sales', function () {
             'is_active' => true,
         ]);
 
-        $matchingDate = now()->subDay();
+        // Fixed dates, like the inclusive-range test above: `now()->subDay()`
+        // is a local-time instant, so during the two hours after Malawi
+        // midnight it lands on the next UTC day and falls outside the UTC
+        // window that a date-only filter covers.
+        $matchingDate = '2026-01-15 10:00:00';
         foreach ([
             ['number' => 'SALE-2026-SUMMARY-01', 'branch_id' => $this->branch->id, 'amount' => 100],
             ['number' => 'SALE-2026-SUMMARY-02', 'branch_id' => $this->branch->id, 'amount' => 200],
@@ -905,7 +909,7 @@ describe('Admin Sales', function () {
             'updated_at' => $matchingDate,
         ]);
 
-        $date = $matchingDate->toDateString();
+        $date = '2026-01-15';
         $this->actingAs($this->admin)
             ->getJson("/api/v1/admin/sales/summary?branch_id={$this->branch->id}&date_from={$date}&date_to={$date}")
             ->assertSuccessful()

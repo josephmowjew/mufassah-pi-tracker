@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\V1\Admin;
 
+use App\Support\LikePattern;
 use App\Enums\DeviceStatus;
 use App\Enums\InventoryStatus;
 use App\Http\Controllers\Api\V1\BaseController;
@@ -19,6 +20,8 @@ use App\Services\InventoryIntakeService;
 use App\Services\InventoryMovementService;
 use App\Services\InventoryPriceResolver;
 use App\Support\Inventory\InventoryBranchGuard;
+use App\Traits\SortsLists;
+use App\Traits\PaginatesLists;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -29,6 +32,13 @@ use Illuminate\Validation\ValidationException;
 
 class AdminInventoryController extends BaseController
 {
+    use PaginatesLists;
+
+    use SortsLists;
+
+    /** @var array<int, string> */
+    private const SORTABLE = ['serial_number', 'brand', 'model', 'inventory_status', 'created_at', 'updated_at'];
+
     public function __construct(
         private readonly InventoryMovementService $movementService,
         private readonly InventoryCatalogResolver $catalogResolver,
@@ -86,20 +96,18 @@ class AdminInventoryController extends BaseController
         if ($request->has('search')) {
             $search = $request->search;
             $query->where(function ($q) use ($search) {
-                $q->where('serial_number', 'like', "%{$search}%")
-                    ->orWhere('brand', 'like', "%{$search}%")
-                    ->orWhere('model', 'like', "%{$search}%")
-                    ->orWhere('unique_device_code', 'like', "%{$search}%");
+                $q->whereRaw('serial_number LIKE ? '.LikePattern::SQL_ESCAPE, [LikePattern::contains($search)])
+                    ->orWhereRaw('brand LIKE ? '.LikePattern::SQL_ESCAPE, [LikePattern::contains($search)])
+                    ->orWhereRaw('model LIKE ? '.LikePattern::SQL_ESCAPE, [LikePattern::contains($search)])
+                    ->orWhereRaw('unique_device_code LIKE ? '.LikePattern::SQL_ESCAPE, [LikePattern::contains($search)]);
             });
         }
 
         // Sort
-        $sortField = $request->get('sort', 'created_at');
-        $sortDirection = $request->get('direction', 'desc');
-        $query->orderBy($sortField, $sortDirection);
+        $this->applySort($query, $request, self::SORTABLE, ['created_at', 'desc']);
 
         // Paginate
-        $perPage = $request->get('per_page', 15);
+        $perPage = $this->perPage($request);
         $devices = $query->paginate($perPage);
 
         return $this->paginated(DeviceResource::collection($devices));
@@ -189,8 +197,8 @@ class AdminInventoryController extends BaseController
         if ($request->has('search')) {
             $search = $request->search;
             $query->where(function ($q) use ($search) {
-                $q->where('brand', 'like', "%{$search}%")
-                    ->orWhere('model', 'like', "%{$search}%");
+                $q->whereRaw('brand LIKE ? '.LikePattern::SQL_ESCAPE, [LikePattern::contains($search)])
+                    ->orWhereRaw('model LIKE ? '.LikePattern::SQL_ESCAPE, [LikePattern::contains($search)]);
             });
         }
 
@@ -396,14 +404,14 @@ class AdminInventoryController extends BaseController
         if ($request->has('search')) {
             $search = $request->search;
             $query->where(function ($q) use ($search) {
-                $q->where('batch_number', 'like', "%{$search}%")
-                    ->orWhere('brand', 'like', "%{$search}%")
-                    ->orWhere('model', 'like', "%{$search}%")
-                    ->orWhere('purchase_location', 'like', "%{$search}%");
+                $q->whereRaw('batch_number LIKE ? '.LikePattern::SQL_ESCAPE, [LikePattern::contains($search)])
+                    ->orWhereRaw('brand LIKE ? '.LikePattern::SQL_ESCAPE, [LikePattern::contains($search)])
+                    ->orWhereRaw('model LIKE ? '.LikePattern::SQL_ESCAPE, [LikePattern::contains($search)])
+                    ->orWhereRaw('purchase_location LIKE ? '.LikePattern::SQL_ESCAPE, [LikePattern::contains($search)]);
             });
         }
 
-        $perPage = $request->get('per_page', 15);
+        $perPage = $this->perPage($request);
         $batches = $query->latest()->paginate($perPage);
 
         return $this->paginated(InventoryBatchResource::collection($batches));
@@ -454,14 +462,14 @@ class AdminInventoryController extends BaseController
         if ($request->filled('search')) {
             $search = $request->string('search')->toString();
             $query->where(function ($q) use ($search) {
-                $q->where('receipt_number', 'like', "%{$search}%")
-                    ->orWhere('supplier', 'like', "%{$search}%")
-                    ->orWhere('reference_number', 'like', "%{$search}%")
-                    ->orWhere('purchase_location', 'like', "%{$search}%");
+                $q->whereRaw('receipt_number LIKE ? '.LikePattern::SQL_ESCAPE, [LikePattern::contains($search)])
+                    ->orWhereRaw('supplier LIKE ? '.LikePattern::SQL_ESCAPE, [LikePattern::contains($search)])
+                    ->orWhereRaw('reference_number LIKE ? '.LikePattern::SQL_ESCAPE, [LikePattern::contains($search)])
+                    ->orWhereRaw('purchase_location LIKE ? '.LikePattern::SQL_ESCAPE, [LikePattern::contains($search)]);
             });
         }
 
-        $perPage = min((int) $request->get('per_page', 15), 100);
+        $perPage = $this->perPage($request);
         $receipts = $query->latest()->paginate($perPage);
 
         return $this->paginated(InventoryReceiptResource::collection($receipts));

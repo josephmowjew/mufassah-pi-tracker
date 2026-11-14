@@ -6,6 +6,7 @@ use App\Http\Resources\DeviceLocationResource;
 use App\Models\Device;
 use App\Models\DeviceLocation;
 use App\Support\LocalTime;
+use App\Traits\PaginatesLists;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -16,6 +17,8 @@ use Illuminate\Http\Request;
  */
 class DeviceLocationController extends BaseController
 {
+    use PaginatesLists;
+
     /**
      * Get location history for a device.
      */
@@ -49,7 +52,7 @@ class DeviceLocationController extends BaseController
 
         // Paginate or get all
         if ($request->has('per_page')) {
-            $locations = $query->paginate($request->get('per_page', 50));
+            $locations = $query->paginate($this->perPage($request, 50));
 
             return $this->paginated(DeviceLocationResource::collection($locations));
         }

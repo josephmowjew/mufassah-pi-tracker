@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\V1\Admin;
 
+use App\Support\LikePattern;
 use App\Enums\InvoiceStatus;
 use App\Enums\PaymentMethod;
 use App\Http\Controllers\Api\V1\BaseController;
@@ -12,6 +13,7 @@ use App\Notifications\InvoiceEmailNotification;
 use App\Services\InventoryActionApprovalService;
 use App\Services\InvoiceDocumentService;
 use App\Services\InvoiceService;
+use App\Traits\PaginatesLists;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Notification;
@@ -20,6 +22,8 @@ use Illuminate\Validation\ValidationException;
 
 class AdminInvoiceController extends BaseController
 {
+    use PaginatesLists;
+
     public function __construct(
         private readonly InvoiceService $invoiceService,
         private readonly InvoiceDocumentService $documentService,
@@ -65,15 +69,15 @@ class AdminInvoiceController extends BaseController
         if (! empty($validated['search'])) {
             $search = $validated['search'];
             $query->where(function ($q) use ($search) {
-                $q->where('invoice_number', 'like', "%{$search}%")
-                    ->orWhere('recipient_email', 'like', "%{$search}%")
-                    ->orWhereHas('customer', fn ($customer) => $customer->where('name', 'like', "%{$search}%"));
+                $q->whereRaw('invoice_number LIKE ? '.LikePattern::SQL_ESCAPE, [LikePattern::contains($search)])
+                    ->orWhereRaw('recipient_email LIKE ? '.LikePattern::SQL_ESCAPE, [LikePattern::contains($search)])
+                    ->orWhereHas('customer', fn ($customer) => $customer->whereRaw('name LIKE ? '.LikePattern::SQL_ESCAPE, [LikePattern::contains($search)]));
             });
         }
 
         $invoices = $query
             ->orderByDesc('issued_at')
-            ->paginate(min(100, max(1, (int) $request->integer('per_page', 15))));
+            ->paginate($this->perPage($request));
 
         return $this->paginated(InvoiceResource::collection($invoices));
     }

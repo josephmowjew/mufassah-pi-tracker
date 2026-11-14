@@ -2,12 +2,15 @@
 
 namespace App\Http\Controllers\Api\V1\Admin;
 
+use App\Support\LikePattern;
 use App\Enums\DeviceStatus;
 use App\Http\Controllers\Api\V1\BaseController;
 use App\Http\Resources\DeviceResource;
 use App\Models\Device;
 use App\Models\Sale;
 use App\Services\InventoryCatalogResolver;
+use App\Traits\SortsLists;
+use App\Traits\PaginatesLists;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -15,6 +18,13 @@ use Illuminate\Validation\Rule;
 
 class AdminDeviceController extends BaseController
 {
+    use PaginatesLists;
+
+    use SortsLists;
+
+    /** @var array<int, string> */
+    private const SORTABLE = ['serial_number', 'brand', 'model', 'device_category_id', 'status', 'created_at', 'updated_at'];
+
     public function __construct(private readonly InventoryCatalogResolver $catalogResolver) {}
 
     /**
@@ -56,24 +66,22 @@ class AdminDeviceController extends BaseController
         if ($request->has('search')) {
             $search = $request->search;
             $query->where(function ($q) use ($search) {
-                $q->where('serial_number', 'like', "%{$search}%")
-                    ->orWhere('brand', 'like', "%{$search}%")
-                    ->orWhere('model', 'like', "%{$search}%")
-                    ->orWhere('unique_device_code', 'like', "%{$search}%")
+                $q->whereRaw('serial_number LIKE ? '.LikePattern::SQL_ESCAPE, [LikePattern::contains($search)])
+                    ->orWhereRaw('brand LIKE ? '.LikePattern::SQL_ESCAPE, [LikePattern::contains($search)])
+                    ->orWhereRaw('model LIKE ? '.LikePattern::SQL_ESCAPE, [LikePattern::contains($search)])
+                    ->orWhereRaw('unique_device_code LIKE ? '.LikePattern::SQL_ESCAPE, [LikePattern::contains($search)])
                     ->orWhereHas('owner', function ($ownerQuery) use ($search) {
-                        $ownerQuery->where('name', 'like', "%{$search}%")
-                            ->orWhere('email', 'like', "%{$search}%");
+                        $ownerQuery->whereRaw('name LIKE ? '.LikePattern::SQL_ESCAPE, [LikePattern::contains($search)])
+                            ->orWhereRaw('email LIKE ? '.LikePattern::SQL_ESCAPE, [LikePattern::contains($search)]);
                     });
             });
         }
 
-        // Sort
-        $sortField = $request->get('sort', 'created_at');
-        $sortDirection = $request->get('direction', 'desc');
-        $query->orderBy($sortField, $sortDirection);
+        // Sort — whitelisted so an unknown column is a 422, not a 500.
+        $this->applySort($query, $request, self::SORTABLE, ['created_at', 'desc']);
 
         // Paginate
-        $perPage = $request->get('per_page', 15);
+        $perPage = $this->perPage($request);
         $devices = $query->paginate($perPage);
 
         return $this->paginated(DeviceResource::collection($devices));

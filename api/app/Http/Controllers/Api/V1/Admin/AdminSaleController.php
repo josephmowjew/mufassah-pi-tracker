@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\V1\Admin;
 
+use App\Support\LikePattern;
 use App\Enums\InventoryStatus;
 use App\Enums\PaymentMethod;
 use App\Enums\PaymentStatus;
@@ -17,6 +18,8 @@ use App\Services\InventoryMovementService;
 use App\Services\ReceiptService;
 use App\Services\SuperAdminSaleNotificationService;
 use App\Support\LocalTime;
+use App\Traits\SortsLists;
+use App\Traits\PaginatesLists;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
@@ -29,6 +32,13 @@ use Illuminate\Validation\ValidationException;
 
 class AdminSaleController extends BaseController
 {
+    use PaginatesLists;
+
+    use SortsLists;
+
+    /** @var array<int, string> */
+    private const SORTABLE = ['sale_number', 'sale_date', 'total_amount', 'status', 'created_at', 'updated_at'];
+
     public function __construct(
         private readonly InventoryMovementService $movementService,
         private readonly SuperAdminSaleNotificationService $superAdminSaleNotificationService,
@@ -45,12 +55,10 @@ class AdminSaleController extends BaseController
             ->withCount('items');
 
         // Sort
-        $sortField = $request->get('sort', 'created_at');
-        $sortDirection = $request->get('direction', 'desc');
-        $query->orderBy($sortField, $sortDirection);
+        $this->applySort($query, $request, self::SORTABLE, ['created_at', 'desc']);
 
         // Paginate
-        $perPage = $request->get('per_page', 15);
+        $perPage = $this->perPage($request);
         $sales = $query->paginate($perPage);
 
         return $this->paginated(SaleResource::collection($sales));
@@ -821,10 +829,10 @@ class AdminSaleController extends BaseController
         if ($request->has('search')) {
             $search = $request->search;
             $query->where(function ($q) use ($search) {
-                $q->where('sale_number', 'like', "%{$search}%")
+                $q->whereRaw('sale_number LIKE ? '.LikePattern::SQL_ESCAPE, [LikePattern::contains($search)])
                     ->orWhereHas('customer', function ($customerQuery) use ($search) {
-                        $customerQuery->where('name', 'like', "%{$search}%")
-                            ->orWhere('email', 'like', "%{$search}%");
+                        $customerQuery->whereRaw('name LIKE ? '.LikePattern::SQL_ESCAPE, [LikePattern::contains($search)])
+                            ->orWhereRaw('email LIKE ? '.LikePattern::SQL_ESCAPE, [LikePattern::contains($search)]);
                     });
             });
         }

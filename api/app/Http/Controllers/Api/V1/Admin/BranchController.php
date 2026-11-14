@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\V1\Admin;
 
+use App\Support\LikePattern;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreBranchRequest;
 use App\Http\Requests\UpdateBranchRequest;
@@ -13,12 +14,15 @@ use App\Models\InventoryReceipt;
 use App\Models\Shift;
 use App\Models\StockTransferRequest;
 use App\Models\User;
+use App\Traits\PaginatesLists;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
 
 class BranchController extends Controller
 {
+    use PaginatesLists;
+
     public function index(Request $request)
     {
         $branchId = $request->user()->hasRole('super_admin')
@@ -37,15 +41,15 @@ class BranchController extends Controller
         if ($request->has('search')) {
             $search = $request->search;
             $query->where(function ($q) use ($search) {
-                $q->where('name', 'like', "%{$search}%")
-                    ->orWhere('code', 'like', "%{$search}%")
-                    ->orWhere('city', 'like', "%{$search}%");
+                $q->whereRaw('name LIKE ? '.LikePattern::SQL_ESCAPE, [LikePattern::contains($search)])
+                    ->orWhereRaw('code LIKE ? '.LikePattern::SQL_ESCAPE, [LikePattern::contains($search)])
+                    ->orWhereRaw('city LIKE ? '.LikePattern::SQL_ESCAPE, [LikePattern::contains($search)]);
             });
         }
 
         $branches = $query
             ->orderBy('name')
-            ->paginate((int) $request->input('per_page', 15));
+            ->paginate($this->perPage($request));
 
         return BranchResource::collection($branches);
     }
