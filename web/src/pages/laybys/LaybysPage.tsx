@@ -4,9 +4,11 @@ import { Link, useSearchParams } from 'react-router-dom'
 import {
   ArrowDownToLine, ArrowUpRight, Banknote, Ban, CalendarClock, ChartNoAxesCombined, Check, ChevronLeft, ChevronRight,
   ClipboardCheck, Copy, FileCheck2, FilePlus2, FileText, Filter, ListChecks, PackageCheck,
-  Printer, ReceiptText, RotateCcw, Save, Search, Settings2, Undo2, Wallet, X, type LucideIcon,
+  Printer, ReceiptText, RotateCcw, Save, Search, Settings2, Undo2, UserPlus, Wallet, X, type LucideIcon,
 } from 'lucide-react'
 import Button, { type ButtonProps } from '@/components/ui/Button'
+import CreateCustomerDialog from '@/components/customers/CreateCustomerDialog'
+import type { CustomerSummary } from '@/api/customers'
 import apiClient from '@/api/client'
 import { formatMalawiDateTime, malawiDateInput } from '@/lib/datetime'
 import { useAuthStore } from '@/stores/auth-store'
@@ -53,14 +55,24 @@ function PrintButton({ title, lines, children }: { title: string; lines: [string
   }}>{children}</ActionButton><ErrorMessage error={error} /></div>
 }
 
+type LaybyCustomer = { id: number; name: string; phone_number?: string }
+type LookupResult = { device_id: number; customers: LaybyCustomer[] }
+
+/** The lookup treats a digits-only term as a phone number, so it prefills that way. */
+const looksLikePhone = (term: string) => /^[+\d][\d\s-]{5,}$/.test(term.trim())
+
 function OpenLayby({ cashier, actorId, onOpen }: { cashier: boolean; actorId: number; onOpen: (layby: Layby) => void }) {
-  const [selection, setSelection] = useState<{ device_id: number; customers: { id: number; name: string; phone_number?: string }[] }>()
+  const [selection, setSelection] = useState<LookupResult>()
+  const [customerId, setCustomerId] = useState('')
+  const [searchTerm, setSearchTerm] = useState('')
+  const [serialTerm, setSerialTerm] = useState('')
+  const [addingCustomer, setAddingCustomer] = useState(false)
   const [quote, setQuote] = useState<LaybyQuote>()
   const [copied, setCopied] = useState(false)
   const lookup = useMutation({
     mutationFn: async (params: { serial_number: string; customer: string }) =>
-      (await apiClient.get<typeof selection>('/laybys/lookup', { params })).data,
-    onSuccess: setSelection,
+      (await apiClient.get<LookupResult>('/laybys/lookup', { params })).data,
+    onSuccess: (result) => { setSelection(result); setCustomerId('') },
   })
   const quoteRequest = useMutation({
     mutationFn: async ({ path, payload }: { path: string; payload: ActionData }) =>
@@ -91,6 +103,8 @@ function OpenLayby({ cashier, actorId, onOpen }: { cashier: boolean; actorId: nu
       const form = new FormData(event.currentTarget)
       setSelection(undefined)
       setQuote(undefined)
+      setSearchTerm(text(form, 'customer'))
+      setSerialTerm(text(form, 'serial_number'))
       lookup.mutate({ serial_number: text(form, 'serial_number'), customer: text(form, 'customer') })
     }}>
       <Field label="Device serial"><input className={input} name="serial_number" required maxLength={100} /></Field>
@@ -98,10 +112,22 @@ function OpenLayby({ cashier, actorId, onOpen }: { cashier: boolean; actorId: nu
       <ActionButton icon={Search} disabled={lookup.isPending}>Find device and customer</ActionButton>
     </form>
     {selection && <form onSubmit={prepareQuote} className="grid gap-3 sm:grid-cols-2">
-      <Field label="Customer"><select name="customer_id" required className={input} defaultValue="">
-        <option value="">Select customer</option>
-        {selection.customers.map((customer) => <option key={customer.id} value={customer.id}>{customer.name} {customer.phone_number ?? ''}</option>)}
-      </select></Field>
+      <div className="space-y-1">
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-sm font-medium text-slate-700">Customer</span>
+          <button type="button" onClick={() => setAddingCustomer(true)}
+            className="inline-flex items-center gap-1 text-xs font-medium text-teal-700 hover:text-teal-900">
+            <UserPlus className="h-3.5 w-3.5" aria-hidden="true" /> New customer
+          </button>
+        </div>
+        <select name="customer_id" required className={input} value={customerId} onChange={(event) => setCustomerId(event.target.value)}>
+          <option value="">{selection.customers.length ? 'Select customer' : 'No matching customer'}</option>
+          {selection.customers.map((customer) => <option key={customer.id} value={customer.id}>{customer.name} {customer.phone_number ?? ''}</option>)}
+        </select>
+        {selection.customers.length === 0 && <p className="text-xs text-amber-800">
+          Nobody is on file for “{searchTerm}”. Create the customer to continue.
+        </p>}
+      </div>
       {!cashier && <>
         <Field label="Approved unit price (MWK)"><input name="price" inputMode="decimal" className={input} placeholder="Use batch price" /></Field>
         <Field label="Approved discount (MWK)"><input name="discount" inputMode="decimal" className={input} /></Field>
@@ -140,6 +166,24 @@ function OpenLayby({ cashier, actorId, onOpen }: { cashier: boolean; actorId: nu
       }}>{copied ? 'Code copied' : 'Copy quote code for cashier'}</ActionButton>}
     </div>}
     <ErrorMessage error={error ?? open.error ?? quoteRequest.error ?? lookup.error} />
+    {addingCustomer && <CreateCustomerDialog
+      requireContact
+      description="The new customer is selected for this agreement and receives the deposit reminders."
+      initialName={looksLikePhone(searchTerm) ? '' : searchTerm}
+      initialPhone={looksLikePhone(searchTerm) ? searchTerm : ''}
+      onClose={() => setAddingCustomer(false)}
+      onConflict={() => { setAddingCustomer(false); lookup.mutate({ serial_number: serialTerm, customer: searchTerm }) }}
+      onCreated={(customer: CustomerSummary) => {
+        setSelection((current) => current
+          ? { ...current, customers: [
+              { id: customer.id, name: customer.name, phone_number: customer.phone_number ?? undefined },
+              ...current.customers.filter((row) => row.id !== customer.id),
+            ] }
+          : current)
+        setCustomerId(String(customer.id))
+        setAddingCustomer(false)
+      }}
+    />}
   </section>
 }
 

@@ -7,15 +7,9 @@ import { devicesApi } from '@/api/devices'
 import { toast } from 'sonner'
 import type { User as UserType, SubscriptionPlan, ProductOptions, Sale } from '@/types'
 import ReceiptModal from '@/components/sales/ReceiptModal'
+import CreateCustomerDialog from '@/components/customers/CreateCustomerDialog'
+import { customersApi, type CustomerSummary } from '@/api/customers'
 import { useAuthStore } from '@/stores/auth-store'
-
-interface NewCustomerFormData {
-  name: string
-  email: string
-  phone_number: string
-  national_id: string
-  password: string
-}
 
 interface CartItem {
   category_id: number
@@ -44,19 +38,11 @@ export default function CustomerServiceNewSalePage() {
   const currentUser = useAuthStore((state) => state.user)
   const inventoryScopeKey = `${currentUser?.id ?? 'anonymous'}:${currentUser?.branch_id ?? 'unassigned'}`
   const [cart, setCart] = useState<CartItem[]>([])
-  const [selectedCustomer, setSelectedCustomer] = useState<UserType | null>(null)
+  const [selectedCustomer, setSelectedCustomer] = useState<CustomerSummary | null>(null)
   const [customerSearch, setCustomerSearch] = useState('')
   const [showNewCustomerModal, setShowNewCustomerModal] = useState(false)
   const [showReceiptModal, setShowReceiptModal] = useState(false)
   const [createdSale, setCreatedSale] = useState<Sale | null>(null)
-  const [newCustomerForm, setNewCustomerForm] = useState<NewCustomerFormData>({
-    name: '',
-    email: '',
-    phone_number: '',
-    national_id: '',
-    password: '',
-  })
-  const [customerFormErrors, setCustomerFormErrors] = useState<Partial<Record<keyof NewCustomerFormData, string>>>({})
 
   // Product selection state (cascading dropdowns)
   const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(null)
@@ -73,14 +59,8 @@ export default function CustomerServiceNewSalePage() {
 
   // Search customers
   const { data: customersData } = useQuery({
-    queryKey: ['search-customers', customerSearch],
-    queryFn: async () => {
-      if (!customerSearch || customerSearch.length < 2) return []
-      const response = await apiClient.get<{ success: boolean; data: UserType[] }>(
-        `/customer-service/customers?search=${customerSearch}&per_page=10`
-      )
-      return response.data.data
-    },
+    queryKey: ['search-customers', 'customer_service', customerSearch],
+    queryFn: () => customersApi.search(customerSearch, 'customer_service'),
     enabled: customerSearch.length >= 2,
   })
 
@@ -192,47 +172,6 @@ export default function CustomerServiceNewSalePage() {
       toast.error(error.response?.data?.message || 'Failed to create sale')
     },
   })
-
-  // Create new customer mutation
-  const createCustomerMutation = useMutation({
-    mutationFn: async (data: NewCustomerFormData) => {
-      const response = await apiClient.post<{ success: boolean; data: UserType }>('/customer-service/customers', {
-        ...data,
-        password_confirmation: data.password || undefined,
-      })
-      return response.data.data
-    },
-    onSuccess: (newCustomer) => {
-      setSelectedCustomer(newCustomer)
-      setShowNewCustomerModal(false)
-      setNewCustomerForm({ name: '', email: '', phone_number: '', national_id: '', password: '' })
-      setCustomerFormErrors({})
-      toast.success('Customer created successfully')
-    },
-    onError: (error: { response?: { data?: { errors?: Record<string, string[]>; message?: string } } }) => {
-      if (error.response?.data?.errors) {
-        const errors: Partial<Record<keyof NewCustomerFormData, string>> = {}
-        Object.entries(error.response.data.errors).forEach(([key, messages]) => {
-          errors[key as keyof NewCustomerFormData] = messages[0]
-        })
-        setCustomerFormErrors(errors)
-      } else {
-        toast.error(error.response?.data?.message || 'Failed to create customer')
-      }
-    },
-  })
-
-  const handleNewCustomerFormChange = (field: keyof NewCustomerFormData, value: string) => {
-    setNewCustomerForm(prev => ({ ...prev, [field]: value }))
-    if (customerFormErrors[field]) {
-      setCustomerFormErrors(prev => ({ ...prev, [field]: undefined }))
-    }
-  }
-
-  const handleCreateCustomer = (e: React.FormEvent) => {
-    e.preventDefault()
-    createCustomerMutation.mutate(newCustomerForm)
-  }
 
   const customers = customersData || []
   const categories = categoriesData || []
@@ -877,147 +816,18 @@ export default function CustomerServiceNewSalePage() {
         </div>
       </div>
 
-      {/* New Customer Modal */}
       {showNewCustomerModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4">
-          <div className="bg-white rounded-xl max-w-md w-full max-h-[90vh] overflow-y-auto">
-            <div className="p-5 border-b border-slate-200 sticky top-0 bg-white">
-              <div className="flex items-center justify-between">
-                <h3 className="text-lg font-semibold text-slate-800">Create New Customer</h3>
-                <button
-                  onClick={() => {
-                    setShowNewCustomerModal(false)
-                    setNewCustomerForm({ name: '', email: '', phone_number: '', national_id: '', password: '' })
-                    setCustomerFormErrors({})
-                  }}
-                  className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
-                >
-                  <X className="h-5 w-5" />
-                </button>
-              </div>
-            </div>
-            <form onSubmit={handleCreateCustomer} className="p-5 space-y-4">
-              <p className="text-xs text-slate-500">
-                <span className="text-red-500">*</span> indicates required fields
-              </p>
-
-              {/* Name */}
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1.5">
-                  Name <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  value={newCustomerForm.name}
-                  onChange={(e) => handleNewCustomerFormChange('name', e.target.value)}
-                  className={`w-full px-3.5 py-2.5 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-colors ${
-                    customerFormErrors.name ? 'border-red-300 bg-red-50' : 'border-slate-200 bg-slate-50/50'
-                  }`}
-                  placeholder="Enter full name"
-                  required
-                  maxLength={255}
-                />
-                {customerFormErrors.name && <p className="mt-1 text-xs text-red-600">{customerFormErrors.name}</p>}
-              </div>
-
-              {/* Email */}
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1.5">
-                  Email <span className="text-slate-400 font-normal">(optional)</span>
-                </label>
-                <input
-                  type="email"
-                  value={newCustomerForm.email}
-                  onChange={(e) => handleNewCustomerFormChange('email', e.target.value)}
-                  className={`w-full px-3.5 py-2.5 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-colors ${
-                    customerFormErrors.email ? 'border-red-300 bg-red-50' : 'border-slate-200 bg-slate-50/50'
-                  }`}
-                  placeholder="Enter email address"
-                  maxLength={255}
-                />
-                {customerFormErrors.email && <p className="mt-1 text-xs text-red-600">{customerFormErrors.email}</p>}
-              </div>
-
-              {/* Phone */}
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1.5">
-                  Phone Number <span className="text-slate-400 font-normal">(optional, max 20 chars)</span>
-                </label>
-                <input
-                  type="tel"
-                  value={newCustomerForm.phone_number}
-                  onChange={(e) => handleNewCustomerFormChange('phone_number', e.target.value)}
-                  className={`w-full px-3.5 py-2.5 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-colors ${
-                    customerFormErrors.phone_number ? 'border-red-300 bg-red-50' : 'border-slate-200 bg-slate-50/50'
-                  }`}
-                  placeholder="e.g. +265999123456"
-                  maxLength={20}
-                />
-                {customerFormErrors.phone_number && <p className="mt-1 text-xs text-red-600">{customerFormErrors.phone_number}</p>}
-              </div>
-
-              {/* National ID */}
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1.5">
-                  National ID <span className="text-slate-400 font-normal">(optional, max 50 chars)</span>
-                </label>
-                <input
-                  type="text"
-                  value={newCustomerForm.national_id}
-                  onChange={(e) => handleNewCustomerFormChange('national_id', e.target.value)}
-                  className={`w-full px-3.5 py-2.5 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-colors ${
-                    customerFormErrors.national_id ? 'border-red-300 bg-red-50' : 'border-slate-200 bg-slate-50/50'
-                  }`}
-                  placeholder="e.g. 1234567890"
-                  maxLength={50}
-                />
-                {customerFormErrors.national_id && <p className="mt-1 text-xs text-red-600">{customerFormErrors.national_id}</p>}
-              </div>
-
-              {/* Password */}
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1.5">
-                  Password <span className="text-slate-400 font-normal">(optional)</span>
-                </label>
-                <input
-                  type="password"
-                  value={newCustomerForm.password}
-                  onChange={(e) => handleNewCustomerFormChange('password', e.target.value)}
-                  className={`w-full px-3.5 py-2.5 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-colors ${
-                    customerFormErrors.password ? 'border-red-300 bg-red-50' : 'border-slate-200 bg-slate-50/50'
-                  }`}
-                  placeholder="Minimum 8 characters"
-                  minLength={8}
-                />
-                {customerFormErrors.password && <p className="mt-1 text-xs text-red-600">{customerFormErrors.password}</p>}
-                <p className="mt-1 text-xs text-slate-500">Only needed if the customer will log in</p>
-              </div>
-
-              {/* Actions */}
-              <div className="flex gap-3 pt-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowNewCustomerModal(false)
-                    setNewCustomerForm({ name: '', email: '', phone_number: '', national_id: '', password: '' })
-                    setCustomerFormErrors({})
-                  }}
-                  className="flex-1 px-4 py-2.5 bg-slate-100 text-slate-600 text-sm font-medium rounded-lg hover:bg-slate-200 transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={createCustomerMutation.isPending}
-                  className="flex-1 px-4 py-2.5 bg-teal-600 text-white text-sm font-medium rounded-lg hover:bg-teal-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2"
-                >
-                  {createCustomerMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-                  Create Customer
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+        <CreateCustomerDialog
+          requireContact
+          description="The new customer is selected for this sale."
+          onClose={() => setShowNewCustomerModal(false)}
+          onConflict={() => setShowNewCustomerModal(false)}
+          onCreated={(customer) => {
+            setSelectedCustomer(customer)
+            setCustomerSearch('')
+            setShowNewCustomerModal(false)
+          }}
+        />
       )}
 
       {/* Receipt Modal */}

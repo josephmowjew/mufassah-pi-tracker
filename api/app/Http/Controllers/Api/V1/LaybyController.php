@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Support\LikePattern;
 use App\Http\Controllers\Controller;
 use App\Models\Branch;
 use App\Models\Device;
@@ -30,8 +31,10 @@ class LaybyController extends Controller
         $rows = Layby::query()
             ->when($branchId, fn (Builder $q) => $q->where('branch_id', $branchId))
             ->when(isset($data['search']), fn (Builder $q) => $q->where(function (Builder $q) use ($data) {
-                $search = '%'.$data['search'].'%';
-                $q->where('reference', 'like', $search)->orWhere('customer_name', 'like', $search)->orWhere('serial_number', 'like', $search);
+                $search = LikePattern::contains($data['search']);
+                $q->whereRaw('reference LIKE ? '.LikePattern::SQL_ESCAPE, [$search])
+                    ->orWhereRaw('customer_name LIKE ? '.LikePattern::SQL_ESCAPE, [$search])
+                    ->orWhereRaw('serial_number LIKE ? '.LikePattern::SQL_ESCAPE, [$search]);
             }))
             ->when(isset($data['status']), function (Builder $q) use ($data) {
                 if ($data['status'] === 'overdue') {
@@ -85,7 +88,7 @@ class LaybyController extends Controller
             ->when(! $actor->hasRole('super_admin'), fn ($query) => $query->where('branch_id', $actor->requiredBranchScopeId()))
             ->where('serial_number', $data['serial_number'])->available()->firstOrFail();
         $customers = \App\Models\User::role('customer')->where(function ($query) use ($data) {
-            $query->where('name', 'like', '%'.$data['customer'].'%')
+            $query->whereRaw('name LIKE ? '.LikePattern::SQL_ESCAPE, [LikePattern::contains($data['customer'])])
                 ->orWhere('phone_number', $data['customer'])->orWhere('email', $data['customer']);
         })->orderBy('name')->limit(15)->get(['id', 'name', 'phone_number']);
 

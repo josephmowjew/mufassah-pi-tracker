@@ -49,6 +49,9 @@ class UserResource extends JsonResource
             'roles' => $this->whenLoaded('roles', fn () => $this->roles->pluck('name')),
             'permissions' => $this->whenLoaded('permissions', fn () => $this->getAllPermissions()->pluck('name')),
             'branch' => $this->whenLoaded('branch', fn () => new BranchResource($this->branch)),
+            // Present only on the customer-service desk list, which asks for it
+            // with withCount so the table can show real purchase numbers.
+            'served_sales_count' => $this->whenCounted('served_sales_count'),
             'created_at' => $this->created_at?->toLocalIso8601String(),
             'updated_at' => $this->updated_at?->toLocalIso8601String(),
         ];

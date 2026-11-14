@@ -87,3 +87,7 @@ logs/
 
 # Deployment credentials
 .deploy/server.key
+# AI/tool working directories
+.arts/
+.freebuff/
+.workbuddy-ai/
