@@ -189,8 +189,8 @@ function OpenLayby({ cashier, actorId, onOpen }: { cashier: boolean; actorId: nu
         setSerialTerm(text(form, 'serial_number'))
         lookup.mutate({ serial_number: text(form, 'serial_number'), customer: text(form, 'customer') })
       }}>
-        <Field label="Device serial"><input className={input} name="serial_number" required maxLength={100} /></Field>
-        <Field label="Customer name, email, or phone"><input className={input} name="customer" required maxLength={100} /></Field>
+        <Field label="Device serial"><input className={input} name="serial_number" required maxLength={100} placeholder="e.g. SM18-536745" /></Field>
+        <Field label="Customer name, email, or phone"><input className={input} name="customer" required maxLength={100} placeholder="e.g. John Banda or 0991 234 567" /></Field>
         <ActionButton icon={Search} disabled={lookup.isPending}>Find device and customer</ActionButton>
       </form>
     ) : (
@@ -335,7 +335,7 @@ function OpenLayby({ cashier, actorId, onOpen }: { cashier: boolean; actorId: nu
             setSearchTerm(customerTerm)
             lookup.mutate(buildLookupParams(customerTerm))
           }}>
-            <Field label="Customer name, email, or phone"><input className={input} name="customer" required maxLength={100} /></Field>
+            <Field label="Customer name, email, or phone"><input className={input} name="customer" required maxLength={100} placeholder="e.g. John Banda or 0991 234 567" /></Field>
             <ActionButton icon={Search} disabled={lookup.isPending}>Find device and customer</ActionButton>
           </form>
         )}
